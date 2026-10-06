@@ -1,20 +1,24 @@
 /**
  * One finger on the map. A drag that starts on a station builds track to
- * the site or station it ends on; the route and its cost follow the finger.
- * A tap on a station, a track cell or a train opens the line's card. Pointer
- * events, so a mouse works the same way. No pan, no zoom in this slice: the
- * camera shows the whole map.
+ * the site or station it ends on; the route and its cost follow the finger,
+ * and when the lake or the ridge offers two routes the lift hands them to
+ * the UI to choose from. A tap on a train opens its card, a tap on a site
+ * the site's, a tap on a station or a track cell the line's. Pointer
+ * events, so a mouse works the same way. No pan, no zoom: the camera shows
+ * the whole map.
  */
-import type { SimState, Line } from '../game/types';
+import type { SimState, Line, Site, Train } from '../game/types';
 import { plan, build, lineOf, along, trainLength } from '../game/sim';
 import { idx, inside, route, type Route } from '../game/grid';
-import { stationAt, siteAt } from '../game/state';
+import { stationAt } from '../game/state';
 import { toWorld, type Camera } from '../render/camera';
 
 export interface Drag {
   from: number;
   to: number | null;
+  /** the route drawn under the finger: the cheap one of the options, or the loose preview */
   route: Route | null;
+  options: Route[];
   /** the finger, screen px */
   sx: number;
   sy: number;
@@ -26,9 +30,12 @@ export interface Drag {
 export interface InputEvents {
   /** a build landed: the line, and where the finger lifted (screen px) */
   onBuild: (line: Line, sx: number, sy: number) => void;
-  /** a tap on something of a line */
+  /** the lift offers two routes: the UI asks which */
+  onChoice: (options: Route[], sx: number, sy: number) => void;
   onLine: (line: Line) => void;
-  /** a tap on a site with no station, or a build the cash does not cover */
+  onTrain: (train: Train) => void;
+  onSite: (site: Site) => void;
+  /** a build the cash does not cover */
   onNote: (cell: number, text: string) => void;
   onAny: () => void;
 }
@@ -83,14 +90,14 @@ export class Input {
     return best;
   }
 
-  private siteNear(x: number, y: number, reach: number): number | null {
-    let best: number | null = null;
+  private siteNear(x: number, y: number, reach: number): Site | null {
+    let best: Site | null = null;
     let bd = reach;
     for (const site of this.s.sites) {
       const d = Math.hypot(site.cx + 0.5 - x, site.cy + 0.5 - y);
       if (d < bd) {
         bd = d;
-        best = idx(this.s, site.cx, site.cy);
+        best = site;
       }
     }
     return best;
@@ -104,7 +111,7 @@ export class Input {
     this.canvas.setPointerCapture?.(e.pointerId);
     this.down = { x: e.clientX, y: e.clientY, cell: at.cell, id: e.pointerId };
     const from = this.stationNear(at.x, at.y, GRAB);
-    if (from !== null) this.drag = { from, to: null, route: null, sx: e.clientX, sy: e.clientY, ok: false, loose: true };
+    if (from !== null) this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
   };
 
   private onMove = (e: PointerEvent): void => {
@@ -117,15 +124,26 @@ export class Input {
     if (!at) {
       d.to = null;
       d.route = null;
+      d.options = [];
       return;
     }
-    const target = this.siteNear(at.x, at.y, SNAP);
-    // snapped to a site: the route that would be built; elsewhere: the track under the finger, a preview
+    const site = this.siteNear(at.x, at.y, SNAP);
+    const target = site ? idx(this.s, site.cx, site.cy) : null;
+    // snapped to a site: the routes that could be built; elsewhere: the track under the finger, a preview
     const to = target ?? at.cell;
     if (to === d.to) return;
     d.to = to;
     d.loose = target === null;
-    d.route = to === d.from ? null : target !== null ? plan(this.s, d.from, target) : route(this.s, d.from, to);
+    if (to === d.from) {
+      d.route = null;
+      d.options = [];
+    } else if (target !== null) {
+      d.options = plan(this.s, d.from, target);
+      d.route = d.options[0] ?? null;
+    } else {
+      d.options = [];
+      d.route = route(this.s, d.from, to);
+    }
     d.ok = !d.loose && !!d.route && d.route.cost <= this.s.cash;
   };
 
@@ -137,6 +155,10 @@ export class Input {
     this.drag = null;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     if (drag && drag.route && !drag.loose && moved > 12) {
+      if (drag.options.length > 1) {
+        this.ev.onChoice(drag.options, e.clientX, e.clientY);
+        return;
+      }
       if (drag.route.cost > this.s.cash) {
         this.ev.onNote(drag.route.cells[drag.route.cells.length - 1], 'cash');
         return;
@@ -146,29 +168,32 @@ export class Input {
       return;
     }
     if (moved > 12) return;
-    // a tap: a train, a station, a track cell, or a site without a station
+    // a tap: a train, a station, a track cell, or a site
     const at = this.cellAt(e.clientX, e.clientY);
     if (!at) return;
+    // the site's own cell is the site's, even with a train standing in its station
+    const close = this.siteNear(at.x, at.y, 0.85);
+    if (close) return this.ev.onSite(close);
     const train = this.trainNear(at.x, at.y);
-    if (train) return this.ev.onLine(train);
+    if (train) return this.ev.onTrain(train);
     const st = stationAt(this.s, at.cell) ? at.cell : this.stationNear(at.x, at.y, GRAB);
+    const site = this.siteNear(at.x, at.y, SNAP);
+    if (site) return this.ev.onSite(site);
     if (st !== null) {
       const line = this.s.lines.find((l) => l.path[0] === st || l.path[l.path.length - 1] === st);
       if (line) return this.ev.onLine(line);
     }
     const onTrack = this.s.lines.find((l) => l.path.includes(at.cell));
     if (onTrack) return this.ev.onLine(onTrack);
-    const site = this.siteNear(at.x, at.y, SNAP);
-    if (site !== null && siteAt(this.s, site) && !stationAt(this.s, site)) this.ev.onNote(site, 'drag');
   };
 
-  private trainNear(x: number, y: number): Line | null {
+  private trainNear(x: number, y: number): Train | null {
     for (const t of this.s.trains) {
       const line = lineOf(this.s, t);
       const L = trainLength(t);
       for (let k = 0; k <= 3; k++) {
         const p = along(line, t.s - t.dir * (L * k) / 3, this.s.w);
-        if (Math.hypot(p.x - x, p.y - y) < 0.9) return line;
+        if (Math.hypot(p.x - x, p.y - y) < 0.8) return t;
       }
     }
     return null;

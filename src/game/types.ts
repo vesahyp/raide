@@ -1,10 +1,13 @@
-/** The goods of the first slice. Later chains add ore, iron, grain, flour, tar, coal, paper. */
-export type Good = 'timber' | 'boards';
+/** The goods so far: two chains, each raw to refined to town. Later eras add ore, iron, tar, coal, paper. */
+export type Good = 'timber' | 'boards' | 'grain' | 'flour';
+export const GOODS: Good[] = ['timber', 'boards', 'grain', 'flour'];
 
-export type SiteKind = 'forest' | 'sawmill' | 'town';
+export type SiteKind = 'forest' | 'sawmill' | 'farm' | 'mill' | 'town';
 
-/** A wagon carries one family of goods: flat wagons take timber, box wagons take boards. */
-export type WagonType = 'flat' | 'box';
+/** A wagon carries one family of goods: flat wagons timber, box wagons boards and flour, hoppers grain. */
+export type WagonType = 'flat' | 'box' | 'hopper';
+
+export type EngineId = 'hilma' | 'jyry';
 
 export interface Text {
   fi: string;
@@ -17,36 +20,57 @@ export interface SiteDef {
   name: Text;
   cx: number;
   cy: number;
+  /** a town's size at the start, 1 to 5 */
+  size?: number;
 }
+
+export type Goal =
+  | { kind: 'deliver'; good: Good; site: string; count: number; beforeYear: number }
+  | { kind: 'towns'; size: number; beforeYear: number };
 
 export interface ScenarioDef {
   id: string;
   name: Text;
+  /** one line for the title screen */
+  blurb: Text;
   /** map size in cells; the grid the player never sees, eight directions */
   w: number;
   h: number;
-  /** water cells, as cell indexes */
+  /** water cells, as cell indexes: a bridge to cross */
   water: number[];
+  /** ridge cells: a cutting to cross, and a grade that slows a train */
+  ridge: number[];
   sites: SiteDef[];
   /** the station the player starts with, a site id */
   startStation: string;
   cash: number;
   startYear: number;
-  /** the goal: deliver this many loads of the good to the site, before the year */
-  goal: { good: Good; site: string; count: number; beforeYear: number };
+  goal: Goal;
+  /** how many trains the player may run */
+  trainsMax: number;
+  /** cash at the end for two and for three stars */
+  stars: [number, number];
+  /** the engines on sale */
+  engines: EngineId[];
 }
 
 export interface Site extends SiteDef {
   /** what the site holds of what it makes (a forest's timber, a sawmill's boards) */
   stock: number;
-  /** what it has taken in over the last months, for the demand curve; decays */
-  taken: number;
+  /** what it has taken in over the last months, per good, for the demand curve; decays */
+  taken: Record<Good, number>;
   /** loads delivered here, all time */
   delivered: number;
+  /** loads delivered this year, per good, for a town's growth */
+  fed: Record<Good, number>;
   /** production rate per month, raised by frequent pickups */
   rate: number;
   /** sim time of the last pickup here, for the served-rate rule */
   lastPickup: number;
+  /** a town's size, 1 to 5; 0 for other sites */
+  size: number;
+  /** the year a town last grew, for the house that is being built */
+  grewAt: number;
 }
 
 export interface Station {
@@ -58,7 +82,7 @@ export interface Station {
 
 export interface Line {
   id: number;
-  /** two stations for now: the train runs forward and back */
+  /** two stations: the train runs forward and back */
   stops: [number, number];
   /** the cells from the first stop to the second */
   path: number[];
@@ -73,8 +97,11 @@ export type TrainState = 'run' | 'stop';
 export interface Train {
   id: number;
   lineId: number;
+  engine: EngineId;
   wagons: WagonType;
   nWagons: number;
+  /** the train waits at a loading stop until every wagon is full */
+  fullLoad: boolean;
   /** +1 runs the path from stop 0 to stop 1 */
   dir: 1 | -1;
   /** the leading end of the train, as a distance along the line's path in cells */
@@ -82,16 +109,20 @@ export interface Train {
   state: TrainState;
   /** seconds left at the station */
   stopLeft: number;
-  /** loads on board, of the wagons' good */
+  /** loads on board */
   cargo: number;
+  /** the good on board, while cargo is above zero */
+  good: Good | null;
   /** the station cell the train stands at, while it stops */
   at: number | null;
   /** where the train is stacked at its station, so two at one platform draw side by side */
   slot: number;
-  /** cells per second, the engine's */
+  /** cells per second right now: the engine's, cut on a grade */
   speed: number;
   /** for the smoke and the wheels: distance run */
   odometer: number;
+  /** pay earned, all time, for the train card */
+  earned: number;
 }
 
 export interface Float {
@@ -111,6 +142,8 @@ export interface YearEnd {
   profit: number;
   cash: number;
   choice: YearEndChoice | null;
+  /** towns that grew this year end */
+  grew: string[];
 }
 
 export interface LastBuild {
@@ -129,6 +162,7 @@ export interface SimState {
   w: number;
   h: number;
   water: Uint8Array;
+  ridge: Uint8Array;
   /** track links per cell: a bitmask of the eight directions that carry track out of the cell */
   track: Uint8Array;
   sites: Site[];
@@ -149,7 +183,7 @@ export interface SimState {
   yearEnd: YearEnd | null;
   /** choices taken, each once */
   perks: YearEndChoice[];
-  /** loads of the goal good delivered at the goal site */
+  /** loads of the goal good delivered at the goal site, for a deliver goal */
   goalCount: number;
   /** the scenario's end, set once */
   result: { won: boolean; year: number; cash: number; stars: number } | null;

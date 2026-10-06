@@ -3,15 +3,17 @@
  * Headless: nothing here touches the DOM. Sounds are names pushed onto
  * `state.sounds`; the game loop drains them. The step is fixed (DT) and the
  * sim holds while a year-end card waits for its choice or the scenario is
- * over.
+ * over. The player's moves are the exported functions below; the UI and
+ * the bot call the same ones.
  */
-import type { Good, Line, SimState, Train, WagonType, YearEndChoice, Float } from './types';
-import { route, link, unlink, idx, cx, cy, stepLen, type Route } from './grid';
-import { siteAt, stationAt } from './state';
+import type { EngineId, Good, Line, SimState, Train, WagonType, YearEndChoice, Float } from './types';
+import { GOODS } from './types';
+import { routeOptions, link, unlink, idx, cx, cy, stepLen, DIRS, type Route } from './grid';
+import { siteAt, stationAt, siteById, goodsOnMap, zeroGoods } from './state';
 import {
-  BASE_PRICE, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINE, ENGINE_LEN, FOREST_CAP, FOREST_RATE, GOOD_WAGON, MAKES, MONTHS,
-  PERK_FOREST, PERK_SPEED, SERVED_MEMORY, SERVED_RATE, STARS, STOP_SECONDS, TAKES, TOWN_EATS, TRAINS_MAX, UNDO_SECONDS, WAGON_GOOD, WAGON_LEN,
-  WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
+  BASE_PRICE, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GROW_NEED, MAKES, MILL_EATS, MONTHS,
+  PERK_FOREST, PERK_SPEED, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, UNDO_SECONDS,
+  WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
 
 export const DT = 1 / 60;
@@ -36,6 +38,14 @@ export function along(line: Line, d: number, w: number): { x: number; y: number;
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, dx: (b.x - a.x) / len, dy: (b.y - a.y) / len };
 }
 
+/** the cell under a distance along the path */
+export function cellAlong(line: Line, d: number): number {
+  const n = line.path.length;
+  let k = 0;
+  while (k < n - 1 && line.dist[k + 1] <= d) k++;
+  return line.path[k];
+}
+
 export function trainLength(t: Train): number {
   return ENGINE_LEN + t.nWagons * WAGON_LEN;
 }
@@ -55,19 +65,19 @@ export function distanceFactor(cells: number): number {
 
 /** what one load of a good pays at a site right now, carried over a line of this length */
 export function price(s: SimState, good: Good, siteId: string, lineLength: number): number {
-  const site = s.sites.find((x) => x.id === siteId)!;
-  return Math.round(BASE_PRICE[good] * demand(site.taken) * distanceFactor(lineLength));
+  const site = siteById(s, siteId);
+  return Math.round(BASE_PRICE[good] * demand(site.taken[good]) * distanceFactor(lineLength));
 }
 
-export function trainPrice(nWagons = WAGONS_DEFAULT): number {
-  return ENGINE.price + nWagons * WAGON_PRICE;
+export function trainPrice(engine: EngineId = 'hilma', nWagons = WAGONS_DEFAULT): number {
+  return ENGINES[engine].price + nWagons * WAGON_PRICE;
 }
 
-/** the route a drag from a station cell to a site or station cell would build, or null */
-export function plan(s: SimState, from: number, to: number): Route | null {
-  if (!stationAt(s, from)) return null;
-  if (!siteAt(s, to) && !stationAt(s, to)) return null;
-  return route(s, from, to);
+/** the routes a drag from a station cell to a site or station cell would build: one, or a cheap and a short one */
+export function plan(s: SimState, from: number, to: number): Route[] {
+  if (!stationAt(s, from)) return [];
+  if (!siteAt(s, to) && !stationAt(s, to)) return [];
+  return routeOptions(s, from, to);
 }
 
 function pathDist(s: SimState, cells: number[]): number[] {
@@ -104,7 +114,7 @@ export function build(s: SimState, r: Route): Line | null {
   }
   s.lastBuild = { cost: r.cost, cells: r.added, station: newStation, line: newLine, left: UNDO_SECONDS, cell: to };
   const p = centre(s, to);
-  s.floats.push({ x: p.x, y: p.y, text: `-${r.cost}`, age: 0, kind: 'cost' });
+  if (r.cost > 0) s.floats.push({ x: p.x, y: p.y, text: `-${r.cost}`, age: 0, kind: 'cost' });
   s.sounds.push('build');
   return line;
 }
@@ -121,8 +131,7 @@ export function undo(s: SimState): boolean {
   for (const i of b.cells) {
     for (let d = 0; d < 8; d++) {
       if (!(s.track[i] & (1 << d))) continue;
-      const [dx, dy] = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]][d];
-      unlink(s, i, idx(s, cx(s, i) + dx, cy(s, i) + dy));
+      unlink(s, i, idx(s, cx(s, i) + DIRS[d][0], cy(s, i) + DIRS[d][1]));
     }
   }
   // a line that used a removed cell is gone too
@@ -132,38 +141,87 @@ export function undo(s: SimState): boolean {
   return true;
 }
 
+function engineSpeed(s: SimState, t: Train): number {
+  return ENGINES[t.engine].speed * (s.perks.includes('speed') ? PERK_SPEED : 1);
+}
+
 /** Buy a train on a line: it leaves at once from the line's first stop. */
-export function buyTrain(s: SimState, lineId: number, wagons: WagonType): Train | null {
-  if (s.trains.length >= TRAINS_MAX) return null;
+export function buyTrain(s: SimState, lineId: number, wagons: WagonType, engine: EngineId = 'hilma'): Train | null {
+  if (s.trains.length >= s.scenario.trainsMax) return null;
   const line = s.lines.find((l) => l.id === lineId);
   if (!line) return null;
   const nWagons = Math.min(WAGONS_MAX, WAGONS_DEFAULT + (s.perks.includes('wagon') ? 1 : 0));
-  const cost = trainPrice(nWagons);
+  const cost = trainPrice(engine, nWagons);
   if (cost > s.cash) return null;
   s.cash -= cost;
   s.lastBuild = null;
   const t: Train = {
     id: s.nextId++,
     lineId,
+    engine,
     wagons,
     nWagons,
+    fullLoad: false,
     dir: 1,
     s: 0,
     state: 'stop',
     stopLeft: STOP_SECONDS / 2,
     cargo: 0,
+    good: null,
     at: line.path[0],
     slot: 0,
-    speed: ENGINE.speed * (s.perks.includes('speed') ? PERK_SPEED : 1),
+    speed: 0,
     odometer: 0,
+    earned: 0,
   };
-  // a new train stands at its first stop, on the next free platform
+  t.speed = engineSpeed(s, t);
+  // a new train stands at its first stop, on the next free platform, and takes what the site has
   t.slot = freeSlot(s, t, line.path[0]);
   s.trains.push(t);
+  const st = stationAt(s, line.path[0]);
+  if (st) load(s, t, siteById(s, st.siteId));
   const p = centre(s, line.path[0]);
   s.floats.push({ x: p.x, y: p.y, text: `-${cost}`, age: 0, kind: 'cost' });
   s.sounds.push('buy');
   return t;
+}
+
+/** One more wagon on a train, up to the limit. */
+export function addWagon(s: SimState, trainId: number): boolean {
+  const t = s.trains.find((o) => o.id === trainId);
+  if (!t || t.nWagons >= WAGONS_MAX || s.cash < WAGON_PRICE) return false;
+  s.cash -= WAGON_PRICE;
+  t.nWagons++;
+  s.sounds.push('buy');
+  return true;
+}
+
+/** Swap the engine: pay the new one, half of the old one comes back. */
+export function setEngine(s: SimState, trainId: number, engine: EngineId): boolean {
+  const t = s.trains.find((o) => o.id === trainId);
+  if (!t || t.engine === engine) return false;
+  const cost = ENGINES[engine].price - Math.round(ENGINES[t.engine].price * RESALE);
+  if (cost > s.cash) return false;
+  s.cash -= cost;
+  t.engine = engine;
+  t.speed = engineSpeed(s, t);
+  s.sounds.push('buy');
+  return true;
+}
+
+export function setFullLoad(s: SimState, trainId: number, on: boolean): void {
+  const t = s.trains.find((o) => o.id === trainId);
+  if (t) t.fullLoad = on;
+}
+
+/** Sell a train: half of what it cost comes back. */
+export function sellTrain(s: SimState, trainId: number): boolean {
+  const t = s.trains.find((o) => o.id === trainId);
+  if (!t) return false;
+  s.cash += Math.round((ENGINES[t.engine].price + t.nWagons * WAGON_PRICE) * RESALE);
+  s.trains = s.trains.filter((o) => o !== t);
+  s.sounds.push('undo');
+  return true;
 }
 
 function freeSlot(s: SimState, t: Train, cell: number): number {
@@ -189,47 +247,47 @@ function blockBusy(s: SimState, t: Train, line: Line): boolean {
   return false;
 }
 
-/** The year-end choice, applied once, and the sim runs again. */
+/** The year-end choice, applied once, and the sim runs again; then the goal is judged. */
 export function closeYearEnd(s: SimState, choice: YearEndChoice): void {
   if (!s.yearEnd) return;
   s.yearEnd.choice = choice;
   if (!s.perks.includes(choice)) {
     s.perks.push(choice);
     if (choice === 'wagon') for (const t of s.trains) t.nWagons = Math.min(WAGONS_MAX, t.nWagons + 1);
-    if (choice === 'speed') for (const t of s.trains) t.speed = ENGINE.speed * PERK_SPEED;
-    if (choice === 'forest') for (const site of s.sites) if (site.kind === 'forest') site.rate *= PERK_FOREST;
+    if (choice === 'speed') for (const t of s.trains) t.speed = engineSpeed(s, t);
+    if (choice === 'forest') for (const site of s.sites) if (RAW_RATE[site.kind]) site.rate *= PERK_FOREST;
   }
   s.yearEnd = null;
-  if (s.year >= s.scenario.goal.beforeYear && !s.result) finish(s, false);
+  if (s.result) return;
+  const goal = s.scenario.goal;
+  if (goal.kind === 'towns' && s.sites.filter((x) => x.kind === 'town').every((x) => x.size >= goal.size)) finish(s, true);
+  else if (s.year >= goal.beforeYear) finish(s, false);
 }
 
 function finish(s: SimState, won: boolean): void {
-  const stars = won ? 1 + STARS.filter((x) => s.cash >= x).length : 0;
+  const stars = won ? 1 + s.scenario.stars.filter((x) => s.cash >= x).length : 0;
   s.result = { won, year: s.year, cash: Math.round(s.cash), stars };
   s.sounds.push(won ? 'win' : 'lose');
 }
 
-/** months tick: production, consumption, demand recovery */
+/** months tick: upkeep, production, consumption, demand recovery */
 function monthTick(s: SimState): void {
   // the engines' upkeep, a twelfth a month, so the cash never drops in one blow at the year end
-  const upkeep = (s.trains.length * ENGINE.upkeep) / MONTHS;
+  const upkeep = s.trains.reduce((a, t) => a + ENGINES[t.engine].upkeep, 0) / MONTHS;
   s.cash -= upkeep;
   s.upkeep += upkeep;
   for (const site of s.sites) {
-    if (site.kind === 'forest') {
-      // a served forest cuts more: the rate climbs while pickups keep coming and falls back after
-      const base = FOREST_RATE * (s.perks.includes('forest') ? PERK_FOREST : 1);
+    const raw = RAW_RATE[site.kind];
+    if (raw) {
+      // a served site makes more: the rate climbs while pickups keep coming and falls back after
+      const base = raw * (s.perks.includes('forest') ? PERK_FOREST : 1);
       const recent = s.time - site.lastPickup < SERVED_MEMORY * (YEAR_SECONDS / MONTHS);
       const target = recent ? base * SERVED_RATE : base;
       site.rate += (target - site.rate) * 0.5;
-      site.stock = Math.min(FOREST_CAP, site.stock + site.rate);
+      site.stock = Math.min(RAW_CAP, site.stock + site.rate);
     }
-    if (site.kind === 'town') {
-      site.taken = Math.max(0, site.taken - TOWN_EATS);
-    }
-    if (site.kind === 'sawmill') {
-      site.taken = Math.max(0, site.taken - TOWN_EATS);
-    }
+    const eats = site.kind === 'town' ? TOWN_EATS * site.size : MILL_EATS;
+    for (const g of GOODS) site.taken[g] = Math.max(0, site.taken[g] - eats);
   }
 }
 
@@ -238,50 +296,73 @@ function arrive(s: SimState, t: Train, line: Line, cell: number): void {
   t.stopLeft = STOP_SECONDS;
   t.at = cell;
   const st = stationAt(s, cell);
-  const site = st && s.sites.find((x) => x.id === st.siteId);
+  const site = st && siteById(s, st.siteId);
   if (!site) return;
-  const good = WAGON_GOOD[t.wagons];
   const p = centre(s, cell);
   // unload what the site takes
-  if (t.cargo > 0 && TAKES[site.kind] === good) {
+  if (t.cargo > 0 && t.good && TAKES[site.kind].includes(t.good)) {
     const n = t.cargo;
+    const good = t.good;
     const pay = price(s, good, site.id, line.dist[line.dist.length - 1]) * n;
     s.cash += pay;
     s.income[good] += pay;
-    site.taken += n;
+    t.earned += pay;
+    site.taken[good] += n;
     site.delivered += n;
+    site.fed[good] += n;
     t.cargo = 0;
+    t.good = null;
     if (s.firstPayAt === null) s.firstPayAt = s.time;
     // a refinery turns the input into its output at once
-    const makes = MAKES[site.kind];
-    if (makes) site.stock += n;
-    if (site.id === s.scenario.goal.site && good === s.scenario.goal.good) s.goalCount += n;
+    if (MAKES[site.kind]) site.stock += n;
+    const goal = s.scenario.goal;
+    if (goal.kind === 'deliver' && site.id === goal.site && good === goal.good) {
+      s.goalCount += n;
+      if (s.goalCount >= goal.count && !s.result) finish(s, true);
+    }
     s.floats.push({ x: p.x, y: p.y, text: `+${pay}`, age: 0, kind: 'pay' });
     s.sounds.push('pay');
-    if (s.goalCount >= s.scenario.goal.count && !s.result) finish(s, true);
   }
-  // load what the site makes, if the wagons take it
-  if (MAKES[site.kind] === good && site.stock > 0) {
-    const n = Math.min(Math.floor(site.stock), t.nWagons - t.cargo);
-    if (n > 0) {
-      site.stock -= n;
-      t.cargo += n;
-      site.lastPickup = s.time;
-      s.sounds.push('load');
-    }
-  }
+  load(s, t, site);
 }
 
-function depart(s: SimState, t: Train, line: Line): boolean {
+/** load what the site makes, if the wagons take it */
+function load(s: SimState, t: Train, site: { kind: keyof typeof MAKES; stock: number; lastPickup: number }): void {
+  const makes = MAKES[site.kind];
+  if (!makes || !WAGON_GOODS[t.wagons].includes(makes) || site.stock < 1) return;
+  if (t.cargo > 0 && t.good !== makes) return;
+  const n = Math.min(Math.floor(site.stock), t.nWagons - t.cargo);
+  if (n <= 0) return;
+  site.stock -= n;
+  t.cargo += n;
+  t.good = makes;
+  site.lastPickup = s.time;
+  s.sounds.push('load');
+}
+
+/** whether the train is at a loading stop and set to wait for a full load it has not got */
+function waitingForLoad(s: SimState, t: Train): boolean {
+  if (!t.fullLoad || t.at === null || t.cargo >= t.nWagons) return false;
+  const st = stationAt(s, t.at);
+  const site = st && siteById(s, st.siteId);
+  if (!site) return false;
+  const makes = MAKES[site.kind];
+  if (!makes || !WAGON_GOODS[t.wagons].includes(makes)) return false;
+  load(s, t, site);
+  return t.cargo < t.nWagons;
+}
+
+function depart(s: SimState, t: Train, line: Line, turn: boolean): boolean {
   if (blockBusy(s, t, line)) return false;
   const end = line.dist[line.dist.length - 1];
   const L = Math.min(trainLength(t), end * 0.45);
   // the train turns: the leading end is the old tail, the engine draws at the front again
-  t.dir = t.dir === 1 ? -1 : 1;
+  if (turn) t.dir = t.dir === 1 ? -1 : 1;
   t.s = t.dir === 1 ? L : end - L;
   t.state = 'run';
   t.at = null;
   t.slot = freeSlot(s, t, nextStopCell(s, t));
+  if (t.odometer === 0) t.odometer = 0.001;
   s.sounds.push('whistle');
   return true;
 }
@@ -292,21 +373,20 @@ function moveTrain(s: SimState, t: Train): void {
   if (t.state === 'stop') {
     t.stopLeft -= DT;
     if (t.stopLeft <= 0) {
+      if (waitingForLoad(s, t)) {
+        t.stopLeft = 1;
+        return;
+      }
       // a brand-new train has not turned yet: it stands at stop 0 facing stop 1
-      if (t.odometer === 0 && t.at === line.path[0]) {
-        if (!blockBusy(s, t, line)) {
-          t.dir = 1;
-          t.s = Math.min(trainLength(t), end * 0.45);
-          t.state = 'run';
-          t.at = null;
-          t.slot = freeSlot(s, t, nextStopCell(s, t));
-          t.odometer = 0.001;
-          s.sounds.push('whistle');
-        }
-      } else depart(s, t, line);
+      const fresh = t.odometer === 0 && t.at === line.path[0];
+      depart(s, t, line, !fresh);
     }
     return;
   }
+  // the speed under the leading end: a ridge cuts it, more with a load
+  const base = engineSpeed(s, t);
+  const under = cellAlong(line, t.s);
+  t.speed = s.ridge[under] ? base * ENGINES[t.engine].climb * Math.max(0.3, 1 - GRADE_LOAD * t.cargo) : base;
   const step = t.speed * DT;
   t.s += t.dir * step;
   t.odometer += step;
@@ -317,6 +397,34 @@ function moveTrain(s: SimState, t: Train): void {
     t.s = 0;
     arrive(s, t, line, line.path[0]);
   }
+}
+
+/** the year end: the towns grow or not, the ledger opens */
+function yearEnd(s: SimState): void {
+  const last = s.trains.reduce((a, t) => a + ENGINES[t.engine].upkeep, 0) / MONTHS;
+  s.cash -= last;
+  s.upkeep += last;
+  s.cash = Math.round(s.cash);
+  const upkeep = Math.round(s.upkeep);
+  const income = { ...s.income };
+  const grew: string[] = [];
+  const goods = goodsOnMap(s).filter((g) => TAKES.town.includes(g));
+  for (const site of s.sites) {
+    if (site.kind === 'town' && site.size < TOWN_MAX && goods.every((g) => site.fed[g] >= GROW_NEED)) {
+      site.size++;
+      site.grewAt = s.year;
+      grew.push(site.id);
+    }
+    site.fed = zeroGoods();
+  }
+  const total = GOODS.reduce((a, g) => a + income[g], 0);
+  s.yearEnd = { year: s.year, income, upkeep, profit: total - upkeep, cash: s.cash, choice: null, grew };
+  s.income = zeroGoods();
+  s.upkeep = 0;
+  s.year++;
+  s.yearFrac = 0;
+  s.month = 0;
+  s.sounds.push(grew.length ? 'grow' : 'bell');
 }
 
 export function step(s: SimState): void {
@@ -330,33 +438,13 @@ export function step(s: SimState): void {
   s.floats = s.floats.filter((f) => f.age < 1.6);
   const frac = s.yearFrac + DT / YEAR_SECONDS;
   const month = Math.floor(frac * MONTHS);
-  if (month > s.month) {
+  if (month > s.month && month < MONTHS) {
     s.month = month;
     monthTick(s);
   }
   s.yearFrac = frac;
   for (const t of s.trains) moveTrain(s, t);
-  if (s.yearFrac >= 1) {
-    // the twelfth month's upkeep lands with the card
-    const last = (s.trains.length * ENGINE.upkeep) / MONTHS;
-    s.cash -= last;
-    s.upkeep += last;
-    s.cash = Math.round(s.cash);
-    const upkeep = Math.round(s.upkeep);
-    const income = { ...s.income };
-    s.yearEnd = { year: s.year, income, upkeep, profit: income.timber + income.boards - upkeep, cash: s.cash, choice: null };
-    s.income = { timber: 0, boards: 0 };
-    s.upkeep = 0;
-    s.year++;
-    s.yearFrac = 0;
-    s.month = 0;
-    s.sounds.push('bell');
-  }
-}
-
-/** the goal good's wagon, for the train card's default */
-export function wagonFor(good: Good): WagonType {
-  return GOOD_WAGON[good];
+  if (s.yearFrac >= 1) yearEnd(s);
 }
 
 /** a note that floats off a point, for the UI */
@@ -364,4 +452,14 @@ export function note(s: SimState, cell: number, text: string): void {
   const p = centre(s, cell);
   const f: Float = { x: p.x, y: p.y, text, age: 0, kind: 'note' };
   s.floats.push(f);
+}
+
+/** the goal's progress, 0..1, for the HUD bar */
+export function goalProgress(s: SimState): number {
+  const goal = s.scenario.goal;
+  if (goal.kind === 'deliver') return Math.min(1, s.goalCount / goal.count);
+  const towns = s.sites.filter((x) => x.kind === 'town');
+  const need = towns.reduce((a, t) => a + (goal.size - (t.size <= goal.size ? (s.scenario.sites.find((d) => d.id === t.id)?.size ?? 1) : goal.size)), 0);
+  const got = towns.reduce((a, t) => a + Math.min(goal.size, t.size) - (s.scenario.sites.find((d) => d.id === t.id)?.size ?? 1), 0);
+  return need > 0 ? Math.min(1, got / need) : 1;
 }

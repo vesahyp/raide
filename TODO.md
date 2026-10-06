@@ -5,19 +5,21 @@ The design is in `docs/design.md`; its "first hour" table is the order.
 
 ## Next
 
-- **Vesa's phone playtest of the first slice.** The two questions from the
-  design: does the first paid delivery arrive inside 90 seconds, and does a
-  thumb want to lay the next track. Nothing below is built until the slice
-  is judged fun on a phone.
+- **Vesa's phone playtest of Harju.** The sawmill scenario was two drags
+  with no decision in them (2026-10-06, "So. The game is 2 drags?"). Harju
+  puts the choices in: what to connect first, the cheap way round or the
+  dear bridge or cutting, which engine, where the trains go when a town's
+  price falls, wagons and the full-load switch. The question is whether a
+  thumb wants to make them.
 
-## After the slice
+## After that
 
-- Scenario 2, Ridge: grades, the tunnel choice, engine power, passengers
-  between two towns.
-- Scenario 3, Two chains: ore and ironworks, the "wait for a full load"
-  switch, a town growing to size 2.
+- Passengers and mail between the two towns, and the tunnel as a third
+  route choice on a ridge.
 - Scenario 4, Harbour: the export sink, loans, an industry that closes, the
   coal era unlock.
+- Lines with more than two stops, so one train can serve a town from the
+  sawmill and the mill.
 - Pinch to zoom and two-finger pan during a drag, for maps bigger than the
   screen.
 - Branches: a drag from any point on existing track places a junction.

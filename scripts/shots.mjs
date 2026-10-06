@@ -11,7 +11,8 @@ const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { 
 await new Promise((r) => setTimeout(r, 2500));
 const lang = process.argv[2] === 'en' ? 'en' : 'fi';
 const landscape = process.env.ORIENT === 'landscape';
-const dir = `shots${lang === 'en' ? '/en' : ''}${landscape ? '/landscape' : ''}`;
+const scenario = process.env.SCENARIO || 'sawmill';
+const dir = `shots/${scenario}${lang === 'en' ? '/en' : ''}${landscape ? '/landscape' : ''}`;
 mkdirSync(dir, { recursive: true });
 
 const browser = await chromium.launch();
@@ -28,15 +29,28 @@ const at = async (sec, name) => {
 try {
   await page.goto(`http://localhost:${port}/?bot=1&speed=4&lang=${lang}`);
   await shot('01-title');
-  await page.locator('[data-track="title-play"]').first().tap();
+  await page.locator(`[data-scenario="${scenario}"]`).tap();
   await page.waitForFunction(() => window.__sim, null, { timeout: 10000 });
   await shot('02-start');
   await at(8, '03-first-train');
   await at(60, '04-two-lines');
-  await at(100, '05-three-trains');
-  // the year-end card: the bot answers it, so stop the page and open it by hand
-  await page.waitForFunction(() => window.__sim.year >= 1863, null, { timeout: 300000 });
-  await shot('06-year-two');
+  await at(140, '05-network');
+  await page.waitForFunction(() => window.__sim.year >= 1864, null, { timeout: 300000 });
+  await shot('06-year-three');
+  // the cards, opened on the running game: a train, a site, a line
+  await page.evaluate(() => { const s = window.__sim; const m = window.__renderer.cam.m; const c = s.lines[0].path[2]; const x = (c % s.w) + 0.5, y = Math.floor(c / s.w) + 0.5; window.__pt = { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }; });
+  const pt = await page.evaluate(() => window.__pt);
+  await page.touchscreen.tap(pt.x, pt.y);
+  await page.waitForTimeout(400);
+  await shot('07-line-card');
+  const row = page.locator('.train-row').first();
+  if (await row.count()) { await row.tap(); await page.waitForTimeout(400); await shot('08-train-card'); }
+  await page.locator('.round.close').tap();
+  const site = await page.evaluate(() => { const s = window.__sim; const m = window.__renderer.cam.m; const o = s.sites.find((x) => x.kind === 'town'); const x = o.cx + 0.5, y = o.cy + 0.5; return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }; });
+  await page.touchscreen.tap(site.x, site.y);
+  await page.waitForTimeout(400);
+  await shot('09-site-card');
+  await page.locator('.round.close').tap();
   await page.waitForFunction(() => window.__sim.result, null, { timeout: 300000 });
   await page.waitForTimeout(400);
   await shot('07-result');

@@ -31,11 +31,9 @@ export function Title({ onPlay }: { onPlay: (sc: ScenarioDef) => void }) {
       <p className="tagline">{tr('Vedä rata. Osta juna. Kuljeta tukit.', 'Drag track. Buy a train. Haul the timber.')}</p>
       <div className="scenarios">
         {SCENARIOS.map((sc) => (
-          <button key={sc.id} className="btn primary big scenario" onClick={() => onPlay(sc)} data-track="title-play">
+          <button key={sc.id} className="btn primary big scenario" onClick={() => onPlay(sc)} data-track="title-play" data-scenario={sc.id}>
             <span>{t(sc.name)}</span>
-            <small>
-              {sc.startYear}. {tr('20 lautakuormaa ennen', '20 loads of boards before')} {sc.goal.beforeYear}
-            </small>
+            <small>{t(sc.blurb)}</small>
           </button>
         ))}
       </div>

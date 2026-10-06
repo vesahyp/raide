@@ -6,11 +6,11 @@
  * top each frame. Text stays upright: it is drawn in screen space after
  * converting the point, so a turned map keeps readable names.
  */
-import type { SimState, Site, Train } from '../game/types';
+import type { Good, SimState, Site, Train, WagonType } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, idx } from '../game/grid';
 import { along, centre, lineOf, trainLength } from '../game/sim';
-import { ENGINE_LEN, WAGON_LEN, WAGON_GOOD } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_LEN } from '../game/content/economy';
 import { fitCamera, toScreen, type Camera, type Insets } from './camera';
 
 /** the Finnish summer palette */
@@ -38,6 +38,18 @@ export const PAL = {
   timber: '#c69a62',
   boards: '#e8d2a0',
   smoke: 'rgba(240,240,235,0.55)',
+  ridge: '#9a7d58',
+  ridge2: '#86694a',
+  contour: 'rgba(70,45,25,0.35)',
+  rock: '#6e665c',
+  rock2: '#8c847a',
+  field: '#d9c25a',
+  field2: '#c4ab45',
+  hopper: '#6f6a5a',
+  grain: '#e2c04a',
+  flour: '#f2efe6',
+  sail: '#e8e0cc',
+  gold: '#ffd870',
   ghost: 'rgba(27,26,22,0.55)',
   ghostBridge: 'rgba(40,90,140,0.7)',
   ghostBad: 'rgba(180,40,30,0.6)',
@@ -106,7 +118,7 @@ export class Renderer {
   private baked(): HTMLCanvasElement | OffscreenCanvas {
     const s = this.s;
     const px = this.cam.scale * this.dpr;
-    const key = `${px.toFixed(2)}`;
+    const key = `${px.toFixed(2)}|${s.sites.map((o) => o.size).join(',')}`;
     if (this.base && this.baseKey === key) return this.base;
     const W = Math.ceil(s.w * px);
     const H = Math.ceil(s.h * px);
@@ -125,13 +137,39 @@ export class Renderer {
           g.fill();
         }
       }
-    // forest dots: pines scattered over the land, thinner near sites and water
+    // the ridge: a brown rise with contour lines, drawn as overlapping rounded cells
+    const ridgeCells: [number, number][] = [];
+    for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) if (s.ridge[idx(s, x, y)]) ridgeCells.push([x, y]);
+    g.fillStyle = PAL.ridge2;
+    for (const [x, y] of ridgeCells) {
+      g.beginPath();
+      g.roundRect(x - 0.2, y - 0.2, 1.4, 1.4, 0.5);
+      g.fill();
+    }
+    g.fillStyle = PAL.ridge;
+    for (const [x, y] of ridgeCells) {
+      g.beginPath();
+      g.roundRect(x - 0.02, y - 0.1, 1.04, 1.1, 0.4);
+      g.fill();
+    }
+    g.strokeStyle = PAL.contour;
+    g.lineWidth = 0.04;
+    for (const [x, y] of ridgeCells) {
+      for (let k = 0; k < 2; k++) {
+        const ry = y + 0.3 + k * 0.4;
+        g.beginPath();
+        g.moveTo(x + 0.05, ry + (hash(x, y, 50 + k) - 0.5) * 0.2);
+        g.quadraticCurveTo(x + 0.5, ry - 0.15, x + 0.95, ry + (hash(x, y, 60 + k) - 0.5) * 0.2);
+        g.stroke();
+      }
+    }
+    // forest dots: pines scattered over the land, thinner near sites, water and the ridge
     for (let y = 0; y < s.h; y++)
       for (let x = 0; x < s.w; x++) {
         const i = idx(s, x, y);
         if (s.water[i]) continue;
         const near = s.sites.some((o) => Math.hypot(o.cx - x, o.cy - y) < 2.2);
-        const n = near ? 0 : hash(x, y, 5) < 0.55 ? 2 : 1;
+        const n = near ? 0 : s.ridge[i] ? (hash(x, y, 5) < 0.3 ? 1 : 0) : hash(x, y, 5) < 0.55 ? 2 : 1;
         for (let k = 0; k < n; k++) {
           const tx = x + 0.15 + hash(x, y, 10 + k) * 0.7;
           const ty = y + 0.15 + hash(x, y, 20 + k) * 0.7;
@@ -173,7 +211,7 @@ export class Renderer {
   }
 
   /** the dirt beneath a train: smoke and the rest are per frame */
-  draw(dt: number, drag: { route: Route | null; from: number; sx: number; sy: number; ok: boolean; loose: boolean } | null, hint: Hint | null): void {
+  draw(dt: number, drag: { route: Route | null; from: number; sx: number; sy: number; ok: boolean; loose: boolean } | null, hint: Hint | null, pending: Route[] | null = null): void {
     if (!this.fits()) this.resize();
     const s = this.s;
     const ctx = this.ctx;
@@ -189,6 +227,7 @@ export class Renderer {
     this.drawStations(ctx);
     this.drawTrack(ctx);
     if (drag?.route) this.drawGhost(ctx, drag.route, drag.ok, drag.loose);
+    if (pending && pending.length) this.drawGhost(ctx, pending[0], true, false, pending[1]);
     for (const t of s.trains) this.drawTrain(ctx, t);
     this.drawSmoke(ctx, dt);
     if (hint && s.lines.length === 0) this.drawHint(ctx, hint, dt);
@@ -209,7 +248,7 @@ export class Renderer {
   private drawTrack(ctx: CTX): void {
     const s = this.s;
     const sc = this.cam.scale;
-    // bridges first: a plank deck under the rails
+    // bridges and cuttings first: a plank deck, or a rock trench, under the rails
     ctx.lineCap = 'butt';
     for (let i = 0; i < s.track.length; i++) {
       if (!s.track[i]) continue;
@@ -217,16 +256,18 @@ export class Renderer {
       for (let d = 0; d < 4; d++) {
         if (!(s.track[i] & (1 << d))) continue;
         const j = idx(s, cx(s, i) + DIRS[d][0], cy(s, i) + DIRS[d][1]);
-        if (!s.water[i] && !s.water[j]) continue;
+        const water = s.water[i] || s.water[j];
+        const ridge = s.ridge[i] || s.ridge[j];
+        if (!water && !ridge) continue;
         const b = centre(s, j);
-        ctx.strokeStyle = PAL.deck2;
-        ctx.lineWidth = 0.62;
+        ctx.strokeStyle = water ? PAL.deck2 : PAL.rock;
+        ctx.lineWidth = water ? 0.62 : 0.8;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
-        ctx.strokeStyle = PAL.deck;
-        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = water ? PAL.deck : PAL.rock2;
+        ctx.lineWidth = water ? 0.5 : 0.5;
         ctx.stroke();
       }
     }
@@ -272,24 +313,35 @@ export class Renderer {
     }
   }
 
-  /** the route under the finger: loose (to the finger, a thin dashed line), or snapped to a site (solid, a ring at the end) */
-  private drawGhost(ctx: CTX, r: Route, ok: boolean, loose: boolean): void {
+  /** the route under the finger: loose (to the finger, a thin dashed line), or snapped to a site (solid, a ring at the end).
+   *  The second option, when there is one, is drawn in the choice's colour beside the first */
+  private drawGhost(ctx: CTX, r: Route, ok: boolean, loose: boolean, second?: Route): void {
     const s = this.s;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    const strokeRoute = (route: Route, colour: (water: boolean, ridge: boolean) => string) => {
+      for (let k = 1; k < route.cells.length; k++) {
+        const a = centre(s, route.cells[k - 1]);
+        const b = centre(s, route.cells[k]);
+        const water = !!(s.water[route.cells[k]] || s.water[route.cells[k - 1]]);
+        const ridge = !!(s.ridge[route.cells[k]] || s.ridge[route.cells[k - 1]]);
+        ctx.strokeStyle = colour(water, ridge);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    };
     ctx.lineWidth = loose ? 0.22 : 0.34;
     if (loose) ctx.setLineDash([0.35, 0.3]);
-    for (let k = 1; k < r.cells.length; k++) {
-      const a = centre(s, r.cells[k - 1]);
-      const b = centre(s, r.cells[k]);
-      const water = s.water[r.cells[k]] || s.water[r.cells[k - 1]];
-      ctx.strokeStyle = loose ? (water ? 'rgba(40,90,140,0.5)' : 'rgba(27,26,22,0.4)') : !ok ? PAL.ghostBad : water ? PAL.ghostBridge : PAL.ghost;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
+    strokeRoute(r, (water, ridge) => (loose ? (water ? 'rgba(40,90,140,0.5)' : ridge ? 'rgba(110,100,90,0.5)' : 'rgba(27,26,22,0.4)') : !ok ? PAL.ghostBad : water ? PAL.ghostBridge : ridge ? 'rgba(90,80,70,0.8)' : PAL.ghost));
     ctx.setLineDash([]);
+    if (second) {
+      ctx.lineWidth = 0.34;
+      strokeRoute(second, () => OPTION_COLOUR[1]);
+      ctx.lineWidth = 0.34;
+      strokeRoute(r, () => OPTION_COLOUR[0]);
+    }
     if (loose) return;
     // the far end: a ring where the station goes
     const end = centre(s, r.cells[r.cells.length - 1]);
@@ -334,7 +386,7 @@ export class Renderer {
     // the pieces, from the leading end back: the engine, then the wagons
     const pieces: { len: number; kind: 'engine' | 'wagon' }[] = [{ len: ENGINE_LEN, kind: 'engine' }];
     for (let k = 0; k < t.nWagons; k++) pieces.push({ len: WAGON_LEN, kind: 'wagon' });
-    const good = WAGON_GOOD[t.wagons];
+    const good = t.good;
     for (let k = pieces.length - 1; k >= 0; k--) {
       // draw back to front so the engine sits on top
       let back = 0;
@@ -351,7 +403,7 @@ export class Renderer {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(Math.atan2(fy, fx));
-      if (piece.kind === 'engine') drawEngine(ctx, piece.len);
+      if (piece.kind === 'engine') drawEngine(ctx, piece.len, t.engine === 'jyry');
       else drawWagon(ctx, piece.len, t.wagons, k - 1 < t.cargo ? good : null);
       ctx.restore();
     }
@@ -426,13 +478,18 @@ export class Renderer {
       ctx.strokeText(text, p.x, y);
       ctx.fillStyle = '#f3ecd6';
       ctx.fillText(text, p.x, y);
-      // the stock: a small row of what the site holds
-      const what = site.kind === 'forest' ? site.stock : site.kind === 'sawmill' ? site.stock : 0;
-      if (what >= 1) {
-        const n = Math.min(8, Math.floor(what));
+      // the stock: a small row of what the site holds; a town shows its size
+      if (site.kind === 'town') {
+        ctx.font = `700 ${Math.max(10, Math.round(sc * 0.45))}px system-ui, sans-serif`;
+        ctx.lineWidth = 3;
+        ctx.strokeText(`${'●'.repeat(site.size)}`, p.x, y + sc * 0.62);
+        ctx.fillStyle = PAL.gold;
+        ctx.fillText(`${'●'.repeat(site.size)}`, p.x, y + sc * 0.62);
+      } else if (site.stock >= 1) {
+        const n = Math.min(8, Math.floor(site.stock));
         const w = Math.max(4, sc * 0.22);
         const x0 = p.x - (n * (w + 2)) / 2;
-        ctx.fillStyle = site.kind === 'forest' ? PAL.timber : PAL.boards;
+        ctx.fillStyle = site.kind === 'forest' ? PAL.timber : site.kind === 'sawmill' ? PAL.boards : site.kind === 'farm' ? PAL.grain : PAL.flour;
         for (let k = 0; k < n; k++) ctx.fillRect(x0 + k * (w + 2), y + sc * 0.68, w, w * 0.5);
       }
     }
@@ -459,7 +516,7 @@ export class Renderer {
     if (!drag.route) return;
     const r = drag.route;
     const text = `${r.cost}`;
-    const sub = r.bridge.length ? (r.bridge.length === 1 ? 'silta' : `silta ${r.bridge.length}`) : '';
+    const sub = r.bridge.length ? `silta ${r.bridge.length}` : r.cutting.length ? `leikkaus ${r.cutting.length}` : '';
     ctx.font = `800 22px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -482,6 +539,8 @@ export class Renderer {
 
 type CTX = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 const DEBUG = typeof location !== 'undefined' && /[?&]dbg=1/.test(location.search);
+/** the two route options' colours: the cheap one dark, the short one blue; the choice card uses the same */
+export const OPTION_COLOUR = ['rgba(27,26,22,0.85)', 'rgba(30,110,190,0.9)'];
 
 function pine(g: CTX, x: number, y: number, r: number, colour: string): void {
   g.fillStyle = colour;
@@ -537,27 +596,80 @@ function drawSite(g: CTX, site: Site): void {
     for (let k = 0; k < 3; k++) g.fillRect(x + 0.95, y - 0.3 + k * 0.2, 0.7, 0.14);
     g.fillStyle = PAL.timber;
     for (let k = 0; k < 3; k++) g.fillRect(x - 1.7, y - 0.3 + k * 0.2, 0.7, 0.14);
-  } else {
-    // the town: a ring of red and ochre houses and a church with a spire
-    const spots: [number, number][] = [
-      [-1.3, -0.9], [-0.5, -1.2], [0.5, -1.2], [1.3, -0.9], [-1.5, 0.1], [1.5, 0.1], [-1.2, 1.0], [-0.3, 1.2], [0.6, 1.2], [1.4, 1.0],
-    ];
-    spots.forEach(([dx, dy], k) => house(g, x + dx, y + dy, 0.5, 0.42, k % 3 === 1 ? PAL.houseOchre : PAL.houseRed));
-    // the church, beside the station cell
-    g.fillStyle = '#efe6cf';
-    g.fillRect(x + 0.85, y - 0.45, 0.5, 0.9);
+  } else if (site.kind === 'farm') {
+    // striped fields around a red barn
+    for (let k = 0; k < 3; k++) {
+      const fx = x - 1.9 + k * 1.3;
+      g.fillStyle = k % 2 ? PAL.field2 : PAL.field;
+      g.fillRect(fx, y - 1.5, 1.1, 0.9);
+      g.strokeStyle = 'rgba(120,95,30,0.35)';
+      g.lineWidth = 0.03;
+      for (let r = 0; r < 4; r++) {
+        g.beginPath();
+        g.moveTo(fx, y - 1.4 + r * 0.22);
+        g.lineTo(fx + 1.1, y - 1.4 + r * 0.22);
+        g.stroke();
+      }
+    }
+    g.fillStyle = PAL.houseRed;
+    g.fillRect(x - 1.5, y + 0.6, 1.1, 0.6);
     g.fillStyle = PAL.roof;
+    g.fillRect(x - 1.56, y + 0.5, 1.22, 0.22);
+    g.fillStyle = PAL.grain;
+    for (let k = 0; k < 3; k++) g.fillRect(x + 0.95, y - 0.3 + k * 0.2, 0.6, 0.14);
+  } else if (site.kind === 'mill') {
+    // a windmill: a tapered tower and four sails, and sacks beside it
+    g.fillStyle = '#5a4a3a';
     g.beginPath();
-    g.moveTo(x + 0.8, y - 0.45);
-    g.lineTo(x + 1.1, y - 1.1);
-    g.lineTo(x + 1.4, y - 0.45);
+    g.moveTo(x - 1.5, y + 0.2);
+    g.lineTo(x - 0.9, y + 0.2);
+    g.lineTo(x - 1.0, y - 1.0);
+    g.lineTo(x - 1.4, y - 1.0);
     g.closePath();
     g.fill();
+    g.strokeStyle = PAL.sail;
+    g.lineWidth = 0.1;
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + 0.4;
+      g.beginPath();
+      g.moveTo(x - 1.2, y - 1.0);
+      g.lineTo(x - 1.2 + Math.cos(a) * 0.75, y - 1.0 + Math.sin(a) * 0.75);
+      g.stroke();
+    }
+    g.fillStyle = PAL.ink;
+    g.beginPath();
+    g.arc(x - 1.2, y - 1.0, 0.08, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = PAL.flour;
+    for (let k = 0; k < 3; k++) g.fillRect(x + 0.95, y - 0.3 + k * 0.2, 0.55, 0.14);
+    g.fillStyle = PAL.grain;
+    for (let k = 0; k < 2; k++) g.fillRect(x - 1.7, y + 0.5 + k * 0.2, 0.55, 0.14);
+  } else {
+    // the town: houses by size in a ring, a church from size 2, more rings as it grows
+    const spots: [number, number][] = [
+      [-1.3, -0.9], [-0.5, -1.2], [0.5, -1.2], [1.3, -0.9], [-1.5, 0.1],
+      [1.5, 0.1], [-1.2, 1.0], [-0.3, 1.2], [0.6, 1.2], [1.4, 1.0],
+      [-2.2, -0.4], [-2.2, 0.6], [2.2, -0.4], [2.2, 0.6], [-1.6, -1.7],
+      [0, -2.0], [1.6, -1.7], [-1.4, 1.9], [0.2, 2.0], [1.5, 1.9],
+    ];
+    const n = Math.min(spots.length, 3 + site.size * 3);
+    spots.slice(0, n).forEach(([dx, dy], k) => house(g, x + dx, y + dy, 0.5, 0.42, k % 3 === 1 ? PAL.houseOchre : PAL.houseRed));
+    if (site.size >= 2) {
+      g.fillStyle = '#efe6cf';
+      g.fillRect(x + 0.85, y - 0.45, 0.5, 0.9);
+      g.fillStyle = PAL.roof;
+      g.beginPath();
+      g.moveTo(x + 0.8, y - 0.45);
+      g.lineTo(x + 1.1, y - 1.1);
+      g.lineTo(x + 1.4, y - 0.45);
+      g.closePath();
+      g.fill();
+    }
   }
 }
 
-function drawEngine(ctx: CTX, len: number): void {
-  const w = 0.5;
+function drawEngine(ctx: CTX, len: number, strong = false): void {
+  const w = strong ? 0.58 : 0.5;
   // the frame and the wheels
   ctx.fillStyle = PAL.ink;
   ctx.fillRect(-len / 2, -w / 2 - 0.04, len, w + 0.08);
@@ -570,8 +682,12 @@ function drawEngine(ctx: CTX, len: number): void {
   ctx.fillRect(-len / 2 + 0.05, -w / 2 + 0.04, 0.32, w - 0.08);
   ctx.fillStyle = PAL.brass;
   ctx.beginPath();
-  ctx.arc(len / 2 - 0.2, 0, 0.1, 0, Math.PI * 2);
+  ctx.arc(len / 2 - 0.2, 0, strong ? 0.13 : 0.1, 0, Math.PI * 2);
   ctx.fill();
+  if (strong) {
+    ctx.fillStyle = PAL.houseRed;
+    ctx.fillRect(-len / 2 + 0.4, -w / 2 + 0.06, len - 0.75, 0.08);
+  }
   ctx.fillStyle = '#6b6560';
   ctx.beginPath();
   ctx.arc(0, 0, 0.08, 0, Math.PI * 2);
@@ -581,11 +697,22 @@ function drawEngine(ctx: CTX, len: number): void {
   ctx.fillRect(len / 2 - 0.06, -w / 2, 0.06, w);
 }
 
-function drawWagon(ctx: CTX, len: number, kind: 'flat' | 'box', load: 'timber' | 'boards' | null): void {
+function drawWagon(ctx: CTX, len: number, kind: WagonType, load: Good | null): void {
   const w = 0.46;
   ctx.fillStyle = PAL.ink;
   ctx.fillRect(-len / 2, -w / 2 - 0.03, len, w + 0.06);
-  if (kind === 'flat') {
+  if (kind === 'hopper') {
+    ctx.fillStyle = PAL.hopper;
+    ctx.fillRect(-len / 2 + 0.04, -w / 2, len - 0.08, w);
+    ctx.fillStyle = '#4e4a3e';
+    ctx.fillRect(-len / 2 + 0.1, -w / 2 + 0.06, len - 0.2, w - 0.12);
+    if (load) {
+      ctx.fillStyle = PAL.grain;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, len / 2 - 0.12, w / 2 - 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (kind === 'flat') {
     ctx.fillStyle = PAL.flat;
     ctx.fillRect(-len / 2 + 0.04, -w / 2, len - 0.08, w);
     if (load) {
@@ -602,11 +729,18 @@ function drawWagon(ctx: CTX, len: number, kind: 'flat' | 'box', load: 'timber' |
     ctx.fill();
     ctx.fillStyle = '#5a241c';
     ctx.fillRect(-0.03, -w / 2, 0.06, w);
-    if (load) {
+    if (load === 'boards') {
       ctx.fillStyle = PAL.boards;
       ctx.fillRect(-len / 2 + 0.12, -w / 2 + 0.08, len - 0.24, w - 0.16);
       ctx.fillStyle = '#c9b27d';
       for (let k = 0; k < 3; k++) ctx.fillRect(-len / 2 + 0.12, -w / 2 + 0.12 + k * 0.1, len - 0.24, 0.02);
+    } else if (load === 'flour') {
+      ctx.fillStyle = PAL.flour;
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.ellipse(-len / 2 + 0.22 + k * 0.23, 0, 0.1, 0.14, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }

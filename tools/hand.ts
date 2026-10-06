@@ -1,55 +1,63 @@
 /**
- * The hand: a thumb on a phone, not the bot. It has the bot's plan (build
- * the forest line, buy a timber train, the town line when the cash is there,
- * a boards train, a third train, the extra wagon at the year end) but makes
- * every move as a touch: a drag from the station to the site at a thumb's
- * speed with a reaction delay and a little jitter, a tap on the card's
- * buttons. scripts/playthrough.mjs builds this file, injects it into the
+ * The hand: a thumb on a phone, not the bot. It follows the bot's plan for
+ * the scenario (tools/bot.ts) but makes every move as a touch: a drag from
+ * the station to the site at a thumb's speed with a reaction delay and a
+ * little jitter, a tap on the route it wants when the lift offers two, taps
+ * on the cards' buttons for trains, wagons, engines and the full-load
+ * switch. scripts/playthrough.mjs builds this file, injects it into the
  * page and turns what it asks for into touch events. It asks in screen
  * coordinates, so the same hand plays portrait and landscape.
  */
+import { PLANS, type Step } from './bot';
+
+export { PLANS };
+
 export interface HandView {
   cash: number;
-  lines: number;
-  trains: number;
+  /** the lines on the map, each as its two site ids */
+  lines: [string, string][];
+  /** the trains, in order, each with its line */
+  trains: { id: number; line: [string, string] }[];
   yearEnd: boolean;
   result: boolean;
-  card: 'train' | 'yearEnd' | 'result' | 'none';
-  /** the plan's next line's cost with a train on top, or null when nothing is left to build */
-  nextLineCost: number | null;
-  trainCost: number;
+  card: 'line' | 'train' | 'site' | 'choice' | 'yearEnd' | 'result' | 'none';
+  /** which line's card, or which train's, is open */
+  cardLine: [string, string] | null;
+  cardTrain: number | null;
+  /** the next line's cost by mode, when the next step is a line: what the thumb would read off the glass */
+  nextCost: { cheap: number; short: number | null } | null;
+  trainPrice: { hilma: number; jyry: number };
 }
 
 export type HandAction =
   | { kind: 'drag'; from: string; to: string }
-  | { kind: 'buy'; wagons: 'flat' | 'box'; onLine: [string, string] }
+  | { kind: 'route'; mode: 'cheap' | 'short' }
+  | { kind: 'openLine'; line: [string, string] }
+  | { kind: 'buy'; wagons: string; engine: string }
+  | { kind: 'openTrain'; train: number }
+  | { kind: 'act'; what: string }
+  | { kind: 'close' }
   | { kind: 'choose' }
   | { kind: 'wait' }
   | { kind: 'done' };
 
-export const PLAN = {
-  lines: [
-    ['forest', 'sawmill'],
-    ['sawmill', 'town'],
-  ] as [string, string][],
-  trains: [
-    { line: 0, wagons: 'flat' as const },
-    { line: 1, wagons: 'box' as const },
-    { line: 1, wagons: 'box' as const },
-  ],
-};
+const same = (a: [string, string], b: [string, string]) => (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]);
 
 export class Hand {
-  built = 0;
-  bought = 0;
+  done = 0;
   /** seconds the thumb takes to react to what it sees */
   reaction = 0.35;
   /** px per second the thumb moves across the glass */
   speed = 700;
   /** px of wobble on the way */
   jitter = 6;
+  steps: Step[];
 
-  constructor(public skill = 0.6) {
+  constructor(
+    scenario: string,
+    public skill = 0.6,
+  ) {
+    this.steps = PLANS[scenario].steps;
     this.reaction = 0.6 - 0.4 * skill;
     this.speed = 450 + 500 * skill;
     this.jitter = 12 - 10 * skill;
@@ -59,14 +67,53 @@ export class Hand {
   next(v: HandView): HandAction {
     if (v.result) return { kind: 'done' };
     if (v.yearEnd || v.card === 'yearEnd') return { kind: 'choose' };
-    // the card is open after a build: buy the train it offers
-    const t = PLAN.trains[this.bought];
-    if (t && t.line < this.built) {
-      if (v.cash >= v.trainCost) return { kind: 'buy', wagons: t.wagons, onLine: PLAN.lines[t.line] };
-      return { kind: 'wait' };
+    const step = this.steps[this.done];
+    if (!step) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+    if (step.kind === 'line') {
+      if (v.lines.some((l) => same(l, [step.from, step.to]))) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      if (v.card === 'choice') return { kind: 'route', mode: step.mode };
+      if (v.card !== 'none') return { kind: 'close' };
+      const next = this.steps[this.done + 1];
+      const reserve = next?.kind === 'train' ? v.trainPrice[next.engine ?? 'hilma'] : 0;
+      const cost = v.nextCost ? (step.mode === 'short' && v.nextCost.short !== null ? v.nextCost.short : v.nextCost.cheap) : Infinity;
+      if (v.cash < cost + reserve) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      return { kind: 'drag', from: step.from, to: step.to };
     }
-    const l = PLAN.lines[this.built];
-    if (l && v.nextLineCost !== null && v.cash >= v.nextLineCost) return { kind: 'drag', from: l[0], to: l[1] };
+    if (step.kind === 'train') {
+      const have = v.trains.filter((t) => same(t.line, step.line)).length;
+      const want = this.steps.slice(0, this.done + 1).filter((o) => o.kind === 'train' && same(o.line, step.line)).length;
+      if (have >= want) {
+        this.done++;
+        if (step.fullLoad) {
+          const t = v.trains.filter((o) => same(o.line, step.line)).pop()!;
+          this.steps.splice(this.done, 0, { kind: 'fullload', train: t.id } as unknown as Step);
+        }
+        return { kind: 'wait' };
+      }
+      if (v.cash < v.trainPrice[step.engine ?? 'hilma']) return v.card === 'line' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.card === 'line' && v.cardLine && same(v.cardLine, step.line)) return { kind: 'buy', wagons: step.wagons, engine: step.engine ?? 'hilma' };
+      if (v.card !== 'none') return { kind: 'close' };
+      return { kind: 'openLine', line: step.line };
+    }
+    if (step.kind === 'wagon' || step.kind === 'engine' || (step as { kind: string }).kind === 'fullload') {
+      const idx = (step as { train: number }).train;
+      const id = step.kind === 'wagon' || step.kind === 'engine' ? v.trains[idx]?.id : idx;
+      if (id === undefined) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      const need = step.kind === 'wagon' ? 10 : step.kind === 'engine' ? 65 : 0;
+      if (v.cash < need) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.card === 'train' && v.cardTrain === id) {
+        this.done++;
+        return { kind: 'act', what: step.kind === 'wagon' ? 'wagon' : step.kind === 'engine' ? `engine-${step.engine}` : 'fullload' };
+      }
+      if (v.card !== 'none') return { kind: 'close' };
+      return { kind: 'openTrain', train: id };
+    }
     return { kind: 'wait' };
   }
 

@@ -4,8 +4,8 @@
 // thumb moves; this script finds the stations on the screen through the game's camera, turns
 // the hand's drag into touch events, taps the cards' buttons, and keeps the tally.
 //
-// `make playthrough` (ORIENT=portrait or landscape for one; SPEED=0.5 on a loaded machine;
-// PORT= to pin the preview port). Needs `make shots-setup`. Writes shots/playthrough/: a .webm
+// `make playthrough` (SCENARIO=harju by default, sawmill for the tutorial; ORIENT=portrait or
+// landscape for one; SPEED=0.5 on a loaded machine; PORT= to pin the preview port). Needs `make shots-setup`. Writes shots/playthrough/: a .webm
 // per run, the result sheet, frame sheets (a frame a second, six by six), summary.md and
 // summary.json. Exits non-zero when the slice is not fun by its rules: a run not won, the first
 // paid delivery later than 90 s, a page error.
@@ -20,12 +20,13 @@ const freePort = () => new Promise((resolve) => { const srv = createServer(); sr
 const port = Number(process.env.PORT) || (await freePort());
 const SPEED = Number(process.env.SPEED || 1);
 const ORIENTS = process.env.ORIENT ? [process.env.ORIENT] : ['portrait', 'landscape'];
+const SCENARIO = process.env.SCENARIO || 'harju';
 const OUT = 'shots/playthrough';
 
 // a production build, served still: the dev server reloads the game when a file is saved
 execFileSync('npx', ['vite', 'build', '--logLevel', 'error'], { stdio: 'inherit' });
 execFileSync('npx', ['vite', 'build', '--ssr', 'tools/hand.ts', '--outDir', '.hand-check', '--logLevel', 'error'], { stdio: 'inherit' });
-const HAND_JS = readFileSync('.hand-check/hand.js', 'utf8').replace(/export\s*\{[^}]*\};?/g, '') + '\nwindow.__Hand = Hand; window.__PLAN = PLAN;';
+const HAND_JS = readFileSync('.hand-check/hand.js', 'utf8').replace(/export\s*\{[^}]*\};?/g, '') + '\nwindow.__Hand = Hand; window.__PLANS = PLANS;';
 
 mkdirSync(OUT, { recursive: true });
 for (const f of readdirSync(OUT)) rmSync(join(OUT, f), { recursive: true, force: true });
@@ -44,28 +45,60 @@ const check = (ok, what) => {
 };
 const summary = [];
 
-/** the game as the thumb sees it: the sim's numbers and where the sites are on the glass */
+/** the game as the thumb sees it: the sim's numbers and where things are on the glass */
 const look = (page) =>
   page.evaluate(() => {
     const s = window.__sim;
     const r = window.__renderer;
+    const hand = window.__hand;
     if (!s || !r) return null;
     const m = r.cam.m;
     const toS = (x, y) => ({ x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] });
+    const cellS = (c) => toS((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5);
     const sites = {};
-    for (const site of s.sites) sites[site.id] = toS(site.cx + 0.5, site.cy + 0.5);
-    const card = document.querySelector('.card.result') ? 'result' : document.querySelector('.card.ledger') ? 'yearEnd' : document.querySelector('.card.sheet') ? 'train' : 'none';
-    // what the next line would cost, through the sim's own plan, the way the cost shows on the line
-    const plan = window.__plan;
-    const cell = (id) => { const o = s.sites.find((x) => x.id === id); return o.cy * s.w + o.cx; };
-    const PLAN = window.__PLAN;
-    const nextLine = PLAN.lines[s.lines.length];
-    const route = nextLine && plan ? plan(cell(nextLine[0]), cell(nextLine[1])) : null;
-    // the middle cell of a line, on the glass, to tap it
-    const lineMid = s.lines.map((l) => { const c = l.path[Math.floor(l.path.length / 2)]; return toS((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5); });
+    for (const site of s.sites) sites[site.id] = cellS(site.cy * s.w + site.cx);
+    const siteOf = (cell) => s.sites.find((o) => o.cy * s.w + o.cx === cell)?.id;
+    const pair = (l) => [siteOf(l.path[0]), siteOf(l.path[l.path.length - 1])];
+    const lines = s.lines.map(pair);
+    const trains = s.trains.map((t) => {
+      const l = s.lines.find((o) => o.id === t.lineId);
+      // the last wagon's middle on the glass, to tap it: the engine stands on the station cell, where a tap is the site's
+      const L = 1.1 + 0.9 * t.nWagons;
+      const d = t.s - t.dir * (L - 0.45);
+      const n = l.path.length;
+      let k = 1;
+      while (k < n - 1 && l.dist[k] < d) k++;
+      const a = l.path[k - 1], b = l.path[k];
+      const seg = l.dist[k] - l.dist[k - 1];
+      const f = seg > 0 ? Math.max(0, Math.min(1, (d - l.dist[k - 1]) / seg)) : 0;
+      const ax = (a % s.w) + 0.5, ay = Math.floor(a / s.w) + 0.5, bx = (b % s.w) + 0.5, by = Math.floor(b / s.w) + 0.5;
+      return { id: t.id, line: pair(l), at: toS(ax + (bx - ax) * f, ay + (by - ay) * f), stopped: t.state === 'stop' };
+    });
+    const el = (q) => document.querySelector(q);
+    const card = el('.card.result') ? 'result' : el('.card.ledger') ? 'yearEnd' : el('.choice-card') ? 'choice' : el('[data-act="wagon"]') ? 'train' : el('[data-track="card-buy-train"]') ? 'line' : el('.want, .card.sheet') ? 'site' : 'none';
+    const head = el('.card.sheet h2')?.textContent ?? '';
+    const nameOf = (id) => s.sites.find((o) => o.id === id)?.name.fi;
+    const cardLine = card === 'line' ? lines.find((l) => head.includes(nameOf(l[0])) && head.includes(nameOf(l[1]))) ?? null : null;
+    let cardTrain = null;
+    if (card === 'train') {
+      const earned = (el('.train-row.still .row-text')?.textContent ?? '').match(/(\d+)\s*$/)?.[1];
+      const lineName = el('.line-name')?.textContent ?? '';
+      const cands = s.trains.filter((t) => { const p = pair(s.lines.find((o) => o.id === t.lineId)); return lineName.includes(nameOf(p[0])) && lineName.includes(nameOf(p[1])); });
+      cardTrain = (cands.find((t) => String(Math.round(t.earned)) === earned) ?? cands[0])?.id ?? null;
+    }
+    // the next line's cost by mode, read the way the cost shows on the line
+    let nextCost = null;
+    const step = hand && hand.steps[hand.done];
+    if (step && step.kind === 'line' && window.__plan) {
+      const cell = (id) => { const o = s.sites.find((x) => x.id === id); return o.cy * s.w + o.cx; };
+      const opts = window.__plan(cell(step.from), cell(step.to));
+      if (opts.length) nextCost = { cheap: opts[0].cost, short: opts[1] ? opts[1].cost : null };
+    }
+    // the middle of each line on the glass, two points to try, to tap the track
+    const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
     return {
-      cash: s.cash, lines: s.lines.length, trains: s.trains.length, yearEnd: !!s.yearEnd, result: s.result, card, sites, lineMid,
-      nextLineCost: route ? route.cost + 70 : null, trainCost: 70, time: s.time, year: s.year, goal: s.goalCount, firstPayAt: s.firstPayAt,
+      cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, nextCost, trainPrice: { hilma: 70, jyry: 110 }, lineTaps,
+      time: s.time, year: s.year, firstPayAt: s.firstPayAt, towns: s.sites.filter((x) => x.kind === 'town').map((x) => x.size), bridges: s.lines.reduce((a, l) => a + l.path.filter((c) => s.water[c]).length, 0), cuttings: s.lines.reduce((a, l) => a + l.path.filter((c) => s.ridge[c]).length, 0),
     };
   });
 
@@ -75,7 +108,7 @@ async function run(orient) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  const name = `sawmill-${orient}`;
+  const name = `${SCENARIO}-${orient}`;
   const cdp = await context.newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
   const tap = async (x, y) => {
@@ -83,34 +116,52 @@ async function run(orient) {
     await page.waitForTimeout(60);
     await touch('touchEnd', []);
   };
+  // a button that is gone by the time the thumb reaches it is a missed tap, not a crash: the
+  // hand looks again next round
   const tapButton = async (locator) => {
-    const b = await locator.boundingBox();
-    if (!b) throw new Error('button not on screen');
+    let b = null;
+    try {
+      b = await locator.first().boundingBox({ timeout: 3000 });
+    } catch {
+      b = null;
+    }
+    if (!b) return false;
     await tap(b.x + b.width / 2, b.y + b.height / 2);
+    return true;
   };
-  const stats = { drags: 0, buys: 0, choices: 0, taps: 0, error: null, won: false, year: 0, cash: 0, stars: 0, firstPayAt: null, seconds: 0 };
+  const stats = { drags: 0, buys: 0, choices: 0, taps: 0, routes: { cheap: 0, short: 0 }, acts: 0, error: null, won: false, year: 0, cash: 0, stars: 0, firstPayAt: null, seconds: 0 };
   const t0 = Date.now();
+  const same = (a, b) => (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]);
   try {
     await page.goto(`http://localhost:${port}/raide/?lang=en${SPEED !== 1 ? `&speed=${SPEED}` : ''}`);
     await page.addScriptTag({ content: HAND_JS });
-    await page.evaluate(() => { window.__hand = new window.__Hand(0.6); });
+    await page.evaluate((sc) => { window.__hand = new window.__Hand(sc, 0.6); }, SCENARIO);
     await page.waitForTimeout(800);
-    await tapButton(page.locator('[data-track="title-play"]').first());
+    await tapButton(page.locator(`[data-scenario="${SCENARIO}"]`));
     await page.waitForFunction(() => window.__sim && window.__renderer, null, { timeout: 10000 });
     await page.waitForTimeout(600);
-    let lastKind = '';
-    for (let i = 0; i < 2000; i++) {
+    const react = async () => page.waitForTimeout(Math.round(1000 * (await page.evaluate(() => window.__hand.reaction))));
+    let idle = 0;
+    let stuck = 0;
+    let mark = '';
+    for (let i = 0; i < 6000; i++) {
       const v = await look(page);
       if (!v) throw new Error('the game is gone');
       const act = await page.evaluate((view) => window.__hand.next(view), v);
-      if (act.kind !== lastKind) lastKind = act.kind;
       if (act.kind === 'done') break;
+      // the plan must move: a hundred rounds of taps with no new line, train or step is a loop
+      const now = `${v.lines.length}/${v.trains.length}/${await page.evaluate(() => window.__hand.done)}`;
+      if (now === mark && act.kind !== 'wait') {
+        if (++stuck > 100) throw new Error(`stuck at ${now} doing ${act.kind}`);
+      } else stuck = 0;
+      mark = now;
       if (act.kind === 'wait') {
         await page.waitForTimeout(250);
+        if (++idle > 2400 / SPEED) throw new Error('the hand waited ten minutes with nothing to do');
         continue;
       }
-      // the reaction: the thumb sees, then moves
-      await page.waitForTimeout(Math.round(1000 * (await page.evaluate(() => window.__hand.reaction))));
+      idle = 0;
+      await react();
       if (act.kind === 'drag') {
         const a = v.sites[act.from];
         const b = v.sites[act.to];
@@ -127,41 +178,69 @@ async function run(orient) {
         stats.drags++;
         await page.waitForTimeout(300);
         const after = await look(page);
-        if (after.lines > v.lines) {
-          await page.evaluate(() => { window.__hand.built++; });
-        } else {
-          stats.error = `drag ${act.from} -> ${act.to} built nothing`;
+        if (!(after.lines.length > v.lines.length || after.card === 'choice')) {
+          stats.error = `drag ${act.from} -> ${act.to} built nothing and offered nothing`;
           break;
         }
-      } else if (act.kind === 'buy') {
-        // the card after a build, or a tap on the line to open it
-        if (v.card !== 'train') {
-          const idx = v.lines - 1;
-          await tap(v.lineMid[idx].x, v.lineMid[idx].y);
+      } else if (act.kind === 'route') {
+        const btn = page.locator(`[data-route="${act.mode}"]`);
+        if (!(await btn.count())) { stats.error = `no ${act.mode} route offered`; break; }
+        await tapButton(btn);
+        stats.routes[act.mode]++;
+        await page.waitForTimeout(300);
+      } else if (act.kind === 'openLine') {
+        const idx = v.lines.findIndex((l) => same(l, act.line));
+        const [p1, p2] = v.lineTaps[idx];
+        await tap(p1.x, p1.y);
+        stats.taps++;
+        await page.waitForTimeout(300);
+        let after = await look(page);
+        if (after.card !== 'line') {
+          if (after.card !== 'none') { await tapButton(page.locator('.round.close')); await page.waitForTimeout(200); }
+          await tap(p2.x, p2.y);
           stats.taps++;
-          await page.locator('.card.sheet').waitFor({ timeout: 3000 });
-          await page.waitForTimeout(250);
+          await page.waitForTimeout(300);
+          after = await look(page);
         }
-        const want = page.locator(`.wagon`).filter({ hasText: act.wagons === 'flat' ? /Flat/ : /Box/ });
-        const on = await want.evaluate((el) => el.classList.contains('on'));
-        if (!on) {
-          await tapButton(want);
-          await page.waitForTimeout(200);
+      } else if (act.kind === 'buy') {
+        const w = page.locator(`[data-wagon="${act.wagons}"]`);
+        if (await w.count()) {
+          if (!(await w.evaluate((el) => el.classList.contains('on')))) { await tapButton(w); await page.waitForTimeout(150); }
+        }
+        const e = page.locator(`[data-engine="${act.engine}"]`);
+        if (await e.count()) {
+          if (!(await e.evaluate((el) => el.classList.contains('on')))) { await tapButton(e); await page.waitForTimeout(150); }
         }
         await tapButton(page.locator('[data-track="card-buy-train"]'));
         stats.buys++;
         await page.waitForTimeout(300);
         const after = await look(page);
-        if (after.trains > v.trains) await page.evaluate(() => { window.__hand.bought++; });
-        else {
-          stats.error = `buy on ${act.onLine.join('-')} bought nothing`;
-          break;
-        }
+        if (after.trains.length <= v.trains.length) { stats.error = `buy ${act.wagons} ${act.engine} bought nothing`; break; }
+      } else if (act.kind === 'openTrain') {
+        const t = v.trains.find((o) => o.id === act.train);
+        await tap(t.at.x, t.at.y);
+        stats.taps++;
+        await page.waitForTimeout(300);
+        const after = await look(page);
+        if (after.card !== 'train' && after.card !== 'none') { await tapButton(page.locator('.round.close')); await page.waitForTimeout(200); }
+      } else if (act.kind === 'act') {
+        const b = page.locator(`[data-act="${act.what}"]`);
+        if (!(await b.count())) { stats.error = `no ${act.what} on the train card`; break; }
+        await tapButton(b);
+        stats.acts++;
+        await page.waitForTimeout(250);
+        await tapButton(page.locator('.round.close'));
+        await page.waitForTimeout(200);
+      } else if (act.kind === 'close') {
+        const c = page.locator('.round.close');
+        if (await c.count()) await tapButton(c);
+        await page.waitForTimeout(200);
       } else if (act.kind === 'choose') {
-        await page.locator('.card.ledger').waitFor({ timeout: 5000 });
+        await page.locator('.card.ledger').waitFor({ timeout: 5000 }).catch(() => undefined);
         await page.waitForTimeout(700);
-        await tapButton(page.locator('.btn.choice:not([disabled])').first());
-        stats.choices++;
+        if (await tapButton(page.locator('.btn.choice:not([disabled])'))) stats.choices++;
+        await page.waitForTimeout(400);
+        await tapButton(page.locator('.btn.choice.continue'));
         await page.waitForTimeout(400);
       }
     }
@@ -169,7 +248,7 @@ async function run(orient) {
     await page.waitForTimeout(900);
     await page.screenshot({ path: join(OUT, `${name}-result.png`) });
     const v = await look(page);
-    Object.assign(stats, { won: v.result.won, year: v.result.year, cash: v.result.cash, stars: v.result.stars, firstPayAt: v.firstPayAt, simSeconds: v.time });
+    Object.assign(stats, { won: v.result.won, year: v.result.year, cash: v.result.cash, stars: v.result.stars, firstPayAt: v.firstPayAt, simSeconds: v.time, towns: v.towns, bridges: v.bridges, cuttings: v.cuttings, lines: v.lines.length, trains: v.trains.length });
   } catch (e) {
     stats.error = stats.error ?? String(e).split('\n')[0];
     await page.screenshot({ path: join(OUT, `${name}-error.png`) }).catch(() => undefined);
@@ -186,7 +265,7 @@ try {
   for (const o of ORIENTS) {
     const r = await run(o);
     summary.push(r);
-    console.log(`${r.name}: ${r.error ? `ERROR ${r.error}` : `${r.won ? 'won' : 'lost'} ${r.year} cash ${r.cash} stars ${r.stars} first pay ${r.firstPayAt?.toFixed(0)} s`} drags ${r.drags} buys ${r.buys} choices ${r.choices} in ${r.seconds.toFixed(0)} s real, ${r.simSeconds?.toFixed(0) ?? '-'} s sim`);
+    console.log(`${r.name}: ${r.error ? `ERROR ${r.error}` : `${r.won ? 'won' : 'lost'} ${r.year} cash ${r.cash} stars ${r.stars} first pay ${r.firstPayAt?.toFixed(0)} s towns ${r.towns?.join('/')} lines ${r.lines} trains ${r.trains} bridge cells ${r.bridges} cutting cells ${r.cuttings}`} drags ${r.drags} routes cheap ${r.routes.cheap} short ${r.routes.short} buys ${r.buys} acts ${r.acts} choices ${r.choices} in ${r.seconds.toFixed(0)} s real, ${r.simSeconds?.toFixed(0) ?? '-'} s sim`);
   }
 } finally {
   await browser.close();
@@ -227,12 +306,17 @@ if (ffmpeg && existsSync(ffmpeg)) {
 }
 
 writeFileSync(join(OUT, 'summary.json'), JSON.stringify(summary, null, 2));
-writeFileSync(join(OUT, 'summary.md'), `| run | result | year | cash | stars | first pay | drags | buys | choices | real s |\n|---|---|---|---|---|---|---|---|---|---|\n${summary.map((r) => `| ${r.name} | ${r.error ? `error: ${r.error}` : r.won ? 'won' : 'lost'} | ${r.year} | ${r.cash} | ${r.stars} | ${r.firstPayAt?.toFixed(0) ?? ''} s | ${r.drags} | ${r.buys} | ${r.choices} | ${r.seconds.toFixed(0)} |`).join('\n')}\n`);
+writeFileSync(join(OUT, 'summary.md'), `| run | result | year | cash | stars | first pay | drags | short routes | buys | acts | choices | real s |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n${summary.map((r) => `| ${r.name} | ${r.error ? `error: ${r.error}` : r.won ? 'won' : 'lost'} | ${r.year} | ${r.cash} | ${r.stars} | ${r.firstPayAt?.toFixed(0) ?? ''} s | ${r.drags} | ${r.routes.short} | ${r.buys} | ${r.acts} | ${r.choices} | ${r.seconds.toFixed(0)} |`).join('\n')}\n`);
 
 // the rules of a fun slice
-check(summary.every((r) => !r.error && r.won), 'the thumb wins the sawmill scenario in both orientations');
+check(summary.every((r) => !r.error && r.won), `the thumb wins ${SCENARIO} in both orientations`);
 check(summary.every((r) => !r.errors?.length), `no page errors (${summary.flatMap((r) => r.errors ?? []).slice(0, 3).join('; ') || 'none'})`);
 check(summary.every((r) => r.firstPayAt !== null && r.firstPayAt < 90), `the first paid delivery lands inside 90 s (${summary.map((r) => r.firstPayAt?.toFixed(0) ?? '-').join(' ')})`);
-check(summary.every((r) => r.drags === 2 && r.buys === 3), `two drags and three trains do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
+if (SCENARIO === 'sawmill') check(summary.every((r) => r.drags === 2 && r.buys === 3), `two drags and three trains do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
+if (SCENARIO === 'harju') {
+  check(summary.every((r) => r.lines === 7 && r.trains === 6), `the thumb builds the whole network: seven lines, six trains (${summary.map((r) => `${r.lines}/${r.trains}`).join(' ')})`);
+  check(summary.every((r) => r.routes.short >= 3 && r.bridges >= 5 && r.cuttings >= 2), `the thumb picks the short route where the plan says, with a bridge and a cutting built (${summary.map((r) => `${r.routes.short} short, ${r.bridges} bridge, ${r.cuttings} cutting`).join('; ')})`);
+  check(summary.every((r) => r.acts >= 4), `the thumb works the train cards: wagons and the full-load switch (${summary.map((r) => r.acts).join(' ')})`);
+}
 console.log(failed ? 'playthrough failed' : 'playthrough ok');
 process.exitCode = failed ? 1 : 0;

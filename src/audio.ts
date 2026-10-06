@@ -69,6 +69,9 @@ export function play(name: string): void {
       tone(1760, 0.5, 'sine', 0.08, -20);
       tone(2217, 0.6, 'sine', 0.04, -20, 0.12);
       break;
+    case 'grow':
+      [659, 784, 988].forEach((f, i) => tone(f, 0.3, 'sine', 0.08, 0, i * 0.12));
+      break;
     case 'win':
       [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.25, 'square', 0.07, 0, i * 0.14));
       break;

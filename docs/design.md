@@ -455,8 +455,31 @@ Vesa answered the open questions on 2026-10-06:
   until that call is made.
 - **The name is open.** Raide is the working name until Vesa decides.
 
+## Second slice: Harju
+
+Vesa played the sawmill slice on 2026-10-06: "So. The game is 2 drags?" It
+had no decision in it, so it could not show whether the game is fun. The
+second scenario, Harju, is built around the choices the research found:
+
+- Several industries and two towns, so the first choice is what to connect
+  first with cash for two lines and two trains.
+- Two chains, each with a refining step: timber, sawmill, boards; grain,
+  mill, flour. Towns take both.
+- Terrain with a cost trade-off: a drag that meets the lake or the ridge
+  ends in two buttons, the cheap way round or the dear bridge or cutting,
+  with the cost and the length on each. A ridge cuts a train's speed by the
+  engine's climb and the load.
+- Two engines: the light fast one that crawls on a ridge, the slow strong
+  one that pulls over it.
+- Demand that falls as a town fills and recovers with the months, faster in
+  a bigger town, so a route that paid well stops paying and the trains go
+  elsewhere.
+- Trains a tap opens: a wagon more, the engine swap, wait for a full load,
+  sell.
+- A goal that needs a network: both towns at size 3, and a town grows only
+  when a year brings enough of every good on the map.
+
 ## Next step
 
-The first playable slice is built in this repo, sim and bot before the
-renderer, and played on a phone. The rest of this file is built only if the
-slice is fun.
+Harju is played on a phone. The rest of this file is built only if its
+choices are fun to make with a thumb.
