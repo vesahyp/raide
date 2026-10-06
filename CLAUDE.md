@@ -84,6 +84,8 @@ scripts/
 infra/                Terraform: the tracking pixel host (S3 + CloudFront + logs), see TRACKING.md
 docs/
   design.md           the research and the design
+  mockups/            the static screens the next build is judged against (README.md has the
+                        notes; `make mockups` renders mockups.html to png/ with Playwright)
   adr/                architecture decisions, one per file
 ```
 

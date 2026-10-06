@@ -15,6 +15,7 @@
 #   make playthrough    # the scenario by thumb on an emulated iPhone, portrait and landscape,
 #                       #   a video each (ORIENT=portrait for one; SPEED=0.5 on a loaded machine)
 #   make pwa-check      # manifest, icons, service worker, offline (URL ?= the live site)
+#   make mockups        # render docs/mockups/mockups.html to PNG, iPhone portrait and landscape
 #   make plan           # terraform plan for the pixel infra (no changes)
 #   make apply          # terraform apply (creates AWS resources), then make env
 #   make outputs        # show terraform outputs (pixel_url etc.)
@@ -27,7 +28,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots icon touch-check rotate-check playthrough pwa-check plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots icon touch-check rotate-check playthrough pwa-check mockups plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -72,6 +73,10 @@ playthrough:
 URL ?= https://vesahyp.github.io/raide/
 pwa-check:
 	node scripts/pwa-check.mjs $(URL)
+
+# the static design mockups (docs/mockups/README.md), one PNG per screen and orientation
+mockups:
+	node docs/mockups/render.mjs
 
 plan:
 	$(TF) init -input=false

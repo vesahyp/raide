@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raide mockups</title>
+<!--
+  Static mockups for the replan (2026-10-06). One page, one screen at a time:
+  ?screen=map|route|train|site|ledger|network and ?orient=portrait|landscape.
+  The terrain is a height field drawn on a canvas (colour bands, contour lines
+  every 10 m, hill shading from the north west). Everything else is SVG and
+  HTML in screen space. Nothing here is game code; docs/mockups/render.mjs
+  shoots it with Playwright.
+-->
+<style>
+  :root {
+    --pine: #1b2a1e; --pine-2: #243a29; --pine-3: #2f4a35;
+    --brass: #d8a63a; --brass-dim: #9c7a2c; --bone: #efe6cf; --bone-dim: rgba(239,230,207,0.65);
+    --paper: #f1e7cc; --ink: #2a2418; --red: #b5382c; --gold: #ffd870;
+    --flat: #3d7a3f; --grade2: #d79a2b; --grade4: #c0392b;
+    --f: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--pine); color: var(--bone); font-family: var(--f); overflow: hidden; }
+  body { position: fixed; inset: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  #map { position: absolute; inset: 0; }
+  #terrain, #svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+  /* HUD: a bar on top in portrait, a column on the left in landscape */
+  .hud { position: absolute; left: 8px; right: 8px; top: 8px; height: 48px; display: flex; gap: 8px; align-items: center; }
+  .chip { height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 12px; background: rgba(27,42,30,0.94); border: 2px solid var(--brass-dim); font-weight: 800; font-size: 19px; box-shadow: 0 2px 0 #0e1710; white-space: nowrap; }
+  .chip .months { display: flex; gap: 2px; }
+  .chip .months i { width: 4px; height: 14px; border-radius: 1px; background: rgba(239,230,207,0.25); }
+  .chip .months i.on { background: var(--brass); }
+  .chip.goal { flex: 1; min-width: 0; gap: 6px; font-size: 16px; overflow: hidden; }
+  .chip.goal .lbl, .chip.goal .num { flex: none; }
+  .chip.goal .bar { flex: 1 1 0; min-width: 0; }
+  .chip.cash { flex: none; }
+  .chip.goal .lbl { font-size: 12px; font-weight: 600; color: var(--bone-dim); }
+  .chip.goal .bar { flex: 1; height: 10px; border-radius: 5px; background: rgba(239,230,207,0.2); overflow: hidden; min-width: 20px; }
+  .chip.goal .bar i { display: block; height: 100%; background: var(--gold); }
+  .chip.cash { color: var(--gold); }
+  .round { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--brass-dim); background: var(--pine-2); color: var(--bone); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; box-shadow: 0 2px 0 #0e1710; flex: none; }
+  @media (max-width: 480px) { body:not(.landscape) .chip.goal .lbl { display: none; } }
+  body.landscape .hud { left: 8px; top: 8px; bottom: 8px; right: auto; width: 96px; height: auto; flex-direction: column; align-items: stretch; }
+  body.landscape .chip { height: auto; min-height: 48px; flex-direction: column; gap: 4px; padding: 8px 6px; font-size: 17px; }
+  body.landscape .chip.goal { flex: none; }
+  body.landscape .chip.goal .bar { width: 100%; flex: none; }
+  body.landscape .round { align-self: center; }
+  /* cards */
+  .card { position: absolute; left: 8px; right: 8px; bottom: 0; max-width: 480px; margin: 0 auto; background: var(--pine-2); border: 2px solid var(--brass-dim); border-bottom: 0; border-radius: 18px 18px 0 0; padding: 14px 16px 18px; box-shadow: 0 -4px 24px rgba(0,0,0,0.4); }
+  body.landscape .card { left: auto; right: 8px; bottom: 0; width: min(400px, 48%); margin: 0; }
+  .card h2 { margin: 0; font-size: 21px; font-weight: 800; }
+  .card .sub { color: var(--bone-dim); font-size: 14px; margin: 2px 0 10px; }
+  .card .x { position: absolute; right: 12px; top: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 16px; }
+  .row .k { color: var(--bone-dim); font-size: 13px; width: 64px; flex: none; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 5px; border-radius: 10px; background: rgba(239,230,207,0.1); font-weight: 800; font-size: 16px; }
+  .pill svg { width: 20px; height: 20px; }
+  .pill small { font-weight: 600; font-size: 12px; color: var(--bone-dim); }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .btn { min-height: 54px; border-radius: 12px; border: 2px solid var(--brass-dim); background: var(--pine-3); color: var(--bone); font-weight: 800; font-size: 17px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; box-shadow: 0 3px 0 #0e1710; padding: 6px; text-align: center; }
+  .btn small { font-weight: 600; font-size: 12px; color: var(--bone-dim); margin-top: 2px; }
+  .btn.primary { background: var(--brass); border-color: #7a5a14; color: #2a2010; box-shadow: 0 3px 0 #7a5a14; }
+  .btn.primary small { color: rgba(42,32,16,0.75); }
+  .btn.danger { color: #e8a79f; border-color: rgba(181,56,44,0.7); }
+  .btn.off { opacity: 0.45; }
+  /* the route choice: two plates over the map, under the thumb */
+  .choice { position: absolute; left: 8px; right: 8px; bottom: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 480px; margin: 0 auto; }
+  body.landscape .choice { left: auto; right: 12px; width: min(400px, 48%); margin: 0; }
+  .choice .btn { min-height: 76px; font-size: 18px; }
+  .choice .btn b { font-size: 22px; }
+  .choice .btn .grade { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }
+  /* the ledger */
+  .ledger { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(380px, calc(100% - 24px)); background: var(--paper); color: var(--ink); border: 2px solid #b9a06a; border-radius: 18px; padding: 14px 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+  body.landscape .ledger { width: min(700px, calc(100% - 130px)); left: calc(50% + 52px); }
+  .ledger h2 { margin: 0 0 2px; font-size: 28px; font-weight: 900; }
+  .ledger .sub { color: rgba(42,36,24,0.7); font-size: 14px; margin-bottom: 8px; }
+  .ledger table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  .ledger td { padding: 4px 2px; border-bottom: 1px dashed rgba(42,36,24,0.3); }
+  .ledger td.num { text-align: right; font-weight: 700; }
+  .ledger tr.total td { font-weight: 900; border-bottom: 2px solid var(--ink); }
+  .ledger .grew { margin: 6px 0; font-weight: 700; color: #2f6b3a; font-size: 15px; }
+  .ledger .btns .btn { background: #e3d6b4; border-color: #b9a06a; color: var(--ink); box-shadow: 0 3px 0 #b9a06a; }
+  .ledger .btns .btn small { color: rgba(42,36,24,0.7); }
+  .ledger .btns .btn.primary { background: var(--brass); }
+  body.landscape .ledger-body { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  /* the mockup note, outside the phone frame in spirit: a thin strip at the very bottom */
+  .note { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 10px; background: rgba(0,0,0,0.7); color: #fff; font-size: 11px; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<div id="map">
+  <canvas id="terrain"></canvas>
+  <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+<div id="ui"></div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- goods glyphs, 24 by 24 -->
+    <symbol id="g-timber" viewBox="0 0 24 24">
+      <rect x="2" y="6" width="18" height="5" rx="2.5" fill="#8a5a2b"/><circle cx="20" cy="8.5" r="2.5" fill="#d9b27a"/><circle cx="20" cy="8.5" r="1" fill="#8a5a2b"/>
+      <rect x="4" y="13" width="18" height="5" rx="2.5" fill="#9a6633"/><circle cx="4" cy="15.5" r="2.5" fill="#d9b27a"/><circle cx="4" cy="15.5" r="1" fill="#9a6633"/>
+    </symbol>
+    <symbol id="g-boards" viewBox="0 0 24 24">
+      <rect x="2" y="5" width="20" height="4" rx="1" fill="#e8d2a0" stroke="#8a6a3a" stroke-width="1"/>
+      <rect x="2" y="10" width="20" height="4" rx="1" fill="#e2c892" stroke="#8a6a3a" stroke-width="1"/>
+      <rect x="2" y="15" width="20" height="4" rx="1" fill="#e8d2a0" stroke="#8a6a3a" stroke-width="1"/>
+    </symbol>
+    <symbol id="g-grain" viewBox="0 0 24 24">
+      <path d="M12 22 V9" stroke="#b08a2a" stroke-width="2" fill="none"/>
+      <g fill="#e9c547" stroke="#a7811f" stroke-width="0.8">
+        <ellipse cx="12" cy="5" rx="2.4" ry="3.2"/><ellipse cx="8.5" cy="9" rx="2.4" ry="3.2" transform="rotate(-35 8.5 9)"/><ellipse cx="15.5" cy="9" rx="2.4" ry="3.2" transform="rotate(35 15.5 9)"/>
+        <ellipse cx="8.5" cy="14" rx="2.4" ry="3.2" transform="rotate(-35 8.5 14)"/><ellipse cx="15.5" cy="14" rx="2.4" ry="3.2" transform="rotate(35 15.5 14)"/>
+      </g>
+    </symbol>
+    <symbol id="g-flour" viewBox="0 0 24 24">
+      <path d="M6 9 Q5 21 12 21 Q19 21 18 9 Z" fill="#f4f0e4" stroke="#8a8070" stroke-width="1"/>
+      <path d="M7 9 L17 9 L15 5 L9 5 Z" fill="#e3dcc8" stroke="#8a8070" stroke-width="1"/>
+      <path d="M8 8 L16 8" stroke="#b5382c" stroke-width="2"/>
+    </symbol>
+    <symbol id="g-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#ffd870" stroke="#9c7a2c" stroke-width="2"/></symbol>
+    <symbol id="g-house" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></symbol>
+  </defs>
+</svg>
+
+<script>
+'use strict';
+// ------------------------------------------------------------------ the scene
+const Q = new URLSearchParams(location.search);
+const SCREEN = Q.get('screen') || 'map';
+const LANDSCAPE = (Q.get('orient') || (innerWidth > innerHeight ? 'landscape' : 'portrait')) === 'landscape';
+if (LANDSCAPE) document.body.classList.add('landscape');
+
+const W = 16, H = 24;            // cells; a cell is one kilometre
+const KM = 1;                    // km per cell
+// the lake: an ellipse in the middle, the lowest ground
+const LAKE = { x: 8.9, y: 14.2, rx: 5.0, ry: 3.2 };
+const lakeR = (x, y) => { const a = Math.atan2((y - LAKE.y) / LAKE.ry, (x - LAKE.x) / LAKE.rx); const w = 1 + 0.1 * Math.sin(a * 3 + 0.8) + 0.07 * Math.cos(a * 5 - 0.3) + 0.05 * Math.sin(a * 7); return Math.sqrt(((x - LAKE.x) / LAKE.rx) ** 2 + ((y - LAKE.y) / LAKE.ry) ** 2) / w; };
+const inLake = (x, y) => lakeR(x, y) < 1;
+const LAKE_LEVEL = 96;
+
+/** height in metres at a map point: a gentle rise to the north, a ridge across the top right,
+ *  a hill in the south west, a basin around the lake, a little noise */
+function height(x, y) {
+  let h = 100 + (24 - y) * 1.1;
+  const crest = 6.0 + Math.sin(x * 0.5) * 0.5;
+  const fade = x < 4 ? 0 : x < 7 ? (x - 4) / 3 : 1;
+  h += 68 * fade * Math.exp(-(((y - crest) / 1.35) ** 2));
+  h += 38 * Math.exp(-(((x - 3) ** 2) + ((y - 19.5) ** 2)) / 5);
+  h += 22 * Math.exp(-(((x - 14) ** 2) + ((y - 15) ** 2)) / 9);
+  const lk = ((x - LAKE.x) / (LAKE.rx + 1.6)) ** 2 + ((y - LAKE.y) / (LAKE.ry + 1.6)) ** 2;
+  h -= 26 * Math.exp(-lk * 1.6);
+  h += 2.2 * Math.sin(x * 1.7 + y * 0.9) + 1.8 * Math.cos(x * 0.6 - y * 1.3) + 1.2 * Math.sin((x + y) * 2.3);
+  return h;
+}
+
+// sites: where they are, what they make, what they take, the stock and the price now
+const SITES = [
+  { id: 'forest',  kind: 'forest',  name: 'Kuusikko',    x: 2.5,  y: 3.5,  makes: 'timber', stock: 4, cap: 6 },
+  { id: 'sawmill', kind: 'sawmill', name: 'Koskensaha',  x: 5.5,  y: 8.5,  makes: 'boards', stock: 2, cap: 6, takes: [{ good: 'timber', pay: 6, demand: 0.9 }] },
+  { id: 'farm',    kind: 'farm',    name: 'Peltola',     x: 13.5, y: 2.5,  makes: 'grain',  stock: 5, cap: 6 },
+  { id: 'mill',    kind: 'mill',    name: 'Myllykylä',   x: 12.5, y: 9.5,  makes: 'flour',  stock: 0, cap: 6, takes: [{ good: 'grain', pay: 5, demand: 1.0 }] },
+  { id: 'hml',     kind: 'town',    name: 'Hämeenlinna', x: 2.5,  y: 15.5, size: 1, takes: [{ good: 'boards', pay: 14, demand: 1.0 }, { good: 'flour', pay: 13, demand: 1.0 }] },
+  { id: 'tre',     kind: 'town',    name: 'Tampere',     x: 11.5, y: 20.5, size: 1, takes: [{ good: 'boards', pay: 14, demand: 1.0 }, { good: 'flour', pay: 13, demand: 1.0 }] },
+];
+const site = (id) => SITES.find((s) => s.id === id);
+
+// the routes, as map waypoints; the grade comes from the height field
+const ROUTES = {
+  forestSaw:  [[2.5, 3.5], [3.5, 5.5], [4.5, 7.5], [5.5, 8.5]],
+  sawHml:     [[5.5, 8.5], [4.5, 10.5], [3.5, 12.5], [2.5, 14.0], [2.5, 15.5]],
+  farmMillThrough: [[13.5, 2.5], [13.0, 4.0], [12.7, 6.0], [12.6, 8.0], [12.5, 9.5]],
+  farmMillAround:  [[13.5, 2.5], [11.5, 2.8], [9.0, 3.2], [6.5, 3.8], [4.6, 5.0], [4.2, 7.0], [5.5, 8.5], [8.0, 9.0], [10.5, 9.4], [12.5, 9.5]],
+  millTre:    [[12.5, 9.5], [13.8, 11.5], [14.6, 14.0], [14.3, 17.0], [13.0, 19.2], [11.5, 20.5]],
+  sawTre:     [[5.5, 8.5], [7.0, 10.0], [8.5, 11.0], [9.5, 13.0], [10.0, 16.0], [10.5, 18.5], [11.5, 20.5]],
+  millHml:    [[12.5, 9.5], [10.5, 9.8], [8.0, 10.6], [6.0, 12.5], [4.5, 14.5], [2.5, 15.5]],
+};
+
+// ------------------------------------------------------------------ the camera
+const dpr = devicePixelRatio || 1;
+const VW = innerWidth, VH = innerHeight;
+const PAD = 10;
+const HUD_T = LANDSCAPE ? 8 : 64;      // the HUD bar in portrait
+const HUD_L = LANDSCAPE ? 112 : 8;     // the HUD column in landscape
+const PAD_B = LANDSCAPE ? 46 : 40;
+const areaW = VW - HUD_L - PAD, areaH = VH - HUD_T - PAD_B;
+const mapW = LANDSCAPE ? H : W, mapH = LANDSCAPE ? W : H;
+const S = Math.min(areaW / mapW, areaH / mapH);
+const OX = HUD_L + (areaW - mapW * S) / 2, OY = HUD_T + (areaH - mapH * S) / 2;
+/** map point to screen; in landscape the map is turned a quarter, north to the left */
+const P = LANDSCAPE ? (x, y) => [OX + y * S, OY + (W - x) * S] : (x, y) => [OX + x * S, OY + y * S];
+const Pinv = LANDSCAPE ? (sx, sy) => [W - (sy - OY) / S, (sx - OX) / S] : (sx, sy) => [(sx - OX) / S, (sy - OY) / S];
+
+// ------------------------------------------------------------------ the terrain on the canvas
+const BANDS = [
+  [104, [142, 180, 108]],   // low meadow
+  [116, [126, 164, 99]],    // the game's land green
+  [128, [146, 166, 92]],    // olive
+  [140, [178, 170, 96]],    // dry grass
+  [152, [184, 150, 92]],    // tan
+  [164, [163, 122, 76]],    // brown
+  [176, [142, 110, 78]],    // dark brown
+  [999, [140, 132, 118]],   // rock
+];
+function drawTerrain() {
+  const c = document.getElementById('terrain');
+  c.width = Math.round(VW * dpr); c.height = Math.round(VH * dpr);
+  const g = c.getContext('2d');
+  const img = g.createImageData(c.width, c.height);
+  const d = img.data;
+  const cw = c.width, ch = c.height;
+  const hs = new Float32Array(cw * ch);
+  const inside = new Uint8Array(cw * ch);
+  for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+    const [x, y] = Pinv(i / dpr, j / dpr);
+    const k = j * cw + i;
+    inside[k] = x >= 0 && y >= 0 && x <= W && y <= H ? 1 : 0;
+    hs[k] = inside[k] ? height(x, y) : 0;
+  }
+  const bandOf = (h) => { for (let b = 0; b < BANDS.length; b++) if (h < BANDS[b][0]) return b; return BANDS.length - 1; };
+  for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+    const k = j * cw + i;
+    let r, gg, b;
+    if (!inside[k]) { r = 27; gg = 42; b = 30; }
+    else {
+      const [x, y] = Pinv(i / dpr, j / dpr);
+      const h = hs[k];
+      if (inLake(x, y)) {
+        const t = lakeR(x, y) > 0.93 ? 1 : 0;
+        r = t ? 185 : 159; gg = t ? 219 : 200; b = t ? 231 : 216;
+      } else {
+        const [, col] = BANDS[bandOf(h)];
+        // hill shading: light from the north west
+        const l = hs[k - 2 * dpr | 0] ?? h, rr = hs[k + 2 * dpr | 0] ?? h, u = hs[k - cw * 2 * dpr | 0] ?? h, dn = hs[k + cw * 2 * dpr | 0] ?? h;
+        const gx = (rr - l) / (4 / S), gy = (dn - u) / (4 / S); // metres per km
+        const shade = 1 + (-gx - gy) * 0.0045;
+        const sh = Math.max(0.72, Math.min(1.18, shade));
+        r = col[0] * sh; gg = col[1] * sh; b = col[2] * sh;
+        // a contour every 10 m, a heavier one every 50 m
+        const lvl = Math.floor(h / 10);
+        const n1 = Math.floor((hs[k + 1] || h) / 10), n2 = Math.floor((hs[k + cw] || h) / 10);
+        if (n1 !== lvl || n2 !== lvl) {
+          const heavy = Math.max(lvl, n1, n2) % 5 === 0;
+          const a = heavy ? 0.6 : 0.4;
+          r = r * (1 - a) + 60 * a; gg = gg * (1 - a) + 42 * a; b = b * (1 - a) + 22 * a;
+        }
+        // fields around the farm
+        const f = site('farm');
+        const fa = Math.atan2(y - f.y, x - f.x), fr = Math.hypot((x - f.x) / 2.3, (y - f.y) / 1.7) / (1 + 0.12 * Math.sin(fa * 4));
+        if (fr < 1 && !(Math.abs(x - f.x) < 0.7 && Math.abs(y - f.y) < 0.7)) {
+          const stripe = Math.floor((x * 6 + y * 1.5)) % 2 === 0;
+          r = stripe ? 222 : 204; gg = stripe ? 196 : 176; b = stripe ? 90 : 72;
+        }
+      }
+    }
+    d[k * 4] = r; d[k * 4 + 1] = gg; d[k * 4 + 2] = b; d[k * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  // trees: a scatter on the lower land, thinner where the ground is high so the contours stay legible
+  g.save(); g.scale(dpr, dpr);
+  for (let i = 0; i < 1400; i++) {
+    const x = hash(i, 1) * W, y = hash(i, 2) * H;
+    if (inLake(x, y)) continue;
+    const h = height(x, y);
+    const f = site('farm');
+    if (Math.abs(x - f.x) < 2.4 && Math.abs(y - f.y) < 1.8) continue;
+    if (SITES.some((s) => Math.abs(x - s.x) < 1.1 && Math.abs(y - s.y) < 1.1)) continue;
+    const forest = Math.exp(-(((x - 2.5) ** 2) + ((y - 3.5) ** 2)) / 7);
+    const p = 0.28 + forest * 0.9 - Math.max(0, h - 130) / 90;
+    if (hash(i, 3) > p) continue;
+    const [sx, sy] = P(x, y);
+    const r = S * (0.14 + hash(i, 4) * 0.1);
+    g.fillStyle = hash(i, 5) < 0.5 ? '#3f7343' : '#2f5a36';
+    g.beginPath(); g.moveTo(sx, sy - r * 1.6); g.lineTo(sx + r, sy + r * 0.7); g.lineTo(sx - r, sy + r * 0.7); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+function hash(a, b) { let h = (a * 374761393 + b * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+
+// ------------------------------------------------------------------ SVG helpers
+const svg = document.getElementById('svg');
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs = {}, parent = svg) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) if (k === 'text') e.textContent = v; else e.setAttribute(k, v);
+  parent.appendChild(e);
+  return e;
+}
+function use(id, x, y, size, parent = svg) { return el('use', { href: '#' + id, x: x - size / 2, y: y - size / 2, width: size, height: size }, parent); }
+function label(x, y, text, opts = {}) {
+  const size = opts.size || 14, weight = opts.weight || 800, fill = opts.fill || '#fff';
+  const t = el('text', { x, y, 'font-size': size, 'font-weight': weight, 'font-family': 'system-ui, sans-serif', 'text-anchor': opts.anchor || 'middle', fill, stroke: opts.stroke || 'rgba(20,20,15,0.85)', 'stroke-width': opts.sw ?? 3.5, 'paint-order': 'stroke', 'dominant-baseline': 'middle', text });
+  return t;
+}
+
+/** a route as screen points, with the grade of each segment in percent (signed, along the direction) */
+function routeGeom(pts) {
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+    const n = Math.max(2, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 3));
+    for (let k = 0; k < n; k++) {
+      const a = k / n, b = (k + 1) / n;
+      const ax = x0 + (x1 - x0) * a, ay = y0 + (y1 - y0) * a, bx = x0 + (x1 - x0) * b, by = y0 + (y1 - y0) * b;
+      const len = Math.hypot(bx - ax, by - ay) * KM * 1000;
+      const dh = height(bx, by) - height(ax, ay);
+      out.push({ a: [ax, ay], b: [bx, by], water: inLake((ax + bx) / 2, (ay + by) / 2), grade: dh / len * 100, len: len / 1000 });
+    }
+  }
+  return out;
+}
+const gradeColor = (g) => (Math.abs(g) < 1.5 ? 'var(--flat)' : Math.abs(g) < 3.5 ? 'var(--grade2)' : 'var(--grade4)');
+const gradeHex = (g) => (Math.abs(g) < 1.5 ? '#3d7a3f' : Math.abs(g) < 3.5 ? '#d79a2b' : '#c0392b');
+
+/** built track: dark rails with sleepers; a bridge deck over water; a cutting through high ground.
+ *  Where the grade is steep, chevrons beside the track point uphill in the grade colour. */
+function drawTrack(pts, opts = {}) {
+  const geo = routeGeom(pts);
+  const g = el('g');
+  for (const s of geo) {
+    const [ax, ay] = P(...s.a), [bx, by] = P(...s.b);
+    if (s.water) {
+      el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: '#8d6a3d', 'stroke-width': S * 0.62, 'stroke-linecap': 'butt' }, g);
+      el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: '#b58a55', 'stroke-width': S * 0.46, 'stroke-linecap': 'butt' }, g);
+    } else if (opts.cut && height(...s.a) > opts.cut) {
+      el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: '#6e665c', 'stroke-width': S * 0.7, 'stroke-linecap': 'butt' }, g);
+      el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: '#8c847a', 'stroke-width': S * 0.5, 'stroke-linecap': 'butt' }, g);
+    }
+  }
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + P(...p).join(' ')).join(' ');
+  el('path', { d, fill: 'none', stroke: '#6b4f2e', 'stroke-width': S * 0.34, 'stroke-dasharray': `${S * 0.08} ${S * 0.16}` }, g);
+  el('path', { d, fill: 'none', stroke: '#2b2620', 'stroke-width': S * 0.26, 'stroke-linejoin': 'round' }, g);
+  el('path', { d, fill: 'none', stroke: '#6b4f2e', 'stroke-width': S * 0.1, 'stroke-linejoin': 'round' }, g);
+  if (opts.grades !== false) drawGradeMarks(geo, g);
+  return g;
+}
+/** chevrons beside the track where it climbs: amber at 2 to 3 %, red above, pointing uphill */
+function drawGradeMarks(geo, g) {
+  let acc = 0;
+  for (const s of geo) {
+    acc += s.len;
+    if (Math.abs(s.grade) < 1.5 || acc < 0.45) continue;
+    acc = 0;
+    const [ax, ay] = P(...s.a), [bx, by] = P(...s.b);
+    const up = s.grade > 0 ? 1 : -1;
+    const dx = (bx - ax) * up, dy = (by - ay) * up, l = Math.hypot(dx, dy) || 1;
+    const ux = dx / l, uy = dy / l, nx = -uy, ny = ux;
+    const mx = (ax + bx) / 2 + nx * S * 0.5, my = (ay + by) / 2 + ny * S * 0.5;
+    const w = S * 0.22, h = S * 0.26;
+    const p = `M${mx - ux * h - nx * w} ${my - uy * h - ny * w} L${mx} ${my} L${mx - ux * h + nx * w} ${my - uy * h + ny * w}`;
+    el('path', { d: p, fill: 'none', stroke: gradeHex(s.grade), 'stroke-width': 3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+  }
+}
+/** the route under the finger: thick, coloured by grade segment, with the worst grade and the cost on the line */
+function drawGhost(pts, opts = {}) {
+  const geo = routeGeom(pts);
+  const g = el('g');
+  if (opts.dashed) {
+    const d = pts.map((p, i) => (i ? 'L' : 'M') + P(...p).join(' ')).join(' ');
+    el('path', { d, fill: 'none', stroke: 'rgba(0,0,0,0.45)', 'stroke-width': S * 0.3, 'stroke-linejoin': 'round', 'stroke-dasharray': `${S * 0.5} ${S * 0.35}` }, g);
+    el('path', { d, fill: 'none', stroke: '#cfe6c0', 'stroke-width': S * 0.16, 'stroke-linejoin': 'round', 'stroke-dasharray': `${S * 0.5} ${S * 0.35}` }, g);
+    return { g, geo };
+  }
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + P(...p).join(' ')).join(' ');
+  el('path', { d, fill: 'none', stroke: 'rgba(0,0,0,0.5)', 'stroke-width': S * 0.52, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, g);
+  for (const s of geo) {
+    const [ax, ay] = P(...s.a), [bx, by] = P(...s.b);
+    const col = s.water ? '#3a7fb5' : gradeHex(s.grade);
+    el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: col, 'stroke-width': S * 0.34, 'stroke-linecap': 'butt' }, g);
+  }
+  drawGradeMarks(geo, g);
+  return { g, geo };
+}
+function routeStats(geo) {
+  let len = 0, worst = 0, cost = 0, climb = 0;
+  for (const s of geo) {
+    len += s.len;
+    worst = Math.max(worst, Math.abs(s.grade));
+    const base = s.water ? 4 : 1;
+    cost += base * s.len * (1 + Math.max(0, Math.abs(s.grade) - 1) * 0.25);
+    if (s.grade > 0) climb += s.grade / 100 * s.len * 1000;
+  }
+  return { len, worst, cost: Math.round(cost * 6), climb: Math.round(climb) };
+}
+
+/** a site: a building drawn to its kind, a name, and the goods strip: what it has (icon and a
+ *  count with a stock bar), what it wants (icon, the price now, and a demand bar) */
+function drawSite(s, opts = {}) {
+  const [x, y] = P(s.x, s.y);
+  const g = el('g');
+  const r = S * 0.9;
+  if (s.kind === 'town') {
+    const n = 4 + (s.size - 1) * 4;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + 0.4, rr = S * (0.9 + (i % 2) * 0.45 + (i > 7 ? 0.5 : 0));
+      const hx = x + Math.cos(a) * rr, hy = y + Math.sin(a) * rr;
+      el('rect', { x: hx - S * 0.22, y: hy - S * 0.2, width: S * 0.44, height: S * 0.4, fill: i % 3 ? '#b5382c' : '#d4a64c', stroke: '#4a2f24', 'stroke-width': 1.5, rx: 1.5 }, g);
+    }
+    if (s.size >= 2) { el('rect', { x: x - S * 0.18, y: y - S * 1.9, width: S * 0.36, height: S * 0.9, fill: '#efe6cf', stroke: '#4a2f24', 'stroke-width': 1.5 }, g); el('path', { d: `M${x} ${y - S * 2.3} L${x - S * 0.25} ${y - S * 1.9} L${x + S * 0.25} ${y - S * 1.9} Z`, fill: '#4a2f24' }, g); }
+  } else if (s.kind === 'forest') {
+    for (let i = 0; i < 7; i++) { const a = i * 0.9, rr = S * 0.95; const tx = x + Math.cos(a) * rr, ty = y + Math.sin(a) * rr, t = S * 0.32; el('path', { d: `M${tx} ${ty - t * 1.6} L${tx + t} ${ty + t * 0.7} L${tx - t} ${ty + t * 0.7} Z`, fill: '#2f5a36' }, g); }
+    // a log pile
+    for (let i = 0; i < 3; i++) el('rect', { x: x - S * 0.9 + i * S * 0.3, y: y + S * 1.0, width: S * 0.26, height: S * 0.6, rx: 2, fill: '#8a5a2b' }, g);
+  } else if (s.kind === 'farm') {
+    el('rect', { x: x - S * 0.5, y: y - S * 0.6, width: S, height: S * 0.7, fill: '#b5382c', stroke: '#4a2f24', 'stroke-width': 1.5 }, g);
+    el('path', { d: `M${x - S * 0.6} ${y - S * 0.6} L${x} ${y - S * 1.05} L${x + S * 0.6} ${y - S * 0.6} Z`, fill: '#4a2f24' }, g);
+  } else if (s.kind === 'sawmill') {
+    el('rect', { x: x - S * 0.7, y: y - S * 0.55, width: S * 1.4, height: S * 0.8, fill: '#8d6a3d', stroke: '#4a2f24', 'stroke-width': 1.5 }, g);
+    el('circle', { cx: x + S * 0.9, cy: y - S * 0.2, r: S * 0.42, fill: '#d8a63a', stroke: '#4a2f24', 'stroke-width': 1.5 }, g);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; el('line', { x1: x + S * 0.9, y1: y - S * 0.2, x2: x + S * 0.9 + Math.cos(a) * S * 0.55, y2: y - S * 0.2 + Math.sin(a) * S * 0.55, stroke: '#4a2f24', 'stroke-width': 1.5 }, g); }
+  } else if (s.kind === 'mill') {
+    el('rect', { x: x - S * 0.35, y: y - S * 0.4, width: S * 0.7, height: S * 0.9, fill: '#6e665c', stroke: '#4a2f24', 'stroke-width': 1.5 }, g);
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.5; el('line', { x1: x, y1: y - S * 0.6, x2: x + Math.cos(a) * S * 0.9, y2: y - S * 0.6 + Math.sin(a) * S * 0.9, stroke: '#e8e0cc', 'stroke-width': 4, 'stroke-linecap': 'round' }, g); }
+  }
+  // the station, if built: a cream plate with a red roof, big enough for a thumb
+  if (opts.station) {
+    el('rect', { x: x - S * 0.75, y: y - S * 0.75, width: S * 1.5, height: S * 1.5, rx: S * 0.3, fill: '#efe6cf', stroke: '#1b1a16', 'stroke-width': 2 }, g);
+    el('rect', { x: x - S * 0.55, y: y - S * 0.55, width: S * 1.1, height: S * 0.42, rx: 3, fill: '#b5382c' }, g);
+  }
+  // name
+  label(x, y + S * 1.35, s.name, { size: 14 });
+  // the goods strip
+  const chips = [];
+  if (s.makes) chips.push({ icon: 'g-' + s.makes, n: s.stock, bar: s.stock / s.cap, kind: 'has' });
+  for (const t of s.takes || []) chips.push({ icon: 'g-' + t.good, n: Math.round(t.pay * (opts.demandScale?.[t.good] ?? t.demand)), bar: opts.demandScale?.[t.good] ?? t.demand, kind: 'wants', missing: t.missing });
+  const cw = 46, ch = 22, gap = 4;
+  const total = chips.length * cw + (chips.length - 1) * gap;
+  let cx = x - total / 2;
+  const cy = y + S * 1.35 + 12;
+  for (const c of chips) {
+    const isHas = c.kind === 'has';
+    el('rect', { x: cx, y: cy, width: cw, height: ch, rx: 6, fill: isHas ? 'rgba(239,230,207,0.95)' : 'rgba(27,42,30,0.92)', stroke: isHas ? '#6b4f2e' : '#d8a63a', 'stroke-width': 1.5 }, g);
+    use(c.icon, cx + 12, cy + ch / 2, 18, g);
+    const txt = isHas ? String(c.n) : String(c.n);
+    el('text', { x: cx + 36, y: cy + ch / 2 + 0.5, 'font-size': 13, 'font-weight': 800, 'text-anchor': 'middle', 'dominant-baseline': 'middle', fill: isHas ? '#2a2418' : '#ffd870', 'font-family': 'system-ui, sans-serif', text: txt }, g);
+    if (!isHas) use('g-coin', cx + 44, cy + 3, 9, g);
+    // the bar under the chip: stock on hand, or the price now as a share of the full price
+    el('rect', { x: cx + 3, y: cy + ch + 2, width: cw - 6, height: 3, rx: 1.5, fill: 'rgba(0,0,0,0.35)' }, g);
+    el('rect', { x: cx + 3, y: cy + ch + 2, width: (cw - 6) * Math.max(0.05, c.bar), height: 3, rx: 1.5, fill: isHas ? '#6b4f2e' : c.bar < 0.6 ? '#e07a5f' : '#ffd870' }, g);
+    if (c.missing) label(cx + cw / 2, cy - 9, 'empty', { size: 10, fill: '#ffb3a7', sw: 2.5 });
+    cx += cw + gap;
+  }
+  return g;
+}
+
+/** a train on a route: the engine and its wagons, each wagon showing what it carries.
+ *  `at` is the distance along the route in cells, `loads` a list per wagon: a good or null. */
+function drawTrain(pts, at, loads, opts = {}) {
+  // the path as cumulative lengths
+  const segs = [];
+  let tot = 0;
+  for (let i = 0; i < pts.length - 1; i++) { const l = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); segs.push({ a: pts[i], b: pts[i + 1], l, s: tot }); tot += l; }
+  const along = (d) => {
+    d = Math.max(0, Math.min(tot, d));
+    const s = segs.find((s) => d <= s.s + s.l) || segs[segs.length - 1];
+    const t = (d - s.s) / s.l;
+    return { x: s.a[0] + (s.b[0] - s.a[0]) * t, y: s.a[1] + (s.b[1] - s.a[1]) * t, ang: Math.atan2(s.b[1] - s.a[1], s.b[0] - s.a[0]) };
+  };
+  const g = el('g');
+  const EL = 1.25, WL = 1.0, WW = 0.62; // engine length, wagon length, width in cells, drawn at twice map scale
+  const dir = opts.back ? -1 : 1;
+  const piece = (d, len, draw) => {
+    const m = along(d);
+    const [sx, sy] = P(m.x, m.y);
+    const ang = (LANDSCAPE ? m.ang - Math.PI / 2 : m.ang) * 180 / Math.PI;
+    const pg = el('g', { transform: `translate(${sx} ${sy}) rotate(${ang})` }, g);
+    draw(pg, len * S, WW * S);
+  };
+  let d = at;
+  piece(d, EL, (pg, L, Wd) => {
+    el('rect', { x: -L / 2, y: -Wd / 2, width: L, height: Wd, rx: Wd * 0.25, fill: '#1f1d1a', stroke: '#000', 'stroke-width': 1 }, pg);
+    el('rect', { x: dir > 0 ? L / 2 - L * 0.18 : -L / 2, y: -Wd / 2, width: L * 0.18, height: Wd, rx: 3, fill: '#b5382c' }, pg);
+    el('circle', { cx: dir > 0 ? L * 0.15 : -L * 0.15, cy: 0, r: Wd * 0.22, fill: '#d8a63a' }, pg);
+    el('rect', { x: dir > 0 ? -L / 2 + L * 0.08 : L / 2 - L * 0.3, y: -Wd * 0.36, width: L * 0.22, height: Wd * 0.72, rx: 2, fill: '#3a3530' }, pg);
+  });
+  d -= dir * (EL / 2 + WL / 2 + 0.06);
+  for (const load of loads) {
+    piece(d, WL, (pg, L, Wd) => {
+      const wagon = load === 'timber' || load === 'empty-flat' ? 'flat' : load === 'grain' || load === 'empty-hopper' ? 'hopper' : 'box';
+      if (wagon === 'flat') {
+        el('rect', { x: -L / 2, y: -Wd / 2, width: L, height: Wd, rx: 2, fill: '#7b5a3a', stroke: '#2b2620', 'stroke-width': 1 }, pg);
+        if (load === 'timber') for (let i = 0; i < 3; i++) { el('rect', { x: -L / 2 + 3, y: -Wd / 2 + 2 + i * (Wd - 4) / 3, width: L - 6, height: (Wd - 4) / 3 - 1, rx: 2, fill: i === 1 ? '#a8784a' : '#c69a62', stroke: '#6b4f2e', 'stroke-width': 0.8 }, pg); }
+      } else if (wagon === 'hopper') {
+        el('rect', { x: -L / 2, y: -Wd / 2, width: L, height: Wd, rx: 2, fill: '#6f6a5a', stroke: '#2b2620', 'stroke-width': 1 }, pg);
+        if (load === 'grain') el('rect', { x: -L / 2 + 3, y: -Wd / 2 + 3, width: L - 6, height: Wd - 6, rx: 3, fill: '#e2c04a' }, pg);
+      } else {
+        el('rect', { x: -L / 2, y: -Wd / 2, width: L, height: Wd, rx: 2, fill: '#8f3b2e', stroke: '#2b2620', 'stroke-width': 1 }, pg);
+        el('rect', { x: -L * 0.15, y: -Wd / 2 + 2, width: L * 0.3, height: Wd - 4, fill: load === 'boards' ? '#e8d2a0' : load === 'flour' ? '#f2efe6' : '#5a2a22' }, pg);
+      }
+    });
+    d -= dir * (WL + 0.06);
+  }
+  // smoke
+  const m = along(at + dir * 0.3);
+  for (let i = 0; i < 4; i++) { const [sx, sy] = P(m.x - dir * Math.cos(m.ang) * i * 0.5, m.y - dir * Math.sin(m.ang) * i * 0.5 - i * 0.25); el('circle', { cx: sx, cy: sy, r: S * (0.18 + i * 0.09), fill: 'rgba(240,240,235,0.5)' }, g); }
+  if (opts.tag) {
+    const [sx, sy] = P(m.x, m.y);
+    const t = label(sx, sy - S * 1.1, opts.tag, { size: 12, fill: opts.tagColor || '#fff' });
+  }
+  return g;
+}
+
+/** the hand that shows a drag */
+function drawHand(from, to) {
+  const [ax, ay] = P(...from), [bx, by] = P(...to);
+  el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: 'rgba(255,255,255,0.7)', 'stroke-width': 3, 'stroke-dasharray': '6 8' });
+  const hx = ax + (bx - ax) * 0.62, hy = ay + (by - ay) * 0.62;
+  el('circle', { cx: hx, cy: hy, r: 16, fill: 'rgba(255,255,255,0.25)', stroke: '#fff', 'stroke-width': 2 });
+  el('circle', { cx: hx, cy: hy, r: 5, fill: '#fff' });
+}
+/** a finger on the glass */
+function drawFinger(x, y) { el('circle', { cx: x, cy: y, r: 22, fill: 'rgba(255,255,255,0.22)', stroke: '#fff', 'stroke-width': 2 }); el('circle', { cx: x, cy: y, r: 5, fill: '#fff' }); }
+
+/** a label on a route: the cost, the length, the worst grade and the trip time, in a plate */
+function routePlate(geo, title, extra, colorHex, at = 0.5, dx = 0, dy = -16) {
+  const st = routeStats(geo);
+  const mid = geo[Math.min(geo.length - 1, Math.floor(geo.length * at))];
+  const [mx, my] = P(...mid.a);
+  const w = 132, h = 54;
+  const px = Math.max(HUD_L, Math.min(VW - w - 8, mx - w / 2 + dx)), py = Math.max(HUD_T + 4, my - h + dy);
+  const g = el('g');
+  el('rect', { x: px, y: py, width: w, height: h, rx: 8, fill: 'rgba(27,42,30,0.94)', stroke: colorHex, 'stroke-width': 2 }, g);
+  el('text', { x: px + 8, y: py + 15, 'font-size': 13, 'font-weight': 800, fill: '#efe6cf', 'font-family': 'system-ui, sans-serif', text: title }, g);
+  el('text', { x: px + 8, y: py + 32, 'font-size': 14, 'font-weight': 800, fill: '#ffd870', 'font-family': 'system-ui, sans-serif', text: `${st.cost}` }, g);
+  use('g-coin', px + 8 + String(st.cost).length * 9 + 8, py + 28, 11, g);
+  el('text', { x: px + w - 8, y: py + 32, 'font-size': 12, 'font-weight': 700, fill: '#efe6cf', 'text-anchor': 'end', 'font-family': 'system-ui, sans-serif', text: `${st.len.toFixed(0)} km` }, g);
+  el('circle', { cx: px + 13, cy: py + 45, r: 5, fill: gradeHex(st.worst) }, g);
+  el('text', { x: px + 22, y: py + 49, 'font-size': 12, 'font-weight': 700, fill: '#efe6cf', 'font-family': 'system-ui, sans-serif', text: st.worst < 1.5 ? 'flat' : `${st.worst.toFixed(0)} %` }, g);
+  el('text', { x: px + w - 8, y: py + 49, 'font-size': 12, 'font-weight': 700, fill: '#efe6cf', 'text-anchor': 'end', 'font-family': 'system-ui, sans-serif', text: extra }, g);
+  return st;
+}
+
+// ------------------------------------------------------------------ the HUD and the cards (HTML)
+const ui = document.getElementById('ui');
+function hud({ year = 1862, month = 2, goal = '0/2', goalPct = 0, cash = 200 }) {
+  const months = Array.from({ length: 12 }, (_, i) => `<i class="${i < month ? 'on' : ''}"></i>`).join('');
+  ui.insertAdjacentHTML('beforeend', `<div class="hud">
+    <div class="chip year"><span class="num">${year}</span><span class="months">${months}</span></div>
+    <div class="chip goal"><span class="lbl">Size 3</span><span class="num">${goal}</span><span class="bar"><i style="width:${goalPct}%"></i></span></div>
+    <div class="chip cash num">${cash} <svg width="16" height="16"><use href="#g-coin" width="16" height="16"/></svg></div>
+    <div class="round">II</div>
+  </div>`);
+}
+const icon = (g, size = 20) => `<svg width="${size}" height="${size}"><use href="#g-${g}" width="${size}" height="${size}"/></svg>`;
+
+// ------------------------------------------------------------------ the screens
+function finish() { window.__ready = true; }
+
+const SCREENS = {
+  /** 1. The map at the start of Harju: the height is readable, every site says what it has and what it pays. */
+  map() {
+    hud({ year: 1862, month: 1, cash: 200 });
+    drawTerrain();
+    for (const s of SITES) drawSite(s, { station: s.id === 'forest' });
+    drawHand([2.5, 3.5], [5.5, 8.5]);
+  },
+
+  /** 2. A route under the finger from the farm to the mill: the ridge is in the way. The ghost line is
+   *  coloured by grade, the plate shows the cost, the length, the worst climb and the trip time; the
+   *  cheap way round is drawn dashed beside it, and two plates under the thumb pick one. */
+  route() {
+    hud({ year: 1862, month: 4, cash: 160 });
+    drawTerrain();
+    drawTrack(ROUTES.forestSaw);
+    for (const s of SITES) drawSite(s, { station: ['forest', 'sawmill', 'farm'].includes(s.id) });
+    const around = drawGhost(ROUTES.farmMillAround, { dashed: true });
+    const through = drawGhost(ROUTES.farmMillThrough);
+    const sa = routePlate(around.geo, 'Around', 'trip 3:10', '#efe6cf', LANDSCAPE ? 0.45 : 0.3, LANDSCAPE ? -60 : -40, LANDSCAPE ? -10 : -80);
+    const st = routePlate(through.geo, 'Through', 'trip 1:20', '#c0392b', LANDSCAPE ? 0.8 : 0.55, LANDSCAPE ? 40 : -110, LANDSCAPE ? 110 : 10);
+    const [fx, fy] = P(12.5, 9.5);
+    drawFinger(fx, fy);
+    ui.insertAdjacentHTML('beforeend', `<div class="choice">
+      <div class="btn primary"><span><i class="grade" style="background:#c0392b"></i>Through the ridge</span><b>${st.cost} ${icon('coin', 16)}</b><small>${st.len.toFixed(0)} km, ${st.worst.toFixed(0)} % climb, a cutting. Trip 1:20, Hilma crawls</small></div>
+      <div class="btn"><span><i class="grade" style="background:#3d7a3f"></i>Around the ridge</span><b>${sa.cost} ${icon('coin', 16)}</b><small>${sa.len.toFixed(0)} km, flat, shares the sawmill track. Trip 3:10</small></div>
+    </div>`);
+  },
+
+  /** 3. A train: the wagons and their load are readable on the map, and the train card shows the
+   *  consist, the load, the speed on the climb and the four moves. */
+  train() {
+    hud({ year: 1863, month: 7, cash: 84, goal: '0/2', goalPct: 20 });
+    drawTerrain();
+    drawTrack(ROUTES.forestSaw);
+    drawTrack(ROUTES.sawHml);
+    drawTrack(ROUTES.farmMillThrough, { cut: 150 });
+    for (const s of SITES) drawSite(s, { station: ['forest', 'sawmill', 'farm', 'mill', 'hml'].includes(s.id) });
+    drawTrain(ROUTES.forestSaw, 5.0, ['timber', 'timber']);
+    drawTrain(ROUTES.sawHml, 3.6, ['boards', 'boards', 'empty-box'], { tag: '2 of 3 loaded' });
+    drawTrain(ROUTES.farmMillThrough, 5.2, ['grain', 'grain', 'grain', 'grain'], { tag: '9 km/h on 5 %', tagColor: '#ffb3a7' });
+    ui.insertAdjacentHTML('beforeend', `<div class="card">
+      <div class="round x">×</div>
+      <h2>Jyry · Peltola ⇄ Myllykylä</h2>
+      <div class="sub">slow and strong. On the 5 % cutting: 9 km/h with 4 loaded, 14 km/h with 2. Hilma would do 4 km/h.</div>
+      <div class="row"><span class="k">Train</span>
+        <svg width="190" height="26" viewBox="0 0 190 26">
+          <rect x="2" y="4" width="44" height="18" rx="5" fill="#1f1d1a"/><rect x="36" y="4" width="10" height="18" rx="3" fill="#b5382c"/><circle cx="18" cy="13" r="4" fill="#d8a63a"/>
+          ${[0,1,2,3].map((i) => `<rect x="${52 + i * 34}" y="5" width="30" height="16" rx="2" fill="#6f6a5a" stroke="#2b2620"/><rect x="${55 + i * 34}" y="8" width="24" height="10" rx="2" fill="#e2c04a"/>`).join('')}
+        </svg>
+        <span class="pill">${icon('grain')} 4/4</span></div>
+      <div class="row"><span class="k">Trip</span><span>1:20 min full, 0:50 back empty</span></div>
+      <div class="row"><span class="k">Earned</span><span class="num">138 this year</span></div>
+      <div class="btns">
+        <div class="btn">Wagon <small>10 · max 6</small></div>
+        <div class="btn">Swap to Hilma <small>+25 back</small></div>
+        <div class="btn primary">Wait for full load <small>on</small></div>
+        <div class="btn danger">Sell <small>+65</small></div>
+      </div>
+    </div>`);
+  },
+
+  /** 4. A tap on the sawmill: what it has, what it wants, what pays where, and the chain with its empty
+   *  link marked on the map. The player reads where the next train goes. */
+  site() {
+    hud({ year: 1864, month: 9, cash: 310, goal: '0/2', goalPct: 45 });
+    drawTerrain();
+    drawTrack(ROUTES.forestSaw);
+    drawTrack(ROUTES.sawHml);
+    drawTrack(ROUTES.farmMillThrough, { cut: 150 });
+    drawTrack(ROUTES.millTre);
+    const saw = site('sawmill');
+    // the chain: from the forest, to the sawmill, to the towns; the link that pays most is bright,
+    // the town with no boards line is dashed
+    const arrow = (a, b, col, dashed) => { const [ax, ay] = P(...a), [bx, by] = P(...b); el('line', { x1: ax, y1: ay, x2: bx, y2: by, stroke: col, 'stroke-width': 5, 'stroke-linecap': 'round', 'stroke-dasharray': dashed ? '8 10' : '', opacity: 0.9 }); };
+    arrow([5.5, 8.5], [11.5, 20.5], '#ffd870', true);
+    for (const s of SITES) {
+      const demandScale = s.id === 'hml' ? { boards: 0.5, flour: 1.0 } : s.id === 'tre' ? { boards: 1.0, flour: 0.7 } : undefined;
+      const sc = s.id === 'sawmill' ? { ...s, stock: 6 } : s.id === 'forest' ? { ...s, stock: 1 } : s;
+      drawSite(sc, { station: ['forest', 'sawmill', 'farm', 'mill', 'hml', 'tre'].includes(s.id), demandScale });
+    }
+    const [sx, sy] = P(saw.x, saw.y);
+    el('circle', { cx: sx, cy: sy, r: S * 1.2, fill: 'none', stroke: '#fff', 'stroke-width': 3, 'stroke-dasharray': '6 6' });
+    drawTrain(ROUTES.sawHml, 4.6, ['boards', 'boards', 'boards']);
+    drawTrain(ROUTES.millTre, 5.5, ['flour', 'flour']);
+    ui.insertAdjacentHTML('beforeend', `<div class="card">
+      <div class="round x">×</div>
+      <h2>Koskensaha · sawmill</h2>
+      <div class="sub">1 timber in makes 1 boards out. The yard is full: the mill stops until a train takes boards away.</div>
+      <div class="row"><span class="k">Has</span><span class="pill">${icon('boards')} 6 <small>full</small></span><span class="pill" style="opacity:.7">${icon('timber')} 0 <small>in yard</small></span></div>
+      <div class="row"><span class="k">Wants</span><span class="pill">${icon('timber')} 6 ${icon('coin', 14)}<small>per load</small></span><span class="pill" style="background:none"><small>Kuusikko has 1 left, your train waits there for a full load</small></span></div>
+      <div class="row"><span class="k">Boards pay</span>
+        <span class="pill">Hämeenlinna 7 ${icon('coin', 14)} <small>full, recovers in 4 months</small></span></div>
+      <div class="row"><span class="k"></span>
+        <span class="pill" style="border:2px solid #ffd870">Tampere 14 ${icon('coin', 14)} <small>no line yet, 13 km</small></span></div>
+      <div class="btns">
+        <div class="btn primary">Lay track to Tampere <small>from here, drag or tap</small></div>
+        <div class="btn">Send a train here <small>Hilma, 3 box, 80</small></div>
+      </div>
+    </div>`);
+  },
+
+  /** 5. The year end: income by good as bars, the cash over the years as a line, the costs, and the
+   *  one choice. The map stays visible behind it. */
+  ledger() {
+    hud({ year: 1864, month: 12, cash: 356, goal: '1/2', goalPct: 50 });
+    drawTerrain();
+    drawTrack(ROUTES.forestSaw); drawTrack(ROUTES.sawHml); drawTrack(ROUTES.farmMillThrough, { cut: 150 }); drawTrack(ROUTES.millTre);
+    for (const s of SITES) drawSite(s.id === 'hml' ? { ...s, size: 2 } : s, { station: true });
+    el('rect', { x: 0, y: 0, width: VW, height: VH, fill: 'rgba(0,0,0,0.35)' });
+    const bars = [['boards', 212, '#e8d2a0'], ['flour', 118, '#f2efe6'], ['timber', 64, '#c69a62'], ['grain', 40, '#e2c04a']];
+    const max = 220;
+    const bw = 220, bh = 18;
+    const barSvg = `<svg width="100%" height="${bars.length * (bh + 8)}" viewBox="0 0 300 ${bars.length * (bh + 8)}">${bars.map(([g, v, c], i) => `
+      <use href="#g-${g}" x="0" y="${i * (bh + 8)}" width="${bh}" height="${bh}"/>
+      <rect x="26" y="${i * (bh + 8)}" width="${v / max * bw}" height="${bh}" rx="3" fill="${c}" stroke="#8a6a3a"/>
+      <text x="${30 + v / max * bw}" y="${i * (bh + 8) + bh - 4}" font-size="14" font-weight="800" fill="#2a2418" font-family="system-ui">${v}</text>`).join('')}</svg>`;
+    const cash = [[1862, 200], [1863, 84], [1864, 356]];
+    const line = `<svg width="100%" height="84" viewBox="0 -14 300 84">
+      <polyline fill="none" stroke="#2f6b3a" stroke-width="3" points="${cash.map(([y, v], i) => `${20 + i * 130},${60 - v / 400 * 50}`).join(' ')}"/>
+      ${cash.map(([y, v], i) => `<circle cx="${20 + i * 130}" cy="${60 - v / 400 * 50}" r="4" fill="#2f6b3a"/><text x="${20 + i * 130}" y="${60 - v / 400 * 50 - 9}" font-size="12" font-weight="800" text-anchor="middle" fill="#2a2418" font-family="system-ui">${v}</text><text x="${20 + i * 130}" y="69" font-size="11" text-anchor="middle" fill="#6a6050" font-family="system-ui">${y}</text>`).join('')}
+    </svg>`;
+    ui.insertAdjacentHTML('beforeend', `<div class="ledger">
+      <h2>1864</h2>
+      <div class="sub">Hämeenlinna grew to size 2: it now wants more and pays more. Tampere had boards but no flour.</div>
+      <div class="ledger-body">
+        <div>
+          <div style="font-weight:800;font-size:13px;margin-bottom:4px">Income by good</div>
+          ${barSvg}
+          <table>
+            <tr><td>Income</td><td class="num">434</td></tr>
+            <tr><td>Upkeep, 3 engines</td><td class="num">−52</td></tr>
+            <tr><td>Track built</td><td class="num">−110</td></tr>
+            <tr class="total"><td>Profit</td><td class="num">+272</td></tr>
+          </table>
+        </div>
+        <div>
+          <div style="font-weight:800;font-size:13px;margin:8px 0 0">Cash at year end</div>
+          ${line}
+          <div class="grew">Pick one for 1865</div>
+          <div class="btns">
+            <div class="btn primary">A wagon on every train <small>free, once</small></div>
+            <div class="btn">Faster engines <small>+25 % speed, once</small></div>
+          </div>
+        </div>
+      </div>
+    </div>`);
+  },
+
+  /** 6. The network in 1866: both towns are size 2, the prices differ by town, a heavy train crawls on the
+   *  cutting with its speed on it, a Hilma waits empty at the forest. The player reads which line gets the
+   *  next train and which town is full. */
+  network() {
+    hud({ year: 1866, month: 5, cash: 520, goal: '0/2', goalPct: 70 });
+    drawTerrain();
+    drawTrack(ROUTES.forestSaw); drawTrack(ROUTES.sawHml); drawTrack(ROUTES.farmMillThrough, { cut: 150 }); drawTrack(ROUTES.millTre); drawTrack(ROUTES.sawTre); drawTrack(ROUTES.millHml);
+    for (const s of SITES) {
+      const demandScale = s.id === 'hml' ? { boards: 0.45, flour: 0.9 } : s.id === 'tre' ? { boards: 1.0, flour: 0.4 } : undefined;
+      const sc = s.kind === 'town' ? { ...s, size: 2 } : s.id === 'mill' ? { ...s, stock: 5 } : s;
+      drawSite(sc, { station: true, demandScale });
+    }
+    drawTrain(ROUTES.farmMillThrough, 4.6, ['grain', 'grain', 'grain', 'grain'], { tag: '9 km/h · 5 %', tagColor: '#ffb3a7' });
+    drawTrain(ROUTES.forestSaw, 1.4, ['empty-flat', 'empty-flat'], { tag: 'waits for a full load, 1 of 3', back: true });
+    drawTrain(ROUTES.sawTre, 8.6, ['boards', 'boards', 'boards']);
+    drawTrain(ROUTES.millHml, 5.6, ['flour', 'flour', 'empty-box'], { back: false });
+    drawTrain(ROUTES.millTre, 6.0, ['empty-box', 'empty-box'], { back: true });
+    // the alert on the town that is full of flour
+    const t = site('tre');
+    const [tx, ty] = P(t.x, t.y);
+    label(tx, ty - S * 1.9, 'flour: full, pays 5', { size: 12, fill: '#ffb3a7' });
+  },
+};
+
+SCREENS[SCREEN]();
+requestAnimationFrame(() => requestAnimationFrame(finish));
+</script>
+</body>
+</html>
