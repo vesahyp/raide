@@ -104,10 +104,17 @@ function link(s, a, b) {
 	s.track[a] |= 1 << d;
 	s.track[b] |= 1 << (d + 4) % 8;
 }
+/** the track neighbours of a cell */
+function linked(s, i) {
+	const out = [];
+	const m = s.track[i];
+	for (let d = 0; d < 8; d++) if (m & 1 << d) out.push(idx(s, cx(s, i) + DIRS[d][0], cy(s, i) + DIRS[d][1]));
+	return out;
+}
 //#endregion
 //#region src/game/content/economy.ts
 /** a raw site's loads per month, its cap, and the extra rate a served site reaches */
-var FOREST_RATE = 1.5;
+var FOREST_RATE = .6;
 /** seconds the Cancel button stays under the thumb after a build */
 var UNDO_SECONDS = 1.5;
 //#endregion
@@ -227,7 +234,7 @@ var SAWMILL = {
 		}
 	],
 	startStation: "forest",
-	cash: 300,
+	cash: 150,
 	startYear: 1862,
 	goal: {
 		good: "boards",
@@ -312,27 +319,14 @@ function build(s, r) {
 	return line;
 }
 //#endregion
-//#region tools/dbg/map.ts
+//#region tools/dbg/masks.ts
 var s = createState(SAWMILL);
 var site = (id) => {
 	const x = s.sites.find((o) => o.id === id);
 	return idx(s, x.cx, x.cy);
 };
-var r1 = plan(s, site("forest"), site("sawmill"));
-build(s, r1);
-var r2 = plan(s, site("sawmill"), site("town"));
-build(s, r2);
-var rows = [];
-for (let y = 0; y < s.h; y++) {
-	let row = "";
-	for (let x = 0; x < s.w; x++) {
-		const i = idx(s, x, y);
-		const st = s.sites.find((o) => o.cx === x && o.cy === y);
-		row += st ? st.kind[0].toUpperCase() : s.track[i] ? s.water[i] ? "=" : "+" : s.water[i] ? "~" : ".";
-	}
-	rows.push(row);
-}
-console.log(rows.join("\n"));
-console.log(`r1 ${r1.cells.length} cells cost ${r1.cost}; r2 ${r2.cells.length} cells bridge ${r2.bridge.length} cost ${r2.cost}`);
+var r = plan(s, site("forest"), site("sawmill"));
+build(s, r);
+for (const c of r.cells) console.log(c, cx(s, c), cy(s, c), "mask", s.track[c].toString(2).padStart(8, "0"), "linked", linked(s, c).map((j) => `(${cx(s, j)},${cy(s, j)})`).join(" "), "centre", centre(s, c));
 //#endregion
 export {};

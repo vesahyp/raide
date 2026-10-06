@@ -1,14 +1,26 @@
+import { useState } from 'react';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { UpdateBanner } from './ui/Update';
-import { BUILD_NAME } from './version';
+import { Title } from './ui/Screens';
+import { Game } from './ui/Game';
+import type { ScenarioDef } from './game/types';
+
+type Screen = { kind: 'title' } | { kind: 'game'; scenario: ScenarioDef; run: number };
 
 export default function App() {
+  const [screen, setScreen] = useState<Screen>({ kind: 'title' });
   return (
     <ErrorBoundary>
-      <div className="screen">
-        <h1>Raide</h1>
-        <p className="small">{BUILD_NAME}</p>
-      </div>
+      {screen.kind === 'title' ? (
+        <Title onPlay={(scenario) => setScreen({ kind: 'game', scenario, run: Date.now() })} />
+      ) : (
+        <Game
+          key={screen.run}
+          scenario={screen.scenario}
+          onQuit={() => setScreen({ kind: 'title' })}
+          onAgain={() => setScreen({ kind: 'game', scenario: screen.scenario, run: Date.now() })}
+        />
+      )}
       <UpdateBanner />
     </ErrorBoundary>
   );
