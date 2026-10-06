@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Line, ScenarioDef, SimState, WagonType, YearEndChoice } from '../game/types';
 import { createState } from '../game/state';
-import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price } from '../game/sim';
+import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan } from '../game/sim';
 import { ENGINE, TRAINS_MAX, WAGON_GOOD, MONTHS } from '../game/content/economy';
 import { idx } from '../game/grid';
 import { Renderer } from '../render/renderer';
@@ -49,8 +49,9 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     const params = new URLSearchParams(location.search);
     const speed = Math.max(0.25, Number(params.get('speed') ?? 1));
     const bot = params.get('bot') === '1' ? new Bot() : null;
-    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer; __pace?: number };
+    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer; __pace?: number; __plan?: (a: number, b: number) => unknown };
     w.__sim = s;
+    w.__plan = (a, b) => plan(s, a, b);
     w.__renderer = renderer;
     w.__pace = speed;
     const input = new Input(
@@ -221,7 +222,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
 }
 
 function readHud(s: SimState): Hud {
-  return { year: s.year, month: s.month, frac: s.yearFrac, cash: s.cash, goal: s.goalCount, trains: s.trains.length };
+  return { year: s.year, month: s.month, frac: s.yearFrac, cash: Math.floor(s.cash), goal: s.goalCount, trains: s.trains.length };
 }
 
 /** The train card: the line, the trains on it, a wagon choice and Buy. */
@@ -284,6 +285,7 @@ function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEndChoice
   return (
     <div className="card ledger overlay" data-ui>
       <h2>{y.year}</h2>
+      <div className="ledger-body">
       <table>
         <tbody>
           <tr>
@@ -308,6 +310,7 @@ function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEndChoice
           </tr>
         </tbody>
       </table>
+      <div>
       <p className="small">{tr('Valitse yksi', 'Pick one')}</p>
       <div className="choices">
         {choices.map((c) => (
@@ -316,6 +319,8 @@ function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEndChoice
             <small>{s.perks.includes(c.id) ? tr('otettu', 'taken') : tr(c.sub[0], c.sub[1])}</small>
           </button>
         ))}
+      </div>
+      </div>
       </div>
     </div>
   );

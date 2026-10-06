@@ -29,6 +29,9 @@ make deploy-pixel  # upload public/t.gif with no-store
 git push           # the Pages workflow builds with the variable
 ```
 
+Done 2026-10-06. Logs land in `s3://raide-cloudfront-logs/cloudfront/`
+with a 90-day lifecycle.
+
 ## Game events
 
 `window.__clvtracker.track(event, data)` is the hook; the game calls it

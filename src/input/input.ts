@@ -7,7 +7,7 @@
  */
 import type { SimState, Line } from '../game/types';
 import { plan, build, lineOf, along, trainLength } from '../game/sim';
-import { idx, inside, type Route } from '../game/grid';
+import { idx, inside, route, type Route } from '../game/grid';
 import { stationAt, siteAt } from '../game/state';
 import { toWorld, type Camera } from '../render/camera';
 
@@ -19,6 +19,8 @@ export interface Drag {
   sx: number;
   sy: number;
   ok: boolean;
+  /** the route runs to the finger's cell, not to a site: a preview that builds nothing */
+  loose: boolean;
 }
 
 export interface InputEvents {
@@ -102,7 +104,7 @@ export class Input {
     this.canvas.setPointerCapture?.(e.pointerId);
     this.down = { x: e.clientX, y: e.clientY, cell: at.cell, id: e.pointerId };
     const from = this.stationNear(at.x, at.y, GRAB);
-    if (from !== null) this.drag = { from, to: null, route: null, sx: e.clientX, sy: e.clientY, ok: false };
+    if (from !== null) this.drag = { from, to: null, route: null, sx: e.clientX, sy: e.clientY, ok: false, loose: true };
   };
 
   private onMove = (e: PointerEvent): void => {
@@ -118,10 +120,13 @@ export class Input {
       return;
     }
     const target = this.siteNear(at.x, at.y, SNAP);
-    if (target === d.to) return;
-    d.to = target;
-    d.route = target !== null && target !== d.from ? plan(this.s, d.from, target) : null;
-    d.ok = !!d.route && d.route.cost <= this.s.cash;
+    // snapped to a site: the route that would be built; elsewhere: the track under the finger, a preview
+    const to = target ?? at.cell;
+    if (to === d.to) return;
+    d.to = to;
+    d.loose = target === null;
+    d.route = to === d.from ? null : target !== null ? plan(this.s, d.from, target) : route(this.s, d.from, to);
+    d.ok = !d.loose && !!d.route && d.route.cost <= this.s.cash;
   };
 
   private onUp = (e: PointerEvent): void => {
@@ -131,7 +136,7 @@ export class Input {
     this.down = null;
     this.drag = null;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-    if (drag && drag.route && moved > 12) {
+    if (drag && drag.route && !drag.loose && moved > 12) {
       if (drag.route.cost > this.s.cash) {
         this.ev.onNote(drag.route.cells[drag.route.cells.length - 1], 'cash');
         return;

@@ -31,6 +31,7 @@ export function createState(sc: ScenarioDef): SimState {
     yearFrac: 0,
     month: 0,
     income: { timber: 0, boards: 0 },
+    upkeep: 0,
     yearEnd: null,
     perks: [],
     goalCount: 0,

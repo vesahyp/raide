@@ -205,12 +205,16 @@ export function closeYearEnd(s: SimState, choice: YearEndChoice): void {
 
 function finish(s: SimState, won: boolean): void {
   const stars = won ? 1 + STARS.filter((x) => s.cash >= x).length : 0;
-  s.result = { won, year: s.year, cash: s.cash, stars };
+  s.result = { won, year: s.year, cash: Math.round(s.cash), stars };
   s.sounds.push(won ? 'win' : 'lose');
 }
 
 /** months tick: production, consumption, demand recovery */
 function monthTick(s: SimState): void {
+  // the engines' upkeep, a twelfth a month, so the cash never drops in one blow at the year end
+  const upkeep = (s.trains.length * ENGINE.upkeep) / MONTHS;
+  s.cash -= upkeep;
+  s.upkeep += upkeep;
   for (const site of s.sites) {
     if (site.kind === 'forest') {
       // a served forest cuts more: the rate climbs while pickups keep coming and falls back after
@@ -333,11 +337,16 @@ export function step(s: SimState): void {
   s.yearFrac = frac;
   for (const t of s.trains) moveTrain(s, t);
   if (s.yearFrac >= 1) {
-    const upkeep = s.trains.length * ENGINE.upkeep;
-    s.cash -= upkeep;
+    // the twelfth month's upkeep lands with the card
+    const last = (s.trains.length * ENGINE.upkeep) / MONTHS;
+    s.cash -= last;
+    s.upkeep += last;
+    s.cash = Math.round(s.cash);
+    const upkeep = Math.round(s.upkeep);
     const income = { ...s.income };
     s.yearEnd = { year: s.year, income, upkeep, profit: income.timber + income.boards - upkeep, cash: s.cash, choice: null };
     s.income = { timber: 0, boards: 0 };
+    s.upkeep = 0;
     s.year++;
     s.yearFrac = 0;
     s.month = 0;

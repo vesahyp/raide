@@ -46,14 +46,17 @@ src/
       economy.ts      every number the balance is made of
       scenarios.ts    the hand-made maps: size, water, sites, start, goal
   render/
-    renderer.ts       the camera (the map fitted to the screen, turned a quarter in landscape),
-                        terrain, water, sites, track, bridges, trains, smoke, floats
+    camera.ts         the map fitted to the screen, turned a quarter in landscape; toScreen, toWorld
+    renderer.ts       the baked land, water, sites, stations, track, bridges, trains, smoke, the
+                        hand that shows the first drag, floats and labels; ?dbg=1 draws the path
   input/input.ts      one finger: drag from a station to build, tap to open a card; pointer events
+  audio.ts            a few synthesised sounds; track.ts the tracker shim
   ui/
     Game.tsx          the loop, the HUD (year, cash, goal), the cards (train, year end, result)
     Screens.tsx       the title and the scenario list
     Update.tsx        the newer-build banner; ErrorBoundary.tsx the crash screen
-  styles.css          the chrome: brass and dark green, large round buttons, a ledger page
+  styles.css          the chrome: brass and dark green, large round buttons, a ledger page; the HUD
+                        is a bar on top in portrait and a column on the left in landscape
   i18n.ts             fi and en, tr() and L(); version.ts the build id and the update check
 tools/
   bot.ts              the player with no thumb: builds, buys, picks the year-end choice

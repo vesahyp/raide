@@ -173,7 +173,7 @@ export class Renderer {
   }
 
   /** the dirt beneath a train: smoke and the rest are per frame */
-  draw(dt: number, drag: { route: Route | null; from: number; sx: number; sy: number; ok: boolean } | null, hint: Hint | null): void {
+  draw(dt: number, drag: { route: Route | null; from: number; sx: number; sy: number; ok: boolean; loose: boolean } | null, hint: Hint | null): void {
     if (!this.fits()) this.resize();
     const s = this.s;
     const ctx = this.ctx;
@@ -188,7 +188,7 @@ export class Renderer {
     ctx.drawImage(base, 0, 0, s.w, s.h);
     this.drawStations(ctx);
     this.drawTrack(ctx);
-    if (drag?.route) this.drawGhost(ctx, drag.route, drag.ok);
+    if (drag?.route) this.drawGhost(ctx, drag.route, drag.ok, drag.loose);
     for (const t of s.trains) this.drawTrain(ctx, t);
     this.drawSmoke(ctx, dt);
     if (hint && s.lines.length === 0) this.drawHint(ctx, hint, dt);
@@ -272,21 +272,25 @@ export class Renderer {
     }
   }
 
-  private drawGhost(ctx: CTX, r: Route, ok: boolean): void {
+  /** the route under the finger: loose (to the finger, a thin dashed line), or snapped to a site (solid, a ring at the end) */
+  private drawGhost(ctx: CTX, r: Route, ok: boolean, loose: boolean): void {
     const s = this.s;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 0.34;
+    ctx.lineWidth = loose ? 0.22 : 0.34;
+    if (loose) ctx.setLineDash([0.35, 0.3]);
     for (let k = 1; k < r.cells.length; k++) {
       const a = centre(s, r.cells[k - 1]);
       const b = centre(s, r.cells[k]);
       const water = s.water[r.cells[k]] || s.water[r.cells[k - 1]];
-      ctx.strokeStyle = !ok ? PAL.ghostBad : water ? PAL.ghostBridge : PAL.ghost;
+      ctx.strokeStyle = loose ? (water ? 'rgba(40,90,140,0.5)' : 'rgba(27,26,22,0.4)') : !ok ? PAL.ghostBad : water ? PAL.ghostBridge : PAL.ghost;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
+    if (loose) return;
     // the far end: a ring where the station goes
     const end = centre(s, r.cells[r.cells.length - 1]);
     ctx.strokeStyle = ok ? 'rgba(255,255,255,0.9)' : PAL.ghostBad;
@@ -451,7 +455,7 @@ export class Renderer {
     }
   }
 
-  private drawDragLabel(ctx: CTX, drag: { route: Route | null; sx: number; sy: number; ok: boolean }): void {
+  private drawDragLabel(ctx: CTX, drag: { route: Route | null; sx: number; sy: number; ok: boolean; loose: boolean }): void {
     if (!drag.route) return;
     const r = drag.route;
     const text = `${r.cost}`;
@@ -462,7 +466,7 @@ export class Renderer {
     const x = drag.sx;
     const y = drag.sy - 64;
     const w = 86;
-    ctx.fillStyle = drag.ok ? 'rgba(27,26,22,0.88)' : 'rgba(150,40,30,0.9)';
+    ctx.fillStyle = drag.loose ? 'rgba(27,26,22,0.6)' : drag.ok ? 'rgba(27,26,22,0.88)' : 'rgba(150,40,30,0.9)';
     ctx.beginPath();
     ctx.roundRect(x - w / 2, y - 22, w, 44, 10);
     ctx.fill();

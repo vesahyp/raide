@@ -142,8 +142,9 @@ export interface SimState {
   /** 0..1 through the year */
   yearFrac: number;
   month: number;
-  /** income this year by good */
+  /** income this year by good, and the upkeep paid so far this year */
   income: Record<Good, number>;
+  upkeep: number;
   /** a year end waiting for the player's choice; the sim holds while it is set */
   yearEnd: YearEnd | null;
   /** choices taken, each once */
