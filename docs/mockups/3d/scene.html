@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raide 3D scene</title>
+<!--
+  One rendered scene in three.js, 2026-10-06, to judge the look of a low-poly 3D Raide before any
+  game code: a valley with a river, a hill, a forest, a sawmill, a town, one track laid across with
+  an embankment, a bridge and a cutting, a train with log wagons, goods as loads and stockpiles.
+  ?take=iso is a tilted orthographic camera (reads as isometric); ?take=close is a perspective
+  camera low over the bridge. docs/mockups/3d/render.mjs shoots both on an iPhone 15.
+-->
+<style>
+  :root { --pine: #1b2a1e; --brass: #d8a63a; --brass-dim: #9c7a2c; --bone: #efe6cf; --bone-dim: rgba(239,230,207,0.65); --gold: #ffd870; --f: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #9fc3d6; font-family: var(--f); color: var(--bone); overflow: hidden; }
+  body { position: fixed; inset: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hud { position: absolute; left: 8px; right: 8px; top: 8px; height: 48px; display: flex; gap: 8px; align-items: center; }
+  .chip { height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 12px; background: rgba(27,42,30,0.92); border: 2px solid var(--brass-dim); font-weight: 800; font-size: 19px; box-shadow: 0 2px 0 #0e1710; white-space: nowrap; }
+  .chip .months { display: flex; gap: 2px; } .chip .months i { width: 4px; height: 14px; border-radius: 1px; background: rgba(239,230,207,0.25); } .chip .months i.on { background: var(--brass); }
+  .chip.goal { flex: 1; min-width: 0; gap: 6px; font-size: 16px; overflow: hidden; } .chip.goal .bar { flex: 1 1 0; min-width: 0; height: 10px; border-radius: 5px; background: rgba(239,230,207,0.2); overflow: hidden; } .chip.goal .bar i { display: block; height: 100%; width: 35%; background: var(--gold); }
+  .chip.cash { color: var(--gold); }
+  .round { width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--brass-dim); background: #243a29; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; box-shadow: 0 2px 0 #0e1710; flex: none; }
+  body.landscape .hud { left: 8px; top: 8px; bottom: 8px; right: auto; width: 96px; height: auto; flex-direction: column; align-items: stretch; }
+  body.landscape .chip { height: auto; min-height: 48px; flex-direction: column; gap: 4px; padding: 8px 6px; font-size: 17px; }
+  body.landscape .chip.goal { flex: none; } body.landscape .chip.goal .bar { width: 100%; flex: none; } body.landscape .round { align-self: center; }
+  .tag { position: absolute; transform: translate(-50%, -100%); padding: 3px 8px; border-radius: 8px; background: rgba(27,42,30,0.9); border: 1.5px solid var(--brass-dim); font-weight: 800; font-size: 13px; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+  .tag b { color: var(--gold); }
+</style>
+<script type="importmap">{ "imports": { "three": "/node_modules/three/build/three.module.js" } }</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="hud">
+  <div class="chip"><span>1863</span><span class="months"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+  <div class="chip goal"><span>0/2</span><span class="bar"><i></i></span></div>
+  <div class="chip cash">184</div>
+  <div class="round">II</div>
+</div>
+<div id="tags"></div>
+
+<script type="module">
+import * as THREE from 'three';
+
+const Q = new URLSearchParams(location.search);
+const TAKE = Q.get('take') || 'iso';
+const LANDSCAPE = innerWidth > innerHeight;
+if (LANDSCAPE) document.body.classList.add('landscape');
+
+// ------------------------------------------------------------------ the land
+// x east, z south, y up, metres. The river runs north to south at x about -16; the hill is east
+// of it; the forest is west; the sawmill sits on the west bank; the town is beyond the hill.
+const WATER = -2.6;
+const riverX = (z) => -16 + 10 * Math.sin(z * 0.03);
+const smooth = (a, b, t) => { t = Math.max(0, Math.min(1, (t - a) / (b - a))); return t * t * (3 - 2 * t); };
+function base(x, z) {
+  let h = 1 + 2.5 * Math.sin(x * 0.035 + 1) * Math.cos(z * 0.03) + 0.8 * Math.sin(x * 0.11) * Math.sin(z * 0.09);
+  h += 25 * Math.exp(-((x - 44) ** 2 + (z - 7) ** 2) / (2 * 17 ** 2));             // the hill, the track cuts its shoulder
+  h += 9 * Math.exp(-((z + 95) ** 2) / (2 * 28 ** 2));                              // a ridge far north
+  h += 7 * Math.exp(-((x + 85) ** 2 + (z + 35) ** 2) / (2 * 26 ** 2));             // a rise under the forest
+  h += 6 * Math.exp(-((x - 110) ** 2 + (z - 40) ** 2) / (2 * 30 ** 2));
+  const d = Math.abs(x - riverX(z));
+  h -= 7.5 * (1 - smooth(0, 9.5, d));                                                // the river channel
+  return h;
+}
+
+// the track: one spline from the forest edge past the sawmill, over the river, through the hill,
+// down to the town. y is the rail level.
+const CTRL = [
+  [-105, 1.6, 36], [-80, 1.6, 32], [-56, 1.6, 28], [-38, 1.6, 24], [-24, 2.4, 19], [-8, 3.6, 13],
+  [10, 4.4, 4], [26, 5.4, -6], [40, 6.2, -16], [54, 5.0, -27], [68, 3.4, -36], [84, 2.4, -43], [105, 2.2, -50],
+];
+const curve = new THREE.CatmullRomCurve3(CTRL.map((p) => new THREE.Vector3(...p)), false, 'centripetal', 0.5);
+const LEN = curve.getLength();
+const N = 700;
+const S = Array.from({ length: N + 1 }, (_, i) => { const u = i / N; const p = curve.getPointAt(u); const t = curve.getTangentAt(u); return { p, t, u, water: base(p.x, p.z) < WATER + 1.2 }; });
+// a bridge is a run of samples over water, widened by a few metres of abutment each side
+for (let i = 0; i <= N; i++) S[i].bridge = false;
+for (let i = 0; i <= N; i++) if (S[i].water) for (let k = -8; k <= 8; k++) if (S[i + k]) S[i + k].bridge = true;
+function nearest(x, z) {
+  // the nearest track sample, by horizontal distance; coarse then fine
+  let best = 0, bd = 1e9;
+  for (let i = 0; i <= N; i += 7) { const d = (S[i].p.x - x) ** 2 + (S[i].p.z - z) ** 2; if (d < bd) { bd = d; best = i; } }
+  for (let i = Math.max(0, best - 7); i <= Math.min(N, best + 7); i++) { const d = (S[i].p.x - x) ** 2 + (S[i].p.z - z) ** 2; if (d < bd) { bd = d; best = i; } }
+  return { s: S[best], d: Math.sqrt(bd) };
+}
+const SITES = {
+  sawmill: { x: -30, z: 30, hw: 16, hd: 10, y: 1.4 },
+  town: { x: 84, z: -50, hw: 20, hd: 14, y: 2.0 },
+};
+/** the land as built: the base, flattened under the sites, cut and filled along the track */
+function H(x, z) {
+  let h = base(x, z);
+  for (const s of Object.values(SITES)) {
+    const dx = Math.abs(x - s.x) - s.hw, dz = Math.abs(z - s.z) - s.hd;
+    const d = Math.max(dx, dz);
+    if (d < 8) h = h + (s.y - h) * (1 - smooth(0, 8, d));
+  }
+  const { s, d } = nearest(x, z);
+  if (d < 40) {
+    const bed = s.p.y - 0.7;
+    const half = 2.8;
+    const cut = bed + Math.max(0, d - half) * 1.05;        // walls of a cutting, about 1:1
+    if (h > cut) h = cut;
+    if (!s.bridge) {
+      const fill = bed - Math.max(0, d - half) * 0.9;      // the slope of an embankment
+      if (h < fill && h > WATER - 1 && d < 16) h = fill;
+    }
+  }
+  return h;
+}
+
+// ------------------------------------------------------------------ the scene
+const canvas = document.getElementById('gl');
+const gl = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+gl.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+gl.setSize(innerWidth, innerHeight, false);
+gl.shadowMap.enabled = true;
+gl.shadowMap.type = THREE.PCFSoftShadowMap;
+gl.toneMapping = THREE.ACESFilmicToneMapping;
+gl.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+const SKY = new THREE.Color('#a9cde0');
+scene.background = SKY;
+
+scene.add(new THREE.HemisphereLight('#dfeaf2', '#4a5a3a', 1.1));
+const sun = new THREE.DirectionalLight('#fff1d6', 2.6);
+sun.position.set(-140, 190, 110);
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+Object.assign(sun.shadow.camera, { left: -190, right: 190, top: 190, bottom: -190, near: 10, far: 700 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.6;
+scene.add(sun, sun.target);
+
+const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0, flatShading: true, ...extra });
+
+// the ground: a big grid, each face its own colour, so it reads as low poly
+{
+  const SIZE = 440, SEG = 330;
+  const g = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).toNonIndexed();
+  g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  const GRASS = new THREE.Color('#7fa557'), GRASS2 = new THREE.Color('#5f8a44'), DRY = new THREE.Color('#a9a85c'), ROCK = new THREE.Color('#8a8070'), ROCK2 = new THREE.Color('#6f665a'), SAND = new THREE.Color('#c9bb86'), BED = new THREE.Color('#5c6a52');
+  for (let i = 0; i < pos.count; i++) pos.setY(i, H(pos.getX(i), pos.getZ(i)));
+  for (let f = 0; f < pos.count; f += 3) {
+    const ax = pos.getX(f), ay = pos.getY(f), az = pos.getZ(f);
+    const bx = pos.getX(f + 1), by = pos.getY(f + 1), bz = pos.getZ(f + 1);
+    const cx = pos.getX(f + 2), cy = pos.getY(f + 2), cz = pos.getZ(f + 2);
+    const nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay), ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az), nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    const up = Math.abs(ny / nl);
+    const h = (ay + by + cy) / 3, mx = (ax + bx + cx) / 3, mz = (az + bz + cz) / 3;
+    const noise = (Math.sin(mx * 0.9) * Math.cos(mz * 0.7) + Math.sin(mx * 0.23 + mz * 0.31)) * 0.22;
+    const near = nearest(mx, mz);
+    const inCut = near.d < 14 && h > near.s.p.y - 0.2 && up < 0.9;      // the walls of a cutting
+    const onFill = near.d < 12 && !near.s.bridge && h < near.s.p.y - 0.9 && h > base(mx, mz) + 0.3 && up < 0.9;  // the sides of an embankment
+    if (h < WATER - 0.6) c.copy(BED);
+    else if (h < WATER + 0.5) c.copy(SAND);
+    else if (inCut) c.copy(ROCK).lerp(ROCK2, 0.5 + noise * 0.6);
+    else if (onFill) c.copy(DRY).lerp(SAND, 0.4 + noise * 0.4);
+    else if (up < 0.55) c.copy(ROCK).lerp(DRY, 0.4 + noise * 0.3);
+    else if (up < 0.72) c.copy(GRASS2).lerp(DRY, 0.35 + noise * 0.3);
+    else c.copy(GRASS).lerp(GRASS2, 0.5 + noise * 0.45);
+    for (let k = 0; k < 3; k++) { col[(f + k) * 3] = c.r; col[(f + k) * 3 + 1] = c.g; col[(f + k) * 3 + 2] = c.b; }
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  const ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true }));
+  ground.receiveShadow = true; ground.castShadow = true;
+  scene.add(ground);
+  // the river
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(440, 440), new THREE.MeshStandardMaterial({ color: '#5f9ec4', roughness: 0.25, metalness: 0.05, transparent: true, opacity: 0.92 }));
+  water.rotation.x = -Math.PI / 2; water.position.y = WATER; water.receiveShadow = true;
+  scene.add(water);
+}
+
+// the forest: pines as cones on trunks, thousands of them, instanced
+{
+  const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const spots = [];
+  for (let i = 0; i < 9000 && spots.length < 2600; i++) {
+    const x = (hash(i, 1) - 0.5) * 400, z = (hash(i, 2) - 0.5) * 400;
+    const h = H(x, z);
+    if (h < WATER + 1.5) continue;
+    const { s, d } = nearest(x, z);
+    if (d < 7.5 + (s.p.y - h > 0 ? 0 : (h - s.p.y) * 1.2)) continue;      // clear of the track, wider in a cutting
+    if (Object.values(SITES).some((o) => Math.abs(x - o.x) < o.hw + 4 && Math.abs(z - o.z) < o.hd + 4)) continue;
+    const slope = Math.abs(H(x + 1, z) - h) + Math.abs(H(x, z + 1) - h);
+    if (slope > 1.6) continue;
+    const forest = smooth(-20, -70, x) * 0.9 + smooth(-25, -80, z) * 0.6 + smooth(60, 120, x) * 0.5;
+    const p = 0.1 + forest * 0.75 + (h > 8 ? 0.25 : 0);
+    if (hash(i, 3) > p) continue;
+    spots.push({ x, z, h, s: 0.75 + hash(i, 4) * 0.6, r: hash(i, 5) });
+  }
+  const cone = new THREE.ConeGeometry(2.3, 7, 6);
+  cone.translate(0, 3.5 + 1.2, 0);
+  const trunk = new THREE.CylinderGeometry(0.35, 0.45, 1.6, 5);
+  trunk.translate(0, 0.8, 0);
+  const crowns = new THREE.InstancedMesh(cone, mat('#ffffff'), spots.length);
+  const trunks = new THREE.InstancedMesh(trunk, mat('#5a3d26'), spots.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const c1 = new THREE.Color('#2f6a3a'), c2 = new THREE.Color('#4f8a3f'), c = new THREE.Color();
+  spots.forEach((o, i) => {
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), o.r * 6.28);
+    m.compose(v.set(o.x, o.h - 0.2, o.z), q, sc.set(o.s, o.s, o.s));
+    crowns.setMatrixAt(i, m); trunks.setMatrixAt(i, m);
+    crowns.setColorAt(i, c.copy(c1).lerp(c2, o.r));
+  });
+  crowns.castShadow = true; crowns.receiveShadow = true; trunks.castShadow = true;
+  scene.add(crowns, trunks);
+}
+
+// ------------------------------------------------------------------ the track
+{
+  // ballast: a ribbon of quads along the track, wider at the foot
+  const bal = [], balIdx = [];
+  for (let i = 0; i <= N; i++) {
+    const { p, t } = S[i];
+    const nx = -t.z, nz = t.x, nl = Math.hypot(nx, nz) || 1;
+    const ox = nx / nl, oz = nz / nl;
+    const y0 = p.y - 0.42, y1 = p.y - 0.75;
+    bal.push(p.x - ox * 3.0, y1, p.z - oz * 3.0, p.x - ox * 1.9, y0, p.z - oz * 1.9, p.x + ox * 1.9, y0, p.z + oz * 1.9, p.x + ox * 3.0, y1, p.z + oz * 3.0);
+    if (i < N) { const a = i * 4, b = a + 4; for (let k = 0; k < 3; k++) balIdx.push(a + k, b + k, a + k + 1, a + k + 1, b + k, b + k + 1); }
+  }
+  const bg = new THREE.BufferGeometry();
+  bg.setAttribute('position', new THREE.Float32BufferAttribute(bal, 3));
+  bg.setIndex(balIdx); bg.computeVertexNormals();
+  const ballast = new THREE.Mesh(bg, mat('#9a8f7f'));
+  ballast.receiveShadow = true; ballast.castShadow = true;
+  scene.add(ballast);
+  // sleepers
+  const step = 0.85, count = Math.floor(LEN / step);
+  const sleepers = new THREE.InstancedMesh(new THREE.BoxGeometry(2.5, 0.18, 0.42), mat('#4b3a28'), count);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+  for (let i = 0; i < count; i++) {
+    const u = (i + 0.5) * step / LEN;
+    const p = curve.getPointAt(u), t = curve.getTangentAt(u);
+    const ang = Math.atan2(t.x, t.z);
+    q.setFromAxisAngle(up, ang);
+    m.compose(v.set(p.x, p.y - 0.3, p.z), q, sc);
+    sleepers.setMatrixAt(i, m);
+  }
+  sleepers.castShadow = true; sleepers.receiveShadow = true;
+  scene.add(sleepers);
+  // rails: two tubes on offset curves
+  for (const side of [-1, 1]) {
+    const pts = S.filter((_, i) => i % 2 === 0).map(({ p, t }) => { const nx = -t.z, nz = t.x, nl = Math.hypot(nx, nz) || 1; return new THREE.Vector3(p.x + side * 0.76 * nx / nl, p.y - 0.12, p.z + side * 0.76 * nz / nl); });
+    const rc = new THREE.CatmullRomCurve3(pts);
+    const rail = new THREE.Mesh(new THREE.TubeGeometry(rc, 900, 0.09, 5, false), new THREE.MeshStandardMaterial({ color: '#6b6560', roughness: 0.45, metalness: 0.6 }));
+    rail.castShadow = true;
+    scene.add(rail);
+  }
+  // the bridge: a deck under the rails and piers down to the river bed, over every water run
+  const deckMat = mat('#8a6a44'), pierMat = mat('#7d7468');
+  let i = 0;
+  while (i <= N) {
+    if (!S[i].bridge) { i++; continue; }
+    let j = i; while (j <= N && S[j].bridge) j++;
+    const a = S[i], b = S[Math.min(N, j)];
+    const mid = a.p.clone().add(b.p).multiplyScalar(0.5), len = a.p.distanceTo(b.p);
+    const ang = Math.atan2(b.p.x - a.p.x, b.p.z - a.p.z);
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.1, len), deckMat);
+    deck.position.set(mid.x, mid.y - 1.2, mid.z); deck.rotation.y = ang; deck.castShadow = true; deck.receiveShadow = true;
+    scene.add(deck);
+    for (const side of [-1, 1]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.2, len), deckMat);
+      beam.position.set(mid.x + side * 2.3 * Math.cos(ang), mid.y + 0.4, mid.z - side * 2.3 * Math.sin(ang)); beam.rotation.y = ang; beam.castShadow = true;
+      scene.add(beam);
+    }
+    const piers = Math.max(1, Math.round(len / 9));
+    for (let k = 1; k <= piers; k++) {
+      const u = k / (piers + 1);
+      const p = a.p.clone().lerp(b.p, u);
+      const floor = base(p.x, p.z);
+      const hgt = p.y - 1.7 - floor + 1;
+      const pier = new THREE.Mesh(new THREE.BoxGeometry(3.2, hgt, 2.2), pierMat);
+      pier.position.set(p.x, floor - 1 + hgt / 2, p.z); pier.rotation.y = ang; pier.castShadow = true;
+      scene.add(pier);
+    }
+    i = j;
+  }
+}
+
+// ------------------------------------------------------------------ buildings and goods
+const box = (w, h, d, color, x, y, z, ry = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color)); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; scene.add(m); return m; };
+function gable(w, h, d, color, x, y, z, ry = 0) {
+  const shape = new THREE.Shape(); shape.moveTo(-w / 2 - 0.4, 0); shape.lineTo(w / 2 + 0.4, 0); shape.lineTo(0, h); shape.closePath();
+  const g = new THREE.ExtrudeGeometry(shape, { depth: d + 0.6, bevelEnabled: false }); g.translate(0, 0, -(d + 0.6) / 2);
+  const m = new THREE.Mesh(g, mat(color)); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; scene.add(m); return m;
+}
+function house(x, z, w, d, h, wall, roof, ry) {
+  const y = H(x, z);
+  box(w, h, d, wall, x, y + h / 2, z, ry);
+  gable(w, h * 0.7, d, roof, x, y + h, z, ry);
+}
+function logPile(x, z, rows, len, ry = 0) {
+  const y = H(x, z);
+  const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry;
+  for (let r = 0; r < rows; r++) for (let k = 0; k < rows - r; k++) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, len, 7), mat(r % 2 ? '#8a5a2b' : '#a0683a'));
+    log.rotation.z = Math.PI / 2; log.position.set(0, 0.55 + r * 0.95, (k - (rows - r - 1) / 2) * 1.12); log.castShadow = true;
+    g.add(log);
+  }
+  scene.add(g);
+}
+function boardStack(x, z, n, ry = 0) {
+  const y = H(x, z);
+  for (let i = 0; i < n; i++) box(5.5, 0.35, 2.4, i % 2 ? '#e2c892' : '#efd9a8', x, y + 0.2 + i * 0.4, z, ry);
+}
+// the sawmill: a long shed, a water wheel at the river, log piles in the yard, boards by the track
+{
+  const s = SITES.sawmill;
+  house(s.x - 2, s.z + 2, 16, 8, 5, '#8d6a3d', '#4a2f24', 0);
+  box(2.2, 7, 2.2, '#3a3530', s.x + 4, s.y + 6.5, s.z - 1);                       // the chimney
+  const wheelX = riverX(s.z) - 6.5;
+  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 1.2, 12), mat('#6b4a2a'));
+  wheel.rotation.z = Math.PI / 2; wheel.position.set(wheelX, WATER + 2.2, s.z + 2); wheel.castShadow = true; scene.add(wheel);
+  box(1.2, 4, 10, '#8d6a3d', wheelX - 1.6, WATER + 2, s.z + 2);                    // the flume
+  logPile(s.x - 10, s.z - 4, 4, 7, 0.1);
+  logPile(s.x - 10, s.z + 5, 3, 7, -0.1);
+  boardStack(s.x + 6, s.z - 5, 6, 0.15);
+  boardStack(s.x + 12, s.z - 4, 4, 0.1);
+  // the station: a platform by the track and a hut
+  const st = nearest(s.x, s.z).s;
+  const nx = -st.t.z, nz = st.t.x, nl = Math.hypot(nx, nz) || 1;
+  const ang = Math.atan2(st.t.x, st.t.z);
+  box(3.2, 0.9, 22, '#cdbf9c', st.p.x + nx / nl * 3.6, st.p.y - 0.4, st.p.z + nz / nl * 3.6, ang);
+  house(st.p.x + nx / nl * 6.5, st.p.z + nz / nl * 6.5, 4, 3.2, 3, '#b5382c', '#4a2f24', ang);
+}
+// the town: a cluster of houses, a church, a station with crates waiting
+{
+  const t = SITES.town;
+  const spots = [[-8, -6], [-2, -8], [5, -7], [10, -3], [9, 4], [3, 7], [-4, 8], [-10, 4], [-13, -1], [0, 0], [-6, 1], [6, -1], [12, -9], [-14, 7]];
+  spots.forEach(([dx, dz], i) => house(t.x + dx, t.z + dz, 4.5 + (i % 3) * 0.7, 4 + (i % 2) * 1.2, 3 + (i % 3) * 0.5, i % 4 === 0 ? '#d4a64c' : '#b5382c', i % 3 === 0 ? '#3a3530' : '#4a2f24', (i * 0.9) % 1.4));
+  const cy = H(t.x + 2, t.z + 14);
+  box(5, 7, 8, '#efe6cf', t.x + 2, cy + 3.5, t.z + 14, 0.2);
+  gable(5, 3, 8, '#4a2f24', t.x + 2, cy + 7, t.z + 14, 0.2);
+  box(2.4, 10, 2.4, '#efe6cf', t.x + 2, cy + 5, t.z + 18.5, 0.2);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(1.9, 5, 4), mat('#4a2f24')); spire.position.set(t.x + 2, cy + 12.5, t.z + 18.5); spire.rotation.y = 0.2 + Math.PI / 4; spire.castShadow = true; scene.add(spire);
+  const st = nearest(t.x, t.z).s;
+  const nx = -st.t.z, nz = st.t.x, nl = Math.hypot(nx, nz) || 1;
+  const ang = Math.atan2(st.t.x, st.t.z);
+  box(3.2, 0.9, 24, '#cdbf9c', st.p.x - nx / nl * 3.6, st.p.y - 0.4, st.p.z - nz / nl * 3.6, ang);
+  house(st.p.x - nx / nl * 7, st.p.z - nz / nl * 7, 6, 4, 3.4, '#d4a64c', '#4a2f24', ang);
+  for (let k = 0; k < 5; k++) box(1.4, 1.2, 1.4, k % 2 ? '#c9a46a' : '#b58a55', st.p.x - nx / nl * 3.6 + st.t.x * (k * 1.8 - 6), st.p.y + 0.7, st.p.z - nz / nl * 3.6 + st.t.z * (k * 1.8 - 6), ang);
+}
+
+// ------------------------------------------------------------------ the train
+const TRAIN = { at: 0.475 };          // the engine's front, as a share of the track length, east of the bridge
+const labels = [];
+{
+  const placeAt = (s, len) => { const u = Math.max(0, Math.min(1, s / LEN)); const p = curve.getPointAt(u), t = curve.getTangentAt(u); const g = new THREE.Group(); g.position.copy(p); g.position.y -= 0.1; g.rotation.y = Math.atan2(t.x, t.z); scene.add(g); return g; };
+  let s = TRAIN.at * LEN;
+  // the engine: frame, boiler, cab, chimney, dome, wheels
+  const EL = 9.5;
+  const e = placeAt(s - EL / 2, EL);
+  const add = (g, geo, color, x, y, z, rx = 0, extra = {}) => { const m = new THREE.Mesh(geo, mat(color, extra)); m.position.set(x, y, z); m.rotation.x = rx; m.castShadow = true; g.add(m); return m; };
+  add(e, new THREE.BoxGeometry(2.6, 0.5, EL), '#2a2622', 0, 0.9, 0);
+  add(e, new THREE.CylinderGeometry(1.15, 1.15, 5.6, 10), '#1f3a2a', 0, 2.3, 1.4, Math.PI / 2);
+  add(e, new THREE.BoxGeometry(2.7, 2.9, 2.4), '#1f3a2a', 0, 2.6, -2.6);
+  add(e, new THREE.BoxGeometry(3.0, 0.3, 2.8), '#2a2622', 0, 4.1, -2.6);
+  add(e, new THREE.CylinderGeometry(0.45, 0.6, 1.8, 8), '#1a1714', 0, 4.2, 3.4);
+  add(e, new THREE.SphereGeometry(0.7, 10, 8), '#d8a63a', 0, 3.45, 0.6, 0, { metalness: 0.5, roughness: 0.4 });
+  add(e, new THREE.BoxGeometry(2.4, 1.4, 0.4), '#b5382c', 0, 1.5, 4.7);
+  for (const z of [-3.2, -1.2, 0.9, 3.0]) for (const x of [-1.35, 1.35]) add(e, new THREE.CylinderGeometry(0.75, 0.75, 0.3, 10), '#8a1f14', x, 0.75, z, 0, { metalness: 0.2 }).rotation.z = Math.PI / 2;
+  // smoke
+  for (let k = 0; k < 6; k++) { const puff = new THREE.Mesh(new THREE.SphereGeometry(0.7 + k * 0.45, 8, 6), new THREE.MeshStandardMaterial({ color: '#f1efe8', transparent: true, opacity: 0.6 - k * 0.08, flatShading: true })); puff.position.set((k % 2) * 0.6 - 0.3, 5.3 + k * 1.4, 3.4 - k * 1.9); e.add(puff); }
+  s -= EL + 0.8;
+  // three log wagons: a flat frame, stakes, and the logs as the load
+  for (let w = 0; w < 3; w++) {
+    const WL = 8;
+    const g = placeAt(s - WL / 2, WL);
+    add(g, new THREE.BoxGeometry(2.6, 0.5, WL), '#5a3d26', 0, 0.9, 0);
+    for (const z of [-3.2, 0, 3.2]) for (const x of [-1.4, 1.4]) add(g, new THREE.BoxGeometry(0.22, 2.4, 0.22), '#3a2a1a', x, 2.3, z);
+    const rows = w === 2 ? 2 : 3;        // the last wagon is half loaded
+    for (let r = 0; r < rows; r++) for (let k = 0; k < 3 - r; k++) { const log = add(g, new THREE.CylinderGeometry(0.42, 0.42, WL - 1, 7), r % 2 ? '#8a5a2b' : '#a0683a', (k - (2 - r) / 2) * 0.86, 1.6 + r * 0.74, 0, Math.PI / 2); }
+    for (const z of [-2.6, 2.6]) for (const x of [-1.35, 1.35]) add(g, new THREE.CylinderGeometry(0.55, 0.55, 0.3, 10), '#2a2622', x, 0.55, z).rotation.z = Math.PI / 2;
+    s -= WL + 0.7;
+  }
+  labels.push({ pos: e.position.clone().add(new THREE.Vector3(0, 7.5, 0)), html: 'Jyry <b>8 of 9 logs</b> · 2.4 % climb' });
+}
+labels.push({ pos: new THREE.Vector3(SITES.sawmill.x - 26, SITES.sawmill.y + 6, SITES.sawmill.z + 12), html: 'Koskensaha <b>14 logs</b>, boards <b>6</b>' });
+labels.push({ pos: new THREE.Vector3(SITES.town.x + 2, SITES.town.y + 16, SITES.town.z + 14), html: 'Hämeenlinna pays boards <b>14</b>' });
+
+// ------------------------------------------------------------------ the camera
+let camera;
+const AIM = new THREE.Vector3(0, 3, -6);
+if (TAKE === 'iso') {
+  // tilted orthographic: reads as isometric, the whole valley in one view
+  // the track runs up the screen in portrait and across it in landscape, so the whole line fits
+  const aspect = innerWidth / innerHeight;
+  const w = LANDSCAPE ? 205 : 100, h = w / aspect;
+  camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 1, 1200);
+  const el = THREE.MathUtils.degToRad(LANDSCAPE ? 36 : 40), az = THREE.MathUtils.degToRad(LANDSCAPE ? 30 : -66);
+  const R = 420;
+  camera.position.set(AIM.x + R * Math.cos(el) * Math.sin(az), AIM.y + R * Math.sin(el), AIM.z + R * Math.cos(el) * Math.cos(az));
+  camera.lookAt(AIM);
+  scene.fog = new THREE.Fog(SKY, R + 120, R + 330);
+} else {
+  // the close take: a perspective camera low over the river, looking along the track at the train
+  camera = new THREE.PerspectiveCamera(LANDSCAPE ? 46 : 64, innerWidth / innerHeight, 0.5, 900);
+  const bridge = curve.getPointAt(0.42);
+  const look = bridge.clone().add(new THREE.Vector3(LANDSCAPE ? 6 : 10, 2, LANDSCAPE ? -4 : -8));
+  camera.position.set(bridge.x + (LANDSCAPE ? 4 : -8), bridge.y + (LANDSCAPE ? 15 : 22), bridge.z + (LANDSCAPE ? 50 : 40));
+  camera.lookAt(look);
+  scene.fog = new THREE.Fog(SKY, 160, 420);
+}
+sun.target.position.copy(AIM);
+
+// ------------------------------------------------------------------ draw once, place the labels, done
+gl.render(scene, camera);
+const tags = document.getElementById('tags');
+for (const l of labels) {
+  const v = l.pos.clone().project(camera);
+  if (Math.abs(v.x) > 1 || Math.abs(v.y) > 1) continue;
+  const d = document.createElement('div'); d.className = 'tag'; d.innerHTML = l.html;
+  let x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+  x = Math.max(LANDSCAPE ? 230 : 130, Math.min(innerWidth - 130, x)); y = Math.max(LANDSCAPE ? 60 : 110, y);
+  for (const o of tags.children) { const r = o.getBoundingClientRect(); if (Math.abs(r.left + r.width / 2 - x) < 170 && Math.abs(r.top + r.height - y) < 40) y = r.top + r.height + 38; }
+  d.style.left = `${x}px`; d.style.top = `${y}px`;
+  tags.appendChild(d);
+}
+requestAnimationFrame(() => { gl.render(scene, camera); requestAnimationFrame(() => { window.__ready = true; }); });
+</script>
+</body>
+</html>

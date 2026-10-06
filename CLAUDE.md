@@ -86,6 +86,8 @@ docs/
   design.md           the research and the design
   mockups/            the static screens the next build is judged against (README.md has the
                         notes; `make mockups` renders mockups.html to png/ with Playwright)
+    3d/               the three.js look test: one rendered valley scene, two camera takes
+                        (`make scene3d`); three is a dependency for this and for what follows
   adr/                architecture decisions, one per file
 ```
 

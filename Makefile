@@ -16,6 +16,7 @@
 #                       #   a video each (ORIENT=portrait for one; SPEED=0.5 on a loaded machine)
 #   make pwa-check      # manifest, icons, service worker, offline (URL ?= the live site)
 #   make mockups        # render docs/mockups/mockups.html to PNG, iPhone portrait and landscape
+#   make scene3d        # render the three.js look test in docs/mockups/3d, both camera takes
 #   make plan           # terraform plan for the pixel infra (no changes)
 #   make apply          # terraform apply (creates AWS resources), then make env
 #   make outputs        # show terraform outputs (pixel_url etc.)
@@ -28,7 +29,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots icon touch-check rotate-check playthrough pwa-check mockups plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots icon touch-check rotate-check playthrough pwa-check mockups scene3d plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -77,6 +78,10 @@ pwa-check:
 # the static design mockups (docs/mockups/README.md), one PNG per screen and orientation
 mockups:
 	node docs/mockups/render.mjs
+
+# the three.js look test (docs/mockups/3d/README.md): the valley scene, iso and close takes
+scene3d:
+	node docs/mockups/3d/render.mjs
 
 plan:
 	$(TF) init -input=false
