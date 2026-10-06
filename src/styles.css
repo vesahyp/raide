@@ -1,0 +1,7 @@
+:root {
+  --pine: #1b2a1e;
+  --bone: #efe6cf;
+}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; background: var(--pine); color: var(--bone); font-family: system-ui, sans-serif; }
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }

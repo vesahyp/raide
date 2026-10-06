@@ -1,0 +1,31 @@
+{
+  "name": "raide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Raide: a railroad tycoon for the phone. Drag track, buy trains, haul timber.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "sim-check": "vite build --ssr tools/sim-check.ts --outDir .sim-check --logLevel error && node .sim-check/sim-check.js",
+    "balance": "vite build --ssr tools/balance.ts --outDir .sim-check --logLevel error && node .sim-check/balance.js"
+  },
+  "author": "Vesa Hyppönen <vesa.hypponen@gmail.com> (https://github.com/vesahyp)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.3"
+  }
+}

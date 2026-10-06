@@ -1,0 +1,17 @@
+node_modules
+dist
+dist-ssr
+.sim-check
+*.local
+.DS_Store
+.playwright-mcp
+
+# terraform (infra/): state is in S3, the plan and the providers stay local
+infra/.terraform/
+infra/tfplan
+infra/*.tfstate
+infra/*.tfstate.backup
+tools/dbg/
+shots/
+.*-check*
+.hold/
