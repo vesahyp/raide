@@ -29,6 +29,10 @@ engine.
   earnings per train.
 - UI (Sonnet): the buy card and the train card.
 - Renderer (Sonnet): loading at the platform, the load tag on the train.
+- Sim, renderer, UI (Sonnet): the dwell (design: "Loading takes time"):
+  a train stops fully on its platform track, each wagon unloads and loads
+  in turn with the goods seen moving, the train leaves when done. The
+  first station upgrade, the loading crew, bought on the station's card.
 
 ### Slice 5: a map worth a session
 
@@ -63,7 +67,8 @@ by year as a line.
 
 - How many Sonnet subagents run at once. The default is one at a time.
 
-Left in the design for a later build: tunnels, passengers and mail, loans,
+Left in the design for a later build: the crane and the longer platform
+(station upgrades after the loading crew), tunnels, passengers and mail, loans,
 the harbour and the export sink, eras and the coal unlock, industries that
 close, branches and junctions, double track, lines with more than two
 stops, autosave, stars in DynamoDB, the sandbox.

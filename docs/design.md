@@ -327,6 +327,29 @@ sizes: a halt (one train at a time, small circle), a station (two trains,
 bigger circle), and a terminus (four trains, biggest circle). Upgrade is one
 tap, in place.
 
+**Loading takes time** (Vesa, 2026-10-07: "When trains arrive, unloading
+and loading cars take time. That also gives way to new perks/purchasables.
+And solves the train leaving issue where cars extend to nothing.") A train
+runs fully onto its platform track and stops. Then each wagon in turn
+unloads and loads, and the player sees the goods move between the wagon
+and the yard's pile. The train leaves only when every wagon is done and
+the whole train stands on the platform, so no wagon ever stands past the
+end of the track. The dwell is a cost the player can see: a long train
+earns more a trip but stands longer at both ends.
+
+The dwell is what a station's upgrades buy down. They are bought on the
+station's card, per station, because a crane belongs at one sawmill and
+not on the whole map:
+
+| Upgrade | Does | Where |
+|---------|------|-------|
+| Loading crew | Every wagon loads and unloads a third faster | Any station |
+| Crane | Timber, boards and grain load and unload twice as fast | Forest, sawmill, farm, mill; needs the crew |
+| Longer platform | One more train can stand at the station, and trains up to six wagons fit | Any station |
+
+The crew is the first of them; the crane and the platform follow it. The
+numbers are starting values for the bot to tune.
+
 A **town** has a size from 1 to 5. It grows when goods and passengers are
 delivered to it over a year and shrinks when they stop. Each size adds
 buildings on the map, more passengers, more consumption, and at sizes 3 and
