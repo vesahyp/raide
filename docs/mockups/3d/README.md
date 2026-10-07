@@ -1,5 +1,9 @@
 # The 3D look test
 
+History. The 3D map was held on 2026-10-07 in favour of the top-down look
+(ADR 0003, `../topdown/`). three is no longer a dependency, so `scene.html`
+and `render.mjs` do not run any more; the PNGs are the record.
+
 Vesa on the flat 2D mockups, 2026-10-06: "No, it looks pretty bad. Do we
 need to go 3d or isometric? Im looking for the rail building sim experience
 but on phone." This folder holds one rendered scene in three.js, two camera

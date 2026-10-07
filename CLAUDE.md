@@ -24,9 +24,10 @@ The Räkkä architecture, copied from `sora` (ADR 0001):
 
 - **Vite + TypeScript + React.** React renders the title, the HUD, the
   cards and the result. The map never goes through React.
-- **three.js** for the map (ADR 0002): a low-poly height field carved by
-  the lines, flat-shaded boxes and cones for everything on it, a tilted
-  orthographic camera. No image assets.
+- **Canvas 2D** for the map (ADR 0003), in Höyry's style: top down with a
+  3/4 lean, flat colours, dark outlines, sprites drawn with canvas paths.
+  A big tile map that scrolls, hills as one-tile terrace steps, four zoom
+  levels. No image assets, no WebGL.
 - **A headless sim** under `src/game/`, stepped at a fixed `DT` of 1/60 s,
   the one authority on money, goods, trains and blocks.
 - **The bot plays the checks.** `tools/bot.ts` plays the scenario headless
@@ -42,26 +43,30 @@ src/
     grid.ts           the grid the player never sees: eight directions, A* routing two ways (the
                         cheapest and the shortest, which bridges water and cuts through a hill),
                         the rail profile (the land clamped to GRADE_MAX, cut and fill paid for),
-                        the costs (track 1 plus the grade, earth per metre, bridge 4, station 20),
-                        the track links per cell
-    state.ts          createState(scenario), siteAt, stationAt, siteById, goodsOnMap
+                        the costs per 100 m tile (track 0.5 plus the grade, earth per metre,
+                        bridge 2, station 20), the track links per cell; a yard is never crossed
+    state.ts          createState(scenario): the land cut into 10 m terraces, the cover layer, the
+                        yards; yardOf, siteAt, stationAt, siteById, goodsOnMap
     sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
                         rule, grades (a climb cuts the speed by the engine's climb share and the load),
                         loading, the full-load wait, paying, demand, town growth at the year end;
                         plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/
                         closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
-      economy.ts      every number the balance is made of: prices, demand, the cell in metres and
-                        the grade limit, the two engines, the wagons and what they carry, growth
-      scenarios.ts    the hand-made maps: size, the land as a height function (water below zero),
-                        sites, start, goal, the engines on sale
+      economy.ts      every number the balance is made of: prices, demand, the tile in metres
+                        (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth
+      scenarios.ts    the hand-made tile maps (Harju 120 by 90, Sawmill 64 by 48): the land as a
+                        height function in metres (water below zero), the cover (forest, field,
+                        street), sites, start, goal, the engines on sale
   render/
-    render3d.ts       the map in three.js: the land mesh carved by the lines, water, instanced pines,
-                        sites with their stock as piles, track with sleepers, rails, bridges and a
-                        siding past each station, trains with their loads, the ghost route coloured
-                        by grade, the HTML overlay (names, chips, floats, the hand, the plate), the
-                        tilted orthographic camera with fit, pan, pinch, turn and follow, pick and
-                        project for the input
+    render2d.ts       the map in Canvas 2D: the camera (scroll, pinch, four zoom levels, follow,
+                        pick and project), the terrain cached per chunk of 16 tiles and drawn in
+                        row order so a terrace in front hides what is behind, the trains, smoke and
+                        piles every frame, the route under the finger coloured by grade, the
+                        whole-map look under 9 px per tile, the HTML overlay (names, chips, badges,
+                        floats, the hand, the plate)
+    draw2d.ts         the sprites: tiles, faces, trees, track, bridges, buildings, piles, engines
+                        and wagons with their loads
   input/input.ts      fingers: one from a station builds, one elsewhere pans, two pinch and twist,
                         a tap opens a card and a tap on a train follows it; pointer events
   audio.ts            a few synthesised sounds; track.ts the tracker shim
@@ -98,10 +103,9 @@ docs/
   design.md           the research and the design
   mockups/            the static screens the next build is judged against (README.md has the
                         notes; `make mockups` renders mockups.html to png/ with Playwright)
-    3d/               the three.js look test: one rendered valley scene, two camera takes
-                        (`make scene3d`); three is a dependency for this and for what follows
-    topdown/          the top-down look test: Höyry's flat style on a big scrolling map, four
-                        screens (`make topdown`), waiting for Vesa's pick
+    3d/               the three.js look test, held on 2026-10-07 (ADR 0003); PNGs only, history
+    topdown/          the top-down look test Vesa picked: Höyry's flat style on a big scrolling
+                        map, four screens (`make topdown`); the game is judged against these
   adr/                architecture decisions, one per file
 ```
 
@@ -137,9 +141,7 @@ docs/
 - **Before committing:** `make check` (typecheck, build, sim-check) must
   pass.
 - **A renderer change is judged by looking at `make look`**, the pictures in
-  `shots/look/`, in both orientations. Playwright draws WebGL in software
-  unless launched with the GPU flags in `scripts/look.mjs`; every phone
-  script passes them.
+  `shots/look/`, in both orientations, against `docs/mockups/topdown/png/`.
 - **A control or balance change is proved by thumb, on video.**
   `make playthrough` plays the scenario on an emulated iPhone in portrait
   and in landscape with the hand in `tools/hand.ts`, every input a touch,
