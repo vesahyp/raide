@@ -85,7 +85,12 @@ export const WAGONS_MAX = 4;
 /** what a sold train or engine returns */
 export const RESALE = 0.5;
 /** seconds a train stands at a station */
-export const STOP_SECONDS = 2;
+export const STOP_SECONDS = 1;
+/** seconds one wagon takes to unload, and again to load: each wagon in turn, then the stop lasts STOP_SECONDS more */
+export const WAGON_DWELL = 0.6;
+/** the loading crew a station can buy: its price, and the share of the dwell it takes off */
+export const CREW_PRICE = 30;
+export const CREW_CUT = 1 / 3;
 /** lengths in tiles, for the renderer and the station slots */
 export const ENGINE_LEN = 2.2;
 export const WAGON_LEN = 1.4;

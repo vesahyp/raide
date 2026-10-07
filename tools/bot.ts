@@ -8,15 +8,20 @@
  */
 import type { EngineId, SimState, WagonType, YearEndChoice } from '../src/game/types';
 import type { Route, RouteMode } from '../src/game/grid';
-import { build, buyTrain, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad } from '../src/game/sim';
+import { build, buyTrain, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, buyCrew } from '../src/game/sim';
 import { idx } from '../src/game/grid';
+import { stationAt } from '../src/game/state';
 import { siteById } from '../src/game/state';
 
 export type Step =
   | { kind: 'line'; from: string; to: string; mode: RouteMode }
   | { kind: 'train'; line: [string, string]; wagons: WagonType; engine?: EngineId; fullLoad?: boolean }
   | { kind: 'wagon'; train: number }
-  | { kind: 'engine'; train: number; engine: EngineId };
+  | { kind: 'engine'; train: number; engine: EngineId }
+  /** the train, by its place in the list of trains, goes to another line while it stands at a station both serve */
+  | { kind: 'move'; train: number; line: [string, string] }
+  /** the loading crew at a site's station */
+  | { kind: 'crew'; site: string };
 
 export interface BotPlan {
   steps: Step[];
@@ -29,6 +34,7 @@ export const PLANS: Record<string, BotPlan> = {
     steps: [
       { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
       { kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat' },
+      { kind: 'crew', site: 'forest' },
       { kind: 'line', from: 'sawmill', to: 'town', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'town'], wagons: 'box' },
       { kind: 'train', line: ['sawmill', 'town'], wagons: 'box' },
@@ -41,6 +47,7 @@ export const PLANS: Record<string, BotPlan> = {
     steps: [
       { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
       { kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat' },
+      { kind: 'crew', site: 'forest' },
       { kind: 'line', from: 'sawmill', to: 'hameenlinna', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'hameenlinna'], wagons: 'box' },
       { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap' },
@@ -48,9 +55,9 @@ export const PLANS: Record<string, BotPlan> = {
       { kind: 'line', from: 'tampere', to: 'mill', mode: 'short' },
       { kind: 'line', from: 'mill', to: 'farm', mode: 'short' },
       { kind: 'train', line: ['mill', 'farm'], wagons: 'hopper', engine: 'jyry', fullLoad: true },
-      { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
+      { kind: 'train', line: ['tampere', 'mill'], wagons: 'box', fullLoad: true },
       { kind: 'line', from: 'mill', to: 'hameenlinna', mode: 'short' },
-      { kind: 'train', line: ['mill', 'hameenlinna'], wagons: 'box' },
+      { kind: 'train', line: ['mill', 'hameenlinna'], wagons: 'box', fullLoad: true },
       { kind: 'wagon', train: 3 },
       { kind: 'wagon', train: 3 },
       { kind: 'wagon', train: 1 },
@@ -123,6 +130,19 @@ export class Bot {
       if (!addWagon(s, tr.id)) return;
       this.done++;
       this.log.push(`${t}: wagon on train ${tr.id}, cash ${s.cash}`);
+    } else if (step.kind === 'crew') {
+      const site = siteById(s, step.site);
+      const st = stationAt(s, idx(s, site.cx, site.cy));
+      if (!st || !buyCrew(s, st.id)) return;
+      this.done++;
+      this.log.push(`${t}: loading crew at ${step.site}, cash ${s.cash}`);
+    } else if (step.kind === 'move') {
+      const tr = s.trains[step.train];
+      const line = this.lineBetween(s, step.line[0], step.line[1]);
+      if (!tr || !line) throw new Error(`cannot move train ${step.train} to ${step.line.join('-')}`);
+      if (!moveTrain(s, tr.id, line.id)) return;
+      this.done++;
+      this.log.push(`${t}: train ${tr.id} to ${step.line.join('-')}`);
     } else if (step.kind === 'engine') {
       const tr = s.trains[step.train];
       if (!tr || !setEngine(s, tr.id, step.engine)) return;

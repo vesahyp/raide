@@ -11,9 +11,9 @@ import { GOODS } from './types';
 import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, type Route } from './grid';
 import { siteAt, stationAt, siteById, goodsOnMap, zeroGoods } from './state';
 import {
-  BASE_PRICE, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, GROW_NEED, MAKES, MILL_EATS, MONTHS,
+  BASE_PRICE, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, CREW_CUT, CREW_PRICE, GROW_NEED, MAKES, MILL_EATS, MONTHS,
   PERK_FOREST, PERK_SPEED, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, UNDO_SECONDS,
-  WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
+  WAGON_DWELL, WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
 
 export const DT = 1 / 60;
@@ -97,7 +97,53 @@ export function routeTrips(s: SimState, r: Route, engine: EngineId, wagons = WAG
   const out = railTime(s, r.rail, dist, engine, 0, 1);
   const loadedUp = railTime(s, r.rail, dist, engine, wagons, 1) + back;
   const loadedDown = railTime(s, r.rail, dist, engine, wagons, -1) + out;
-  return YEAR_SECONDS / (Math.max(loadedUp, loadedDown) + 2 * STOP_SECONDS);
+  return YEAR_SECONDS / (Math.max(loadedUp, loadedDown) + 2 * STOP_SECONDS + 2 * wagons * WAGON_DWELL);
+}
+
+/**
+ * Round trips a year an engine makes on a built line, the same sum as routeTrips: loaded one way
+ * (the slower way), empty back, and both stops.
+ */
+export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons = WAGONS_DEFAULT): number {
+  const t = (cargo: number, dir: 1 | -1) => tripTime(s, line, engine, cargo, dir);
+  const loaded = Math.max(t(wagons, 1) + t(0, -1), t(wagons, -1) + t(0, 1));
+  // at one end the wagons come off, at the other they go on, each at its station's pace
+  const stands = line.stops.map((id) => dwellAt(s, s.stations.find((st) => st.id === id)?.cell ?? -1));
+  return YEAR_SECONDS / (loaded + 2 * STOP_SECONDS + wagons * (stands[0] + stands[1]));
+}
+
+/** seconds one wagon takes to unload or to load at a station: a loading crew takes a third off */
+export function dwellAt(s: SimState, cell: number): number {
+  const st = s.stations.find((o) => o.cell === cell);
+  return WAGON_DWELL * (st?.crew ? 1 - CREW_CUT : 1);
+}
+
+/** Buy the loading crew at a station: every wagon takes a third less time there. */
+export function buyCrew(s: SimState, stationId: number): boolean {
+  const st = s.stations.find((o) => o.id === stationId);
+  if (!st || st.crew || s.cash < CREW_PRICE) return false;
+  s.cash -= CREW_PRICE;
+  st.crew = true;
+  const p = centre(s, st.cell);
+  s.floats.push({ x: p.x, y: p.y, text: `-${CREW_PRICE}`, age: 0, kind: 'cost' });
+  s.sounds.push('buy');
+  return true;
+}
+
+/** the wagon a standing train is working on, counted from the front, and how far its load has come, 0 to 1; null when none is */
+export function workingWagon(s: SimState, t: Train): { wagon: number; progress: number } | null {
+  if (!t.dock || t.at === null) return null;
+  const dwell = dwellAt(s, t.at);
+  const progress = 1 - Math.max(0, Math.min(1, t.work / dwell));
+  return { wagon: t.dock === 'unload' ? t.unloaded : t.cargo, progress };
+}
+
+/** the seconds from one end of a line to the other for a train of this engine, empty and with every wagon full, each way */
+export function tripTimes(s: SimState, line: Line, engine: EngineId, wagons: number): { empty: [number, number]; full: [number, number] } {
+  return {
+    empty: [tripTime(s, line, engine, 0, 1), tripTime(s, line, engine, 0, -1)],
+    full: [tripTime(s, line, engine, wagons, 1), tripTime(s, line, engine, wagons, -1)],
+  };
 }
 
 /** the share of its speed an engine keeps on a grade with a load: 1 on the flat and downhill */
@@ -181,7 +227,7 @@ export function build(s: SimState, r: Route): Line | null {
   let station = stationAt(s, to);
   let newStation: number | null = null;
   if (!station) {
-    station = { id: s.nextId++, cell: to, siteId: siteAt(s, to)!.id };
+    station = { id: s.nextId++, cell: to, siteId: siteAt(s, to)!.id, crew: false };
     s.stations.push(station);
     newStation = station.id;
   }
@@ -226,12 +272,17 @@ function engineSpeed(s: SimState, t: Train): number {
   return ENGINES[t.engine].speed * (s.perks.includes('speed') ? PERK_SPEED : 1);
 }
 
-/** Buy a train on a line: it leaves at once from the line's first stop. */
-export function buyTrain(s: SimState, lineId: number, wagons: WagonType, engine: EngineId = 'hilma'): Train | null {
+/** how many wagons a new train gets when the player does not say: the default, and the year-end wagon */
+export function defaultWagons(s: SimState): number {
+  return Math.min(WAGONS_MAX, WAGONS_DEFAULT + (s.perks.includes('wagon') ? 1 : 0));
+}
+
+/** Buy a train on a line: it stands at the line's first stop and takes what the site has. `count` is the number of wagons. */
+export function buyTrain(s: SimState, lineId: number, wagons: WagonType, engine: EngineId = 'hilma', count?: number): Train | null {
   if (s.trains.length >= s.scenario.trainsMax) return null;
   const line = s.lines.find((l) => l.id === lineId);
   if (!line) return null;
-  const nWagons = Math.min(WAGONS_MAX, WAGONS_DEFAULT + (s.perks.includes('wagon') ? 1 : 0));
+  const nWagons = count === undefined ? defaultWagons(s) : Math.max(1, Math.min(WAGONS_MAX, Math.round(count)));
   const cost = trainPrice(engine, nWagons);
   if (cost > s.cash) return null;
   s.cash -= cost;
@@ -251,20 +302,71 @@ export function buyTrain(s: SimState, lineId: number, wagons: WagonType, engine:
     good: null,
     at: line.path[0],
     slot: 0,
+    slotFrom: 0,
     speed: 0,
     odometer: 0,
     earned: 0,
+    earnedYear: 0,
+    earnedLast: 0,
+    dock: null,
+    work: 0,
+    unitPay: 0,
+    paid: 0,
+    unloaded: 0,
   };
   t.speed = engineSpeed(s, t);
-  // a new train stands at its first stop, on the next free platform, and takes what the site has
+  // a new train stands at its first stop, on the next free platform track
   t.slot = freeSlot(s, t, line.path[0]);
+  t.slotFrom = t.slot;
   s.trains.push(t);
-  const st = stationAt(s, line.path[0]);
-  if (st) load(s, t, siteById(s, st.siteId));
   const p = centre(s, line.path[0]);
   s.floats.push({ x: p.x, y: p.y, text: `-${cost}`, age: 0, kind: 'cost' });
   s.sounds.push('buy');
   return t;
+}
+
+/**
+ * The station cell a train stands at is a stop of this line, so the train can take it up from
+ * there. The cargo it carries stays only when the line's other end takes it; otherwise it goes
+ * back to the yard it stands in (when that site makes it) or is lost.
+ */
+export function canMove(s: SimState, trainId: number, lineId: number): boolean {
+  const t = s.trains.find((o) => o.id === trainId);
+  const line = s.lines.find((l) => l.id === lineId);
+  if (!t || !line || t.lineId === lineId || t.state !== 'stop' || t.at === null) return false;
+  return line.path[0] === t.at || line.path[line.path.length - 1] === t.at;
+}
+
+/** Move a train to another line, while it stands at a station both lines serve. */
+export function moveTrain(s: SimState, trainId: number, lineId: number): boolean {
+  if (!canMove(s, trainId, lineId)) return false;
+  const t = s.trains.find((o) => o.id === trainId)!;
+  const line = s.lines.find((l) => l.id === lineId)!;
+  const at = t.at!;
+  const startEnd = line.path[0] === at;
+  if (t.cargo > 0 && t.good) {
+    const otherCell = startEnd ? line.path[line.path.length - 1] : line.path[0];
+    const other = stationAt(s, otherCell);
+    const takes = !!other && TAKES[siteById(s, other.siteId).kind].includes(t.good);
+    const here = stationAt(s, at);
+    const site = here && siteById(s, here.siteId);
+    if (!takes) {
+      if (site && MAKES[site.kind] === t.good) site.stock += t.cargo;
+      t.cargo = 0;
+      t.good = null;
+    }
+  }
+  t.lineId = lineId;
+  t.dir = startEnd ? -1 : 1;
+  t.s = startEnd ? 0 : line.dist[line.dist.length - 1];
+  t.odometer = Math.max(t.odometer, 0.001);
+  t.dock = null;
+  t.work = 0;
+  t.unloaded = 0;
+  t.unitPay = 0;
+  t.stopLeft = Math.max(t.stopLeft, STOP_SECONDS / 2);
+  s.sounds.push('buy');
+  return true;
 }
 
 /** One more wagon on a train, up to the limit. */
@@ -305,11 +407,15 @@ export function sellTrain(s: SimState, trainId: number): boolean {
   return true;
 }
 
+/** most platform tracks a station has */
+export const SLOTS_MAX = 3;
+
 function freeSlot(s: SimState, t: Train, cell: number): number {
   const used = new Set(s.trains.filter((o) => o !== t && (o.at === cell || (o.state === 'run' && nextStopCell(s, o) === cell))).map((o) => o.slot));
   let k = 0;
   while (used.has(k)) k++;
-  return k;
+  // a station draws three platform tracks at most: a fourth train shares the last
+  return Math.min(k, SLOTS_MAX - 1);
 }
 
 function nextStopCell(s: SimState, t: Train): number {
@@ -372,65 +478,102 @@ function monthTick(s: SimState): void {
   }
 }
 
-function arrive(s: SimState, t: Train, line: Line, cell: number): void {
+function arrive(t: Train, cell: number): void {
   t.state = 'stop';
   t.stopLeft = STOP_SECONDS;
   t.at = cell;
-  const st = stationAt(s, cell);
-  const site = st && siteById(s, st.siteId);
-  if (!site) return;
-  const p = centre(s, cell);
-  // unload what the site takes
-  if (t.cargo > 0 && t.good && TAKES[site.kind].includes(t.good)) {
-    const n = t.cargo;
-    const good = t.good;
-    const pay = price(s, good, site.id, line.dist[line.dist.length - 1]) * n;
+  t.dock = null;
+  t.work = 0;
+  t.unloaded = 0;
+  t.unitPay = 0;
+  t.paid = 0;
+}
+
+/** the site a standing train is at */
+function dockSite(s: SimState, t: Train): Site | null {
+  const st = t.at === null ? undefined : stationAt(s, t.at);
+  return st ? siteById(s, st.siteId) : null;
+}
+
+/** whether the wagons can take what the site makes: the site makes it, the wagons carry it, nothing else is aboard */
+function wantsLoad(t: Train, site: Site): boolean {
+  const makes = MAKES[site.kind];
+  return !!makes && WAGON_GOODS[t.wagons].includes(makes) && (t.cargo === 0 || t.good === makes) && t.cargo < t.nWagons;
+}
+
+/**
+ * The work at the platform, one wagon's load at a time: first what the site takes comes off,
+ * each load paid as it leaves, then what the site makes goes on, each load taken from its pile.
+ * Returns whether a load is in hand or waiting to be moved.
+ */
+function tickDock(s: SimState, t: Train): boolean {
+  const site = dockSite(s, t);
+  const was = t.dock;
+  if (!site) {
+    t.dock = null;
+    return false;
+  }
+  const unloading = t.cargo > 0 && t.good !== null && TAKES[site.kind].includes(t.good);
+  const loading = !unloading && wantsLoad(t, site) && site.stock >= 1;
+  t.dock = unloading ? 'unload' : loading ? 'load' : null;
+  if (!t.dock) {
+    if (t.paid > 0) {
+      const p = centre(s, t.at!);
+      s.floats.push({ x: p.x, y: p.y, text: `+${t.paid}`, age: 0, kind: 'pay' });
+      t.paid = 0;
+    }
+    t.unitPay = 0;
+    t.unloaded = 0;
+    return false;
+  }
+  const dwell = dwellAt(s, t.at!);
+  if (was !== t.dock) t.work = dwell;
+  t.work -= DT;
+  if (t.work > 0) return true;
+  t.work = dwell;
+  if (unloading) {
+    const good = t.good!;
+    if (t.unitPay === 0) t.unitPay = price(s, good, site.id, lineOf(s, t).dist[lineOf(s, t).dist.length - 1]);
+    const pay = t.unitPay;
     s.cash += pay;
     s.income[good] += pay;
     t.earned += pay;
-    site.taken[good] += n;
-    site.delivered += n;
-    site.fed[good] += n;
-    t.cargo = 0;
-    t.good = null;
+    t.earnedYear += pay;
+    t.paid += pay;
+    site.taken[good] += 1;
+    site.delivered += 1;
+    site.fed[good] += 1;
+    t.cargo -= 1;
+    t.unloaded += 1;
+    if (t.cargo === 0) {
+      t.good = null;
+      t.unloaded = 0;
+    }
     if (s.firstPayAt === null) s.firstPayAt = s.time;
     // a refinery turns the input into its output at once
-    if (MAKES[site.kind]) site.stock += n;
+    if (MAKES[site.kind]) site.stock += 1;
     const goal = s.scenario.goal;
     if (goal.kind === 'deliver' && site.id === goal.site && good === goal.good) {
-      s.goalCount += n;
+      s.goalCount += 1;
       if (s.goalCount >= goal.count && !s.result) finish(s, true);
     }
-    s.floats.push({ x: p.x, y: p.y, text: `+${pay}`, age: 0, kind: 'pay' });
     s.sounds.push('pay');
+  } else {
+    const makes = MAKES[site.kind]!;
+    site.stock -= 1;
+    t.cargo += 1;
+    t.good = makes;
+    site.lastPickup = s.time;
+    s.sounds.push('load');
   }
-  load(s, t, site);
-}
-
-/** load what the site makes, if the wagons take it */
-function load(s: SimState, t: Train, site: { kind: keyof typeof MAKES; stock: number; lastPickup: number }): void {
-  const makes = MAKES[site.kind];
-  if (!makes || !WAGON_GOODS[t.wagons].includes(makes) || site.stock < 1) return;
-  if (t.cargo > 0 && t.good !== makes) return;
-  const n = Math.min(Math.floor(site.stock), t.nWagons - t.cargo);
-  if (n <= 0) return;
-  site.stock -= n;
-  t.cargo += n;
-  t.good = makes;
-  site.lastPickup = s.time;
-  s.sounds.push('load');
+  return true;
 }
 
 /** whether the train is at a loading stop and set to wait for a full load it has not got */
 function waitingForLoad(s: SimState, t: Train): boolean {
-  if (!t.fullLoad || t.at === null || t.cargo >= t.nWagons) return false;
-  const st = stationAt(s, t.at);
-  const site = st && siteById(s, st.siteId);
-  if (!site) return false;
-  const makes = MAKES[site.kind];
-  if (!makes || !WAGON_GOODS[t.wagons].includes(makes)) return false;
-  load(s, t, site);
-  return t.cargo < t.nWagons;
+  if (!t.fullLoad || t.at === null) return false;
+  const site = dockSite(s, t);
+  return !!site && wantsLoad(t, site);
 }
 
 function depart(s: SimState, t: Train, line: Line, turn: boolean): boolean {
@@ -442,22 +585,23 @@ function depart(s: SimState, t: Train, line: Line, turn: boolean): boolean {
   t.s = t.dir === 1 ? 0 : end;
   t.state = 'run';
   t.at = null;
+  t.dock = null;
+  t.slotFrom = t.slot;
   t.slot = freeSlot(s, t, nextStopCell(s, t));
   if (t.odometer === 0) t.odometer = 0.001;
   s.sounds.push('whistle');
   return true;
 }
 
-function moveTrain(s: SimState, t: Train): void {
+function runTrain(s: SimState, t: Train): void {
   const line = lineOf(s, t);
   const end = line.dist[line.dist.length - 1];
   if (t.state === 'stop') {
-    t.stopLeft -= DT;
-    if (t.stopLeft <= 0) {
-      if (waitingForLoad(s, t)) {
-        t.stopLeft = 1;
-        return;
-      }
+    const busy = tickDock(s, t);
+    // the stop's own second runs once the wagons are done
+    if (!busy) t.stopLeft -= DT;
+    if (t.stopLeft <= 0 && !busy) {
+      if (waitingForLoad(s, t)) return;
       // a brand-new train has not turned yet: it stands at stop 0 facing stop 1
       const fresh = t.odometer === 0 && t.at === line.path[0];
       depart(s, t, line, !fresh);
@@ -472,10 +616,10 @@ function moveTrain(s: SimState, t: Train): void {
   t.odometer += step;
   if (t.dir === 1 && t.s >= end) {
     t.s = end;
-    arrive(s, t, line, line.path[line.path.length - 1]);
+    arrive(t, line.path[line.path.length - 1]);
   } else if (t.dir === -1 && t.s <= 0) {
     t.s = 0;
-    arrive(s, t, line, line.path[0]);
+    arrive(t, line.path[0]);
   }
 }
 
@@ -500,6 +644,10 @@ function yearEnd(s: SimState): void {
   const total = GOODS.reduce((a, g) => a + income[g], 0);
   s.yearEnd = { year: s.year, income, upkeep, profit: total - upkeep, cash: s.cash, choice: null, grew };
   s.history.push({ year: s.year, cash: s.cash, profit: total - upkeep });
+  for (const t of s.trains) {
+    t.earnedLast = t.earnedYear;
+    t.earnedYear = 0;
+  }
   s.income = zeroGoods();
   s.upkeep = 0;
   s.year++;
@@ -524,7 +672,7 @@ export function step(s: SimState): void {
     monthTick(s);
   }
   s.yearFrac = frac;
-  for (const t of s.trains) moveTrain(s, t);
+  for (const t of s.trains) runTrain(s, t);
   if (s.yearFrac >= 1) yearEnd(s);
 }
 

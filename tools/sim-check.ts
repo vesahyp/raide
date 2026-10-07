@@ -7,8 +7,8 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad, buyers } from '../src/game/sim';
-import { idx, route } from '../src/game/grid';
+import { step, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt } from '../src/game/sim';
+import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
 import type { SimState } from '../src/game/types';
@@ -118,6 +118,76 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   const th = routeTrips(s, flat, 'hilma');
   const tj = routeTrips(s, flat, 'jyry');
   check(th > tj, `on the flat Kuusikko to Koskensaha line Hilma makes more trips a year than Jyry (${th.toFixed(1)} against ${tj.toFixed(1)})`);
+}
+
+// a station reads like a station: every line runs its last cells straight along the station's
+// row, and no route comes in through the yard side
+{
+  const s = createState(HARJU);
+  s.cash = 9999;
+  for (const [a, b] of [['forest', 'sawmill'], ['sawmill', 'hameenlinna'], ['sawmill', 'tampere'], ['tampere', 'mill'], ['mill', 'hameenlinna']] as const) {
+    const o = plan(s, cell(s, a), cell(s, b));
+    for (const r of o) build(s, r);
+  }
+  const straight = (l: { path: number[] }) => {
+    const row = (c: number) => Math.floor(c / s.w);
+    const ends = [l.path.slice(0, APPROACH + 1), l.path.slice(-APPROACH - 1)];
+    return ends.every((e) => e.every((c) => row(c) === row(e[0])) && e.every((c, k) => k === 0 || Math.abs(c - e[k - 1]) === 1));
+  };
+  check(s.lines.length >= 5 && s.lines.every(straight), `every line runs its first and last ${APPROACH} cells straight along the station's row (${s.lines.length} lines)`);
+  check(s.lines.every((l) => !l.path.some((c) => s.yardMask[c] === 1)), 'no line crosses a yard or the cells beside its platform');
+}
+
+// wagons fill one at a time, a load every LOAD_SECONDS, and the pile shrinks with them
+{
+  const s = createState(HARJU);
+  s.cash = 9999;
+  const line = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+  const forest = siteById(s, 'forest');
+  forest.stock = 6;
+  forest.rate = 0;
+  const t = buyTrain(s, line.id, 'flat', 'hilma', 4)!;
+  const seen: { cargo: number; stock: number; time: number }[] = [];
+  for (let k = 0; k < 60 * 4; k++) {
+    step(s);
+    const last = seen[seen.length - 1];
+    if (!last || last.cargo !== t.cargo) seen.push({ cargo: t.cargo, stock: forest.stock, time: s.time });
+  }
+  const gaps = seen.slice(1).map((x, i) => x.time - seen[i].time);
+  check(seen.map((x) => x.cargo).slice(0, 5).join() === '0,1,2,3,4' && gaps.slice(0, 4).every((g) => g >= 0.5), `four wagons fill one after another (${seen.map((x) => `${x.cargo}@${x.time.toFixed(1)}`).join(' ')})`);
+  check(seen[4].stock === seen[0].stock - 4, `the yard pile shrinks by a load for each wagon filled (${seen[0].stock} to ${seen[4].stock})`);
+}
+
+// the loading crew shortens every wagon's dwell at its station by a third, once, for its price
+{
+  const s = createState(HARJU);
+  const forest = s.stations[0];
+  const before = dwellAt(s, forest.cell);
+  const cash = s.cash;
+  check(buyCrew(s, forest.id) && s.cash === cash - 30, 'the loading crew costs 30');
+  check(Math.abs(dwellAt(s, forest.cell) - before * (2 / 3)) < 1e-9 && !buyCrew(s, forest.id), `the crew takes a third off the dwell (${before.toFixed(2)} s to ${dwellAt(s, forest.cell).toFixed(2)} s) and is bought once`);
+}
+
+// a train moved to another line serves it within a year
+{
+  const s = createState(HARJU);
+  s.cash = 9999;
+  const a = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+  const b = build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0])!;
+  const t = buyTrain(s, a.id, 'box')!;
+  check(!moveTrain(s, t.id, b.id), 'a train standing at a station the other line does not serve cannot be moved');
+  for (let k = 0; k < 60 * 60 && !(t.state === 'stop' && t.at === cell(s, 'sawmill')); k++) step(s);
+  check(t.state === 'stop' && t.at === cell(s, 'sawmill'), 'the train reaches Koskensaha');
+  check(moveTrain(s, t.id, b.id) && t.lineId === b.id, 'at Koskensaha it can be moved to the line to Hämeenlinna');
+  const t0 = s.time;
+  let served = false;
+  for (let k = 0; k < 60 * YEAR_SECONDS && !served; k++) {
+    step(s);
+    served = t.state === 'stop' && t.at === cell(s, 'hameenlinna');
+  }
+  check(served, `the moved train reaches Hämeenlinna within a year (${(s.time - t0).toFixed(0)} s)`);
+  const tt = tripTimes(s, b, 'hilma', 4);
+  check(tt.full[0] >= tt.empty[0] && tt.full[1] >= tt.empty[1] && lineTrips(s, b, 'jyry', 2) > 0, `a full train is no faster than an empty one (${tt.full[0].toFixed(1)} against ${tt.empty[0].toFixed(1)} s)`);
 }
 
 // the bot wins both scenarios

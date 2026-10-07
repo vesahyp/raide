@@ -444,6 +444,16 @@ function trackPiece(c: Ctx, S: number, a0: [number, number], b0: [number, number
     const u = i / N;
     pts.push(curve ? [(1 - u) ** 2 * a[0] + 2 * (1 - u) * u * mid[0] + u * u * b[0], (1 - u) ** 2 * a[1] + 2 * (1 - u) * u * mid[1] + u * u * b[1]] : [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]);
   }
+  strokeTrack(c, S, pts, bridge);
+}
+
+/** a track along a list of pixel points: ballast, sleepers and the two rails, the end points square */
+export function trackLine(c: Ctx, S: number, pts: [number, number][]): void {
+  strokeTrack(c, S, pts, false);
+}
+
+function strokeTrack(c: Ctx, S: number, pts: [number, number][], bridge: boolean): void {
+  const N = pts.length - 1;
   const norm = (i: number): [number, number] => {
     const p = pts[Math.max(0, i - 1)];
     const r = pts[Math.min(N, i + 1)];
@@ -714,4 +724,47 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
 /** a straight length of track between two pixel points: the spur from a dead end to its buffer stop */
 export function trackSpur(c: Ctx, S: number, a: [number, number], b: [number, number]): void {
   trackPiece(c, S, a, b, a, false, false);
+}
+
+/** the loading crew by the platform: two workers in caps and a handcart, at tile (x, y) on the platform's top */
+export function crew(v: View, x: number, y: number, lv: number): void {
+  const { c, S } = v;
+  c.lineWidth = Math.max(1, S * 0.04);
+  c.strokeStyle = OUT;
+  const worker = (wx: number, tabard: string) => {
+    const X = v.x(wx);
+    const Y = v.y(y, lv);
+    shadowEll(c, X + S * 0.05, Y + S * 0.12, S * 0.14, S * 0.06);
+    c.fillStyle = tabard;
+    c.beginPath();
+    c.roundRect(X - S * 0.09, Y - S * 0.12, S * 0.18, S * 0.24, S * 0.05);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#e8c39a';
+    c.beginPath();
+    c.arc(X, Y - S * 0.2, S * 0.085, 0, 7);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#2f3f66';
+    c.beginPath();
+    c.arc(X, Y - S * 0.23, S * 0.085, Math.PI, 0);
+    c.fill();
+    c.stroke();
+  };
+  worker(x, '#d98a2b');
+  worker(x + 0.5, '#3f7a52');
+  // the handcart
+  const X = v.x(x + 1.2);
+  const Y = v.y(y, lv);
+  c.fillStyle = '#7a5230';
+  c.beginPath();
+  c.roundRect(X - S * 0.22, Y - S * 0.08, S * 0.44, S * 0.2, S * 0.03);
+  c.fill();
+  c.stroke();
+  c.fillStyle = '#2a2018';
+  for (const d of [-0.12, 0.12]) {
+    c.beginPath();
+    c.arc(X + S * d, Y + S * 0.14, S * 0.06, 0, 7);
+    c.fill();
+  }
 }

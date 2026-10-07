@@ -264,3 +264,40 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .btn.route small b { font-weight: 900; }
 .btn.route .trips { white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 700; color: var(--bone); }
 .btn.route .trips .pic { transform: scale(0.75); margin: 0 -3px; }
+
+/* --- the buy card and the train card --- */
+.card.sheet.buy-card, .card.sheet.train-card { max-height: calc(100% - 8px); overflow-y: auto; }
+.buy-label { margin: 8px 0 -4px; font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+.wagon .gold, .gold { color: var(--gold); }
+.wagon .goods { display: flex; gap: 3px; }
+.wagon .goods .gi { width: 20px; height: 20px; }
+.wagon .trips-line { color: var(--bone); font-weight: 700; }
+.stepper { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 10px 0 2px; }
+.stepper .round { width: 52px; height: 52px; font-size: 30px; font-weight: 700; line-height: 1; }
+.stepper .round:disabled { opacity: 0.4; box-shadow: none; }
+.stepper .count { min-width: 150px; text-align: center; font-weight: 900; font-size: 26px; }
+.stepper .count small { display: block; font-size: 12px; font-weight: 600; color: var(--bone-dim); }
+.consist-row { display: flex; justify-content: center; padding: 8px 0 4px; }
+.consist { display: block; max-width: 100%; }
+.facts { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 6px; }
+.fact { display: flex; align-items: center; gap: 8px; min-height: 28px; font-weight: 700; font-size: 14px; flex-wrap: wrap; border-top: 1px solid var(--hair); padding: 3px 0; }
+.fact .fl { flex: none; min-width: 88px; font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+.fact small { font-weight: 600; color: var(--bone-dim); }
+.fact .bar { flex: 1; min-width: 40px; max-width: 120px; height: 10px; border-radius: 5px; background: rgba(239, 230, 207, 0.2); overflow: hidden; }
+.fact .bar i { display: block; height: 100%; background: var(--gold); }
+.fact .gi { width: 20px; height: 20px; }
+.move-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 2px; }
+.move-row .btn.act { width: 100%; }
+.move-row .btn.act small { white-space: normal; text-align: center; }
+.btn.act.wide-act { width: calc(100% - 10px); margin: 8px 5px 0; flex-direction: row; gap: 10px; }
+
+/* the load tag over a train standing at a platform */
+.load-tag { translate: -50% -100%; display: flex; align-items: center; gap: 5px; padding: 3px 8px 5px; border-radius: 9px; background: rgba(27, 42, 30, 0.95); border: 2px solid var(--brass); color: var(--bone); font-weight: 900; font-size: 14px; white-space: nowrap; }
+.load-tag .gi { width: 18px; height: 18px; }
+.load-tag i { position: absolute; left: 6px; bottom: 2px; height: 3px; border-radius: 2px; background: var(--gold); }
+.load-tag .u { color: var(--gold); }
+.crew-row { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
+.crew-row > span { flex: 1; }
+.crew-row .btn.act { flex: none; min-width: 72px; margin: 0; }
+.crew-row .bought { color: #8be08f; }
+.card canvas.consist { position: static; inset: auto; }

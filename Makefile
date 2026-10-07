@@ -11,6 +11,7 @@
 #   make shots          # phone screenshots into shots/
 #   make look           # the quick look: the bot plays on an emulated iPhone, screenshots into shots/look/
 #   make spots          # the bot plays Harju, six views in both orientations into shots/spots/; fails on a train off its rails or a frame over 12 ms
+#   make trains         # the station with three trains, the buy card, the train card, loading, the crew, into shots/trains/
 #   make goods          # piles, chips, badges, the site card and pick mode, portrait and landscape, into shots/goods/
 #   make drag-look      # the start rings and the drag targets, portrait and landscape, into shots/look/targets-*.png
 #   make icon           # render public/icon.svg to the PNG icons
@@ -33,7 +34,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots look spots goods drag-look icon touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots look spots trains goods drag-look icon touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -66,6 +67,10 @@ look: build
 
 spots: build
 	node scripts/spots.mjs
+
+# the slice 4 pictures: a busy station, the cards, loading, the crew
+trains: build
+	node scripts/trains.mjs
 
 # piles from the stock, chips at every zoom, the site card and pick mode
 goods: build

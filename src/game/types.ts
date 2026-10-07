@@ -85,6 +85,8 @@ export interface Station {
   /** the cell, which is the site's cell */
   cell: number;
   siteId: string;
+  /** the loading crew is bought: every wagon takes a third less time here */
+  crew: boolean;
 }
 
 export interface Line {
@@ -126,14 +128,29 @@ export interface Train {
   good: Good | null;
   /** the station cell the train stands at, while it stops */
   at: number | null;
-  /** where the train is stacked at its station, so two at one platform draw side by side */
+  /** the platform track the train stands on at the station it is at or runs to: 0 is nearest the platform */
   slot: number;
+  /** the platform track it stood on at the station it left, so it pulls out along the same one */
+  slotFrom: number;
   /** cells per second right now: the engine's, cut on a grade */
   speed: number;
   /** for the smoke and the wheels: distance run */
   odometer: number;
-  /** pay earned, all time, for the train card */
+  /** pay earned, all time */
   earned: number;
+  /** pay earned this year and last year, for the train card */
+  earnedYear: number;
+  earnedLast: number;
+  /** what the train is doing at the platform: a load or an unload in hand, or neither */
+  dock: 'load' | 'unload' | null;
+  /** seconds until the load now being moved is on board (or off it) */
+  work: number;
+  /** wagons emptied so far this stop, counted from the front: the full ones are `unloaded` up to `unloaded + cargo` */
+  unloaded: number;
+  /** pay for each load that comes off, set when the train arrives */
+  unitPay: number;
+  /** pay taken this stop, shown as one float when the unloading ends */
+  paid: number;
 }
 
 export interface Float {

@@ -46,8 +46,8 @@ export interface InputEvents {
   /** a build the cash does not cover */
   onNote: (cell: number, text: string) => void;
   onAny: () => void;
-  /** pick mode is over: a tap built, offered the choice or fell on nothing */
-  onLayEnd: () => void;
+  /** pick mode is over: a tap built or offered the choice (`kept`, the view stays) or fell on nothing */
+  onLayEnd: (kept: boolean) => void;
 }
 
 /** how close to a station's centre a finger must land to start a drag, in cells */
@@ -260,7 +260,7 @@ export class Input {
       }
     }
     const options = best === null ? [] : lay.reverse ? plan(this.s, best, lay.cell) : plan(this.s, lay.cell, best);
-    this.ev.onLayEnd();
+    this.ev.onLayEnd(options.length > 0);
     if (!options.length) return;
     if (options.length > 1) return this.ev.onChoice(options, sx, sy);
     if (options[0].cost > this.s.cash) return this.ev.onNote(options[0].cells[options[0].cells.length - 1], 'cash');

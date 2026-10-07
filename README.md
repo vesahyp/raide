@@ -36,13 +36,23 @@ joka on halpa ja pitkä, tai **silta** tai **leikkaus**, joka on kallis ja
 lyhyt. Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt
 veturi ryömii, ja kuorma hidastaa sitä lisää.
 
-**Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan:
-vaunut, veturi ja Osta-nappi. Lavavaunut kuljettavat tukkeja, umpivaunut
-lautoja ja jauhoja, viljavaunut viljaa. Pikku-Hilma on kevyt ja nopea,
-Jyry hidas ja vahva: se vetää mäen yli. Juna lähtee heti ja ajaa
-linjaansa edestakaisin itsekseen. Napauta rataa, niin linjakortti aukeaa
-uudelleen; napauta junaa, niin sen oma kortti aukeaa: vaunu lisää, veturin
-vaihto, **odota täysi kuorma**, tai myynti puoleen hintaan.
+**Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan.
+Osta-napista valitset veturin, vaunujen lajin ja määrän; kortti kertoo,
+montako kierrosta kumpikin veturi ajaa vuodessa juuri tällä radalla.
+Lavavaunut kuljettavat tukkeja, umpivaunut lautoja ja jauhoja, viljavaunut
+viljaa. Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva: se vetää mäen
+yli. Juna lähtee heti ja ajaa linjaansa edestakaisin itsekseen.
+
+**Asemalla kestää.** Juna ajaa kokonaan laiturille ja pysähtyy. Vaunut
+puretaan ja lastataan yksi kerrallaan, ja tavara siirtyy näkyvästi
+vaunun ja pinon välillä. Pitkä juna tienaa enemmän, mutta seisoo kauemmin.
+Aseman kortista voi ostaa **lastausporukan**, jolloin jokainen vaunu
+lastautuu kolmanneksen nopeammin.
+
+**Napauta junaa**, niin sen kortti aukeaa: kuorma, matka-aika täynnä ja
+tyhjänä, tämän ja viime vuoden tulot, vaunu lisää, veturin vaihto,
+**odota täysi kuorma**, **siirrä toiselle linjalle** (kun juna seisoo
+sen linjan asemalla) tai myynti puoleen hintaan.
 
 **Tavara liikkuu.** Metsä kasvattaa tukkeja, saha tekee tukeista lautoja;
 maatila kasvattaa viljaa, mylly jauhaa siitä jauhoja. Kaupungit ostavat

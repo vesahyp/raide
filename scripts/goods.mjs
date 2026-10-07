@@ -99,8 +99,12 @@ try {
     await page.waitForTimeout(500);
     if (!(await page.locator('.pick-banner').count())) errors.push(`${orient}: no pick banner after Lay track from here`);
     if (await page.locator('.site-card').count()) errors.push(`${orient}: the card stayed open in pick mode`);
-    await view(ks.x + 6, ks.y + 8, 9.5);
+    // the view eases to the closest zoom that shows every marked site
+    await page.waitForFunction(() => window.__renderer.zoomTo === null, null, { timeout: 10000 });
+    await page.waitForTimeout(500);
     await shot('pick-mode');
+    const picked = await page.evaluate(() => { const r = window.__renderer; return { picking: r.picking, scale: r.cam.s }; });
+    if (!picked.picking) errors.push(`${orient}: the renderer is not in pick mode`);
     // a tap on the empty ground leaves pick mode
     await page.touchscreen.tap(20, 300);
     await page.waitForTimeout(300);

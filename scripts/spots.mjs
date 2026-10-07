@@ -52,24 +52,26 @@ try {
       await page.evaluate(([x, y]) => { const r = window.__renderer; const p = r.project(x, y); r.pan(innerWidth / 2 - p.x, innerHeight / 2 - p.y); }, [x, y]);
       await page.waitForTimeout(600);
       await page.screenshot({ path: `${OUT}/${name}-${orient}.png` });
+      // every vehicle, running or standing, sits within 0.45 tile of its line's centre line or of a
+      // platform track of a station at either end of the line
       const bad = await page.evaluate((maxOff) => {
-        const s = window.__sim; const r = window.__renderer; const S = r.cam.s;
-        if (S < 20) return [];
+        const s = window.__sim; const r = window.__renderer;
+        if (r.cam.s < 20) return [];
         const out = [];
         for (const t of s.trains) {
-          if (t.state !== 'run') continue;
           const l = s.lines.find((o) => o.id === t.lineId);
-          const end = l.dist[l.dist.length - 1];
-          const pts = l.path.map((c, k) => [r.sx((c % s.w) + 0.5), r.sy(Math.floor(c / s.w) + 0.5, l.rail[k] / 10)]);
+          const pts = l.path.map((c) => [(c % s.w) + 0.5, Math.floor(c / s.w) + 0.5]);
+          const aprons = [l.path[0], l.path[l.path.length - 1]].map((c) => r.aprons.find((a) => a.cell === c)).filter(Boolean);
           for (const v of r.vehicles(t)) {
             let best = Infinity;
             for (let k = 1; k < pts.length; k++) {
               const [ax, ay] = pts[k - 1]; const [bx, by] = pts[k];
               const dx = bx - ax; const dy = by - ay;
-              const u = Math.max(0, Math.min(1, ((v.px - ax) * dx + (v.py - ay) * dy) / (dx * dx + dy * dy || 1)));
-              best = Math.min(best, Math.hypot(ax + dx * u - v.px, ay + dy * u - v.py));
+              const u = Math.max(0, Math.min(1, ((v.wx - ax) * dx + (v.wy - ay) * dy) / (dx * dx + dy * dy || 1)));
+              best = Math.min(best, Math.hypot(ax + dx * u - v.wx, ay + dy * u - v.wy));
             }
-            if (best / S > maxOff && t.s > 3 && t.s < end - 3) out.push(`train ${t.id} vehicle ${v.i} is ${(best / S).toFixed(2)} tiles off its track`);
+            for (const a of aprons) if (Math.abs(v.wx - a.x - 0.5) < 8) for (let k = 0; k < a.k; k++) best = Math.min(best, Math.abs(v.wy - (a.y + 0.5 + r.platformY(a, k, v.wx))));
+            if (best > maxOff) out.push(`train ${t.id} vehicle ${v.i} is ${best.toFixed(2)} tiles off its rails`);
           }
         }
         return out;
@@ -78,6 +80,7 @@ try {
     };
     await go('hill', 54, 35, [1]);
     await go('junction', 36, 34, []);
+    await go('station-close', 36.5, 33.6, [1]);
     await go('bridge', 46, 34, [-1]);
     await go('ridge', 92, 38, []);
     await go('whole', 60, 45, [-1, -1, -1]);

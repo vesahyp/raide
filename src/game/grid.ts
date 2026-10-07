@@ -33,6 +33,13 @@ export const GRADE_COST = 0.25;
 /** per metre of land cut away or filled in, per cell */
 export const EARTH_COST = 0.07;
 export const STATION_COST = 20;
+/**
+ * Cells of straight track every line runs into and out of a station, along the station's row,
+ * east or west of it. The platform tracks of a station lie parallel to this stretch (one per
+ * train that stands there at once), so the last cells must be a straight, level row. A route
+ * never enters a station cell from the yard side (north) and never on a diagonal.
+ */
+export const APPROACH = 8;
 /** the search counts a too steep step this many times: the cut spreads along the ramp the rail needs */
 const RAMP = 6;
 /** the rail's height over the water on a bridge, metres */
@@ -138,10 +145,46 @@ function stepCost(s: SimState, a: number, b: number, len: number): number {
   return (TRACK_COST * (1 + GRADE_COST * Math.min(g, GRADE_MAX)) + EARTH_COST * RAMP * over + 0.05) * len;
 }
 
+/** one way into a station: the straight cells from the station cell outward, and what they cost */
+interface Approach {
+  /** the station cell first, the outer cell of the straight stretch last */
+  cells: number[];
+  cost: number;
+}
+
+/** the straight stretches a route may use at a station cell: west and east along its row, where free */
+function approaches(s: SimState, station: number, mode: RouteMode): Approach[] {
+  const out: Approach[] = [];
+  const x = cx(s, station);
+  const y = cy(s, station);
+  for (const dir of [-1, 1]) {
+    const cells = [station];
+    let cost = 0;
+    let ok = true;
+    for (let j = 1; j <= APPROACH; j++) {
+      if (!inside(s, x + dir * j, y)) {
+        ok = false;
+        break;
+      }
+      const i = idx(s, x + dir * j, y);
+      if (s.yardMask[i] !== 0) {
+        ok = false;
+        break;
+      }
+      cost += mode === 'cheap' ? stepCost(s, cells[cells.length - 1], i, 1) : 1;
+      cells.push(i);
+    }
+    if (ok) out.push({ cells, cost });
+  }
+  return out;
+}
+
 /**
  * A* from a cell to a cell. In cheap mode the step cost is what the step would cost to build
  * plus a small constant so a free run over old track still prefers the short way; in short
- * mode every cell costs the same. Returns null when there is no path.
+ * mode every cell costs the same. Returns null when there is no path. A route that starts at a
+ * station, or ends at a site, runs the last APPROACH cells straight along the station's row
+ * (west or east, whichever the search finds cheaper). Elsewhere it is free.
  */
 export function route(s: SimState, from: number, to: number, mode: RouteMode = 'cheap'): Route | null {
   if (from === to) return null;
@@ -149,16 +192,25 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
   const g = new Float64Array(n).fill(Infinity);
   const prev = new Int32Array(n).fill(-1);
   const closed = new Uint8Array(n);
-  const tx = cx(s, to);
-  const ty = cy(s, to);
+  const isSite = s.sites.some((o) => idx(s, o.cx, o.cy) === to);
+  // a site's own cell is reached only along its straight stretch, never through the search
+  const free = isSite ? -1 : to;
+  const starts = approaches(s, from, mode);
+  const ends: Approach[] = isSite ? approaches(s, to, mode) : [{ cells: [to], cost: 0 }];
+  if (!starts.length || !ends.length) return null;
+  const goals = ends.map((e) => ({ cell: e.cells[e.cells.length - 1], ...e }));
   const h = (i: number) => {
-    const dx = Math.abs(cx(s, i) - tx);
-    const dy = Math.abs(cy(s, i) - ty);
-    return (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * 0.05;
+    let best = Infinity;
+    for (const o of goals) {
+      const dx = Math.abs(cx(s, i) - cx(s, o.cell));
+      const dy = Math.abs(cy(s, i) - cy(s, o.cell));
+      best = Math.min(best, (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * 0.05);
+    }
+    return best;
   };
   // a binary heap on two number arrays, priority and cell: 10800 cells search in a few milliseconds
-  const hp: number[] = [h(from)];
-  const hc: number[] = [from];
+  const hp: number[] = [];
+  const hc: number[] = [];
   const push = (pri: number, cell: number) => {
     let k = hp.length;
     hp.push(pri);
@@ -194,12 +246,28 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
     }
     return top;
   };
-  g[from] = 0;
+  // the stretches themselves are not searched: the path starts or ends at their outer cell, never along them
+  for (const a of [...starts, ...ends]) for (const c of a.cells.slice(0, -1)) closed[c] = 1;
+  for (const a of starts) {
+    const o = a.cells[a.cells.length - 1];
+    g[o] = a.cost;
+    push(a.cost + h(o), o);
+  }
+  let best = Infinity;
+  let bestGoal: (typeof goals)[number] | null = null;
   while (hp.length) {
+    if (hp[0] >= best) break;
     const cur = pop();
-    if (cur === to) break;
     if (closed[cur]) continue;
     closed[cur] = 1;
+    const goal = goals.find((o) => o.cell === cur);
+    if (goal) {
+      if (g[cur] + goal.cost < best) {
+        best = g[cur] + goal.cost;
+        bestGoal = goal;
+      }
+      continue;
+    }
     const x = cx(s, cur);
     const y = cy(s, cur);
     for (const [dx, dy] of DIRS) {
@@ -207,7 +275,7 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
       const ny = y + dy;
       if (!inside(s, nx, ny)) continue;
       const ni = idx(s, nx, ny);
-      if (closed[ni] || !passable(s, ni, to)) continue;
+      if (closed[ni] || !passable(s, ni, free)) continue;
       // a diagonal step between two water cells would run over the water's corner on no bridge
       if (dx !== 0 && dy !== 0 && s.water[idx(s, x + dx, y)] && s.water[idx(s, x, y + dy)] && !s.water[ni] && !s.water[cur]) continue;
       const len = stepLen(dx, dy);
@@ -219,10 +287,15 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
       }
     }
   }
-  if (prev[to] < 0) return null;
-  const cells: number[] = [];
-  for (let i = to; i !== -1; i = prev[i]) cells.push(i);
-  cells.reverse();
+  if (!bestGoal) return null;
+  // the search's own cells run from a start's outer cell to a goal's outer cell
+  const mid: number[] = [];
+  for (let i = bestGoal.cell; i !== -1; i = prev[i]) mid.push(i);
+  mid.reverse();
+  const head = starts.find((a) => a.cells[a.cells.length - 1] === mid[0]);
+  if (!head) return null;
+  const cells = [...head.cells.slice(0, -1), ...mid, ...bestGoal.cells.slice(0, -1).reverse()];
+  if (new Set(cells).size !== cells.length) return null;
   return describe(s, cells, mode);
 }
 

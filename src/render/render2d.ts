@@ -17,12 +17,12 @@ import type { Good, Line, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
-import { plan, along, lineOf, railAlong, trainLength, price, demand } from '../game/sim';
+import { plan, along, lineOf, railAlong, trainLength, price, demand, SLOTS_MAX, workingWagon } from '../game/sim';
 import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, BASE_PRICE, TERRACE_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, church, drawEngine, drawWagon, hash, logPile, makeView, pine,
-  platform, sacks, sails, shade, trackCell, trackSpur, windmillBody, type Ctx, type Spoke, type View,
+  crew, platform, sacks, sails, shade, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
 } from './draw2d';
 
 export const OPTION_COLOUR = ['rgba(239,230,207,0.95)', 'rgba(70,150,230,0.95)'];
@@ -63,8 +63,42 @@ const ZOOMS = [56, PLAY_S, 15];
 const CHUNK_KEEP = 80;
 /** px kept free beside the two stations when the first view is framed */
 const FIT_PAD = 78;
-/** tiles from a dead end's cell centre to its buffer stop */
-const SPUR = 1.5;
+/**
+ * The tracks of a station. Every line runs its last APPROACH cells straight along the station's
+ * row, so the platform tracks can lie parallel to it, 0.8 tile apart and south of the platform:
+ * track 0 is the line's own; track 1 leaves it in a switch far out (`FAN1`), and track 2 leaves
+ * track 1 in a second one nearer in (`FAN2`), both as distances along the row from the station's centre. Where no line comes in, the tracks run
+ * on to a buffer stop `STUB` from the centre. A train stands centred on the station.
+ */
+const SLOT_GAP = 0.8;
+const FAN1: [number, number] = [5.6, 7.2];
+const FAN2: [number, number] = [4.0, 5.6];
+const STUB = 4.5;
+const smooth01 = (t: number): number => {
+  const u = Math.max(0, Math.min(1, t));
+  return u * u * (3 - 2 * u);
+};
+
+/** how far south of the station's row platform track k lies at a distance q along the row from the station's centre */
+export function slotOffset(k: number, q: number): number {
+  const d = Math.abs(q);
+  let off = 0;
+  if (k >= 1) off += SLOT_GAP * (1 - smooth01((d - FAN1[0]) / (FAN1[1] - FAN1[0])));
+  if (k >= 2) off += SLOT_GAP * (1 - smooth01((d - FAN2[0]) / (FAN2[1] - FAN2[0])));
+  return off;
+}
+
+/** the platform tracks of one station, from the lines that end there and the trains that stand there */
+interface Apron {
+  cell: number;
+  x: number;
+  y: number;
+  /** a line comes in from the west, and from the east */
+  west: boolean;
+  east: boolean;
+  /** the number of platform tracks drawn: the lines, and the most trains seen standing at once, three at most */
+  k: number;
+}
 /** the chunk canvases may hold this many pixels in all, so a phone keeps its memory */
 const CHUNK_PIXELS = 42e6;
 /** px a tile in the whole-map canvas */
@@ -148,15 +182,11 @@ interface Veh {
   i: number;
   px: number;
   py: number;
+  /** the middle of the vehicle in tiles */
+  wx: number;
+  wy: number;
   ang: number;
   len: number;
-}
-
-/** the share of each wagon that is full: the load spread over the wagons, in whole thirds, never zero while there is cargo */
-function loadShare(t: Train): number {
-  if (t.cargo <= 0 || !t.good) return 0;
-  const thirds = Math.round((3 * t.cargo) / Math.max(1, t.nWagons));
-  return Math.min(3, Math.max(1, thirds)) / 3;
 }
 
 const qIndex = (dev: number): number => Math.round(Math.log(dev / 4) / Math.log(1.25));
@@ -184,6 +214,12 @@ export class Renderer2D {
   private nearTrack: Uint8Array;
   private sigKey = -1;
   private looks: SiteLook[] = [];
+  /** the platform tracks of every station, and the most platform tracks each has needed */
+  private aprons: Apron[] = [];
+  private apronAt = new Map<number, Apron>();
+  private kSeen = new Map<number, number>();
+  /** the pillars drawn this frame, by site, so the HTML labels keep clear of their bright foot */
+  private pillars = new Map<string, { w: number; h: number; lod: boolean }>();
   private statics = new Map<number, Obj[]>();
   private chunks = new Map<string, Chunk>();
   private chunkPixels = 0;
@@ -201,10 +237,15 @@ export class Renderer2D {
   private targets: { key: string; from: number; cost: Map<number, number | null> } | null = null;
   /** the site card's "lay track from here": the marks are shown as for a drag, from this cell; `reverse` marks the stations that can reach this site instead */
   laying: { from: number; reverse: boolean } | null = null;
+  /** the view the player had when pick mode began, and whether the zoom to fit the marks is still to be worked out */
+  private pickView: { x: number; y: number; s: number } | null = null;
+  private pickFitDue = false;
   /** what each site's label was built from, and the nodes its numbers live in, so a frame only sets text and widths */
   private tags = new Map<string, TagRefs>();
   /** the labels placed this frame, laid out together so none covers another */
   private tagQueue: TagPlace[] = [];
+  /** the whole-map badges placed this frame, nudged down where two would overlap */
+  private badgeQueue: { el: HTMLElement; x: number; y: number }[] = [];
   /** where each site tag stands on the screen now, for a tap on a label */
   private tagBox = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
   private floatEls = new Map<object, HTMLElement>();
@@ -213,7 +254,6 @@ export class Renderer2D {
   private pillEl: HTMLElement | null = null;
 
   // the frame timer for ?fps=1
-  private sideOf = new Map<number, number>();
   private logFps = new URLSearchParams(location.search).get('fps') === '1';
   private lastDraw = 0;
   private frameMs = 0;
@@ -281,6 +321,9 @@ export class Renderer2D {
       for (let x = 0; x < s.w; x++)
         if (s.track[y * s.w + x])
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (x + dx >= 0 && y + dy >= 0 && x + dx < s.w && y + dy < s.h) this.nearTrack[(y + dy) * s.w + x + dx] = 1;
+    // no tree grows on the platform tracks of a station
+    for (const a of this.aprons)
+      for (let y = a.y - 1; y <= a.y + 3; y++) for (let x = a.x - 6; x <= a.x + 6; x++) if (x >= 0 && y >= 0 && x < s.w && y < s.h) this.nearTrack[y * s.w + x] = 1;
   }
 
   /** a number that changes when a line, a station or a town's size does */
@@ -288,7 +331,7 @@ export class Renderer2D {
     const s = this.s;
     let h = 17;
     for (const l of s.lines) h = (Math.imul(h, 31) + l.id) | 0;
-    for (const st of s.stations) h = (Math.imul(h, 37) + st.id) | 0;
+    for (const st of s.stations) h = (Math.imul(h, 37) + st.id * 8 + this.platformsNeeded(st.cell) + (st.crew ? 1000003 : 0)) | 0;
     for (const site of s.sites) h = (Math.imul(h, 41) + site.size) | 0;
     return h;
   }
@@ -310,6 +353,8 @@ export class Renderer2D {
     const s = this.s;
     const before = this.lvA.slice();
     const links = s.track.slice();
+    this.aprons = this.computeAprons();
+    this.apronAt = new Map(this.aprons.map((a) => [a.cell, a]));
     this.rebuildLand();
     if (!first) {
       // the cells whose height, or whose track, differ from the last drawing
@@ -335,7 +380,51 @@ export class Renderer2D {
 
   private dirtyYard(site: Site): void {
     const r = yard(site.kind);
-    this.dirty(site.cx + r.dx0 - 2, site.cy + r.dy0 - 2, site.cx + r.dx1 + 2, site.cy + 1);
+    this.dirty(Math.min(site.cx + r.dx0 - 2, site.cx - 8), site.cy + r.dy0 - 2, Math.max(site.cx + r.dx1 + 2, site.cx + 8), site.cy + 4);
+  }
+
+  /** the platform tracks the station at a cell needs now: one for each line that ends there, more while trains stand together */
+  private platformsNeeded(cell: number): number {
+    const s = this.s;
+    let k = 0;
+    for (const l of s.lines) if (l.path[0] === cell || l.path[l.path.length - 1] === cell) k++;
+    for (const t of s.trains) for (const [c, slot] of this.slotCells(t)) if (c === cell) k = Math.max(k, slot + 1);
+    k = Math.max(1, Math.min(SLOTS_MAX, k));
+    const seen = Math.max(k, this.kSeen.get(cell) ?? 0);
+    this.kSeen.set(cell, seen);
+    return seen;
+  }
+
+  /** the stations a train uses a platform track at now: where it stands, or where it runs to and where it left */
+  private slotCells(t: Train): [number, number][] {
+    const line = lineOf(this.s, t);
+    const a = line.path[0];
+    const b = line.path[line.path.length - 1];
+    if (t.state === 'stop') return [[t.at ?? a, t.slot]];
+    return t.dir === 1 ? [[b, t.slot], [a, t.slotFrom]] : [[a, t.slot], [b, t.slotFrom]];
+  }
+
+  private computeAprons(): Apron[] {
+    const s = this.s;
+    return s.stations.map((st) => {
+      const x = cx(s, st.cell);
+      const y = cy(s, st.cell);
+      let west = false;
+      let east = false;
+      for (const l of s.lines) {
+        const n = l.path.length;
+        if (l.path[0] === st.cell) (l.path[1] === st.cell - 1 ? (west = true) : (east = true));
+        if (l.path[n - 1] === st.cell) (l.path[n - 2] === st.cell - 1 ? (west = true) : (east = true));
+      }
+      return { cell: st.cell, x, y, west, east, k: this.platformsNeeded(st.cell) };
+    });
+  }
+
+  /** how far south of the station's row platform track k lies at a world x: it follows the switches on the sides a line comes in from */
+  private platformY(a: Apron, k: number, x: number): number {
+    const u = x - (a.x + 0.5);
+    const side = u < 0 ? a.west : a.east;
+    return slotOffset(k, side ? u : 0);
   }
 
   // ------------------------------------------------------------------ the yards
@@ -344,7 +433,8 @@ export class Renderer2D {
     const s = this.s;
     this.looks = s.sites.map((site) => {
       const station = s.stations.some((st) => st.siteId === site.id);
-      const look: SiteLook = { site, lv: s.height[site.cy * s.w + site.cx] / TERRACE_M, statics: [], hub: null, stationKey: (station ? 1 : 0) + (site.kind === 'town' ? site.size * 2 : 0) };
+      const ap = this.apronAt.get(idx(s, site.cx, site.cy));
+      const look: SiteLook = { site, lv: s.height[site.cy * s.w + site.cx] / TERRACE_M, statics: [], hub: null, stationKey: (station ? 1 : 0) + (site.kind === 'town' ? site.size * 2 : 0) + (ap ? 100 * ap.k + (ap.west ? 1000 : 0) + (ap.east ? 2000 : 0) : 0) + (s.stations.find((st) => st.siteId === site.id)?.crew ? 5000 : 0) };
       this.layoutSite(look, station);
       return look;
     });
@@ -373,6 +463,7 @@ export class Renderer2D {
     if (station) {
       // the station building stands at the platform's east end, inside the yard so no track can cross it
       add(y - 0.1, x - 3, x + 4, (v) => platform(v, x - 3, y - 0.58, 7, lv));
+      if (this.s.stations.find((st) => st.siteId === site.id)?.crew) add(y - 0.05, x - 3, x, (v) => crew(v, x - 2.6, y - 0.28, lv));
       bld(x + 1.3, y - 1.5, 2.6, 0.9, { walls: '#d9a441', roof: '#7a3a2a', wall: 0.6, door: 1 });
     }
     if (site.kind === 'forest') {
@@ -541,6 +632,7 @@ export class Renderer2D {
     }
     // the track after all the land, so a cell's ballast that runs past its edge is not covered by the next row's tiles
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) this.drawTrack(v, x, y);
+    for (const a of this.aprons) if (a.x + 7 > x0 - SIDE && a.x - 6 < x1 + SIDE && a.y + 4 > y0 - TOPM && a.y - 1 < y1 + BOTM) this.drawApron(v, a);
     return canvas;
   }
 
@@ -776,31 +868,38 @@ export class Renderer2D {
     trackCell(v, x, y, links, las, lm, bridge);
   }
 
-  /** past each dead end, track runs on to a buffer stop, so a train at the platform stands wholly on the rails */
-  private drawSpurs(): void {
-    const c = this.ctx;
-    const S = this.cam.s;
-    const ends = new Set<number>();
-    for (const l of this.s.lines) {
-      ends.add(l.path[0]);
-      ends.add(l.path[l.path.length - 1]);
-    }
-    for (const cell of ends) {
-      const links = this.linksOf(cell);
-      if (links.length !== 1 || this.s.water[cell]) continue;
-      const x = cx(this.s, cell);
-      const y = cy(this.s, cell);
-      const lm = this.railA[cell];
-      if (Number.isNaN(lm)) continue;
-      const d = links[0];
-      const n = Math.hypot(d[0], d[1]);
-      const ux = -d[0] / n;
-      const uy = -d[1] / n;
-      const a: [number, number] = [this.sx(x + 0.5), this.sy(y + 0.5, lm)];
-      const b: [number, number] = [this.sx(x + 0.5 + ux * SPUR), this.sy(y + 0.5 + uy * SPUR, lm)];
-      if (Math.max(a[0], b[0]) < -S || Math.min(a[0], b[0]) > this.w + S || Math.max(a[1], b[1]) < -S || Math.min(a[1], b[1]) > this.h + S) continue;
-      trackSpur(c, S, a, b);
-      bufferStop(c, S, b[0], b[1], Math.atan2(b[1] - a[1], b[0] - a[0]));
+  /**
+   * The platform tracks of a station, drawn once into the chunk. Track 0 is the line's own, so only
+   * the side with no line gets a stub of it, to a buffer stop. Tracks 1 and 2 run the whole
+   * length, leave the line's track in a switch on each side a line comes in from, and end in a
+   * buffer stop on each side where none does.
+   */
+  private drawApron(v: View, a: Apron): void {
+    const { c, S } = v;
+    const cxp = a.x + 0.5;
+    const cyp = a.y + 0.5;
+    const home = this.railA[a.cell];
+    const levelAtX = (x: number): number => {
+      const r = this.railA[a.y * this.s.w + Math.max(0, Math.min(this.s.w - 1, Math.floor(x)))];
+      return Number.isNaN(r) ? (Number.isNaN(home) ? 0 : home) : r;
+    };
+    for (let k = 0; k < a.k; k++) {
+      let from = a.west ? -FAN1[1] : -STUB;
+      let to = a.east ? FAN1[1] : STUB;
+      if (k === 0) {
+        if (a.west && a.east) continue;
+        if (a.west) from = 0;
+        else to = 0;
+      }
+      const pts: [number, number][] = [];
+      const n = Math.max(2, Math.ceil((to - from) / 0.2));
+      for (let i = 0; i <= n; i++) {
+        const x = cxp + from + ((to - from) * i) / n;
+        pts.push([v.x(x), v.y(cyp + this.platformY(a, k, x), levelAtX(x))]);
+      }
+      trackLine(c, S, pts);
+      if (!a.west) bufferStop(c, S, pts[0][0], pts[0][1], Math.PI);
+      if (!a.east) bufferStop(c, S, pts[n][0], pts[n][1], 0);
     }
   }
 
@@ -876,56 +975,84 @@ export class Renderer2D {
     return { x, y, lv: railAlong(line, d) / TERRACE_M, dx: p.dx, dy: p.dy };
   }
 
-  /**
-   * The sideways offset the train wants: its slot at a platform, so trains waiting at one station
-   * stand side by side, but zero on the open line, where it must sit on its rails. Running, the
-   * offset fades in over the last cells before the station it runs to.
-   */
-  private sideTarget(t: Train): number {
-    const full = t.slot * 0.62;
-    if (t.state !== 'run') return full;
-    const line = lineOf(this.s, t);
-    const end = line.dist[line.dist.length - 1];
-    const left = t.dir === 1 ? end - t.s : t.s;
-    return full * Math.max(0, Math.min(1, 1 - (left - 0.5) / 2));
+  /** the platform track a train uses at the end of its line, 0 or 1: where it stands or runs to, or where it left */
+  private slotAtEnd(t: Train, end: 0 | 1): number {
+    if (t.state === 'stop') {
+      const line = lineOf(this.s, t);
+      const cell = end === 0 ? line.path[0] : line.path[line.path.length - 1];
+      return t.at === cell ? t.slot : t.slotFrom;
+    }
+    return end === (t.dir === 1 ? 1 : 0) ? t.slot : t.slotFrom;
   }
 
-  /** each train's drawn offset eases to its target, so a train pulling out of a platform slides onto the line */
-  private easeSides(dt: number): void {
-    const k = 1 - Math.exp(-dt * 5);
-    const live = new Set<number>();
-    for (const t of this.s.trains) {
-      live.add(t.id);
-      const want = this.sideTarget(t);
-      const now = this.sideOf.get(t.id);
-      this.sideOf.set(t.id, now === undefined ? want : now + (want - now) * k);
-    }
-    for (const id of this.sideOf.keys()) if (!live.has(id)) this.sideOf.delete(id);
+  /** the drawn length of a train, a little more than the sum of its parts for the gaps */
+  private drawnLength(t: Train): number {
+    return trainLength(t) + t.nWagons * 0.08;
+  }
+
+  /**
+   * A point on a train's line at distance d, moved south onto the platform track of its slot where
+   * the line runs into a station. The line is straight along the station's row there, so the move
+   * is the same offset the switches in `drawApron` draw.
+   */
+  private trainPos(t: Train, line: Line, d: number): { x: number; y: number; lv: number; dx: number; dy: number } {
+    const p = this.linePos(line, d);
+    const end = line.dist[line.dist.length - 1];
+    const e = d < end / 2 ? 0 : 1;
+    const a = this.apronAt.get(e === 0 ? line.path[0] : line.path[line.path.length - 1]);
+    if (a && Math.abs(p.x - (a.x + 0.5)) < FAN1[1] + 0.5) p.y += this.platformY(a, this.slotAtEnd(t, e), p.x);
+    return p;
+  }
+
+  /**
+   * The train's front is half its length ahead of where the sim holds it: a standing train is
+   * centred on the station, and one that leaves has the engine at the old tail.
+   */
+  private frontOf(t: Train): number {
+    return t.s + t.dir * (this.drawnLength(t) / 2);
   }
 
   private vehicles(t: Train): Veh[] {
     const line = lineOf(this.s, t);
     const out: Veh[] = [];
-    const side = this.sideOf.get(t.id) ?? this.sideTarget(t);
-    let d = t.s;
+    let d = this.frontOf(t);
     for (let i = 0; i <= t.nWagons; i++) {
       const len = i === 0 ? ENGINE_LEN : WAGON_LEN;
       const back = d - t.dir * len;
-      const a = this.linePos(line, d);
-      const b = this.linePos(line, back);
-      let nx = -(a.y - b.y);
-      let ny = a.x - b.x;
-      const l = Math.hypot(nx, ny) || 1;
-      nx = (nx / l) * side;
-      ny = (ny / l) * side;
-      const ax = this.sx(a.x + nx);
-      const ay = this.sy(a.y + ny, a.lv);
-      const bx = this.sx(b.x + nx);
-      const by = this.sy(b.y + ny, b.lv);
-      out.push({ t, i, px: (ax + bx) / 2, py: (ay + by) / 2, ang: Math.atan2(ay - by, ax - bx), len });
+      const a = this.trainPos(t, line, d);
+      const b = this.trainPos(t, line, back);
+      const ax = this.sx(a.x);
+      const ay = this.sy(a.y, a.lv);
+      const bx = this.sx(b.x);
+      const by = this.sy(b.y, b.lv);
+      out.push({ t, i, px: (ax + bx) / 2, py: (ay + by) / 2, wx: (a.x + b.x) / 2, wy: (a.y + b.y) / 2, ang: Math.atan2(ay - by, ax - bx), len });
       d = back - t.dir * 0.08;
     }
     return out;
+  }
+
+  /** the engine's drawn place, for the camera and the smoke */
+  private enginePos(t: Train, behind = 0): { x: number; y: number; lv: number } {
+    return this.trainPos(t, lineOf(this.s, t), this.frontOf(t) - t.dir * behind);
+  }
+
+  /** the share of a wagon that is full: the wagon at work shows its load changing a third at a time, the others are full or empty */
+  private wagonFill(t: Train, w: number): number {
+    const work = workingWagon(this.s, t);
+    if (work && w === work.wagon) {
+      const thirds = Math.min(2, Math.floor(work.progress * 3)) + 1;
+      return t.dock === 'load' ? thirds / 3 : 1 - (thirds - 1) / 3;
+    }
+    return w >= t.unloaded && w < t.unloaded + t.cargo ? 1 : 0;
+  }
+
+  /** the good a wagon shows: what is aboard, or what is being loaded */
+  private wagonGood(t: Train): Good | null {
+    if (t.good) return t.good;
+    if (t.dock !== 'load' || t.at === null) return null;
+    const st = this.s.stations.find((o) => o.cell === t.at);
+    const site = st && this.s.sites.find((o) => o.id === st.siteId);
+    return site ? MAKES[site.kind] : null;
   }
 
   /** the train under a screen point, by its engine and wagons */
@@ -943,7 +1070,6 @@ export class Renderer2D {
   }
 
   private drawTrains(dt: number): void {
-    this.easeSides(dt);
     const c = this.ctx;
     const S = this.cam.s;
     const s = this.s;
@@ -981,14 +1107,76 @@ export class Renderer2D {
         c.translate(veh.px, veh.py);
         c.rotate(veh.ang);
         if (veh.i === 0) drawEngine(c, veh.len * S, S, t.engine);
-        else drawWagon(c, veh.len * S, S, t.wagons, t.good, loadShare(t));
+        else drawWagon(c, veh.len * S, S, t.wagons, this.wagonGood(t), this.wagonFill(t, veh.i - 1));
         c.restore();
       }
+    for (const list of all) this.goodsStream(list);
     for (const t of s.trains) {
       seen.add(t.id);
       this.smoke(t, dt);
     }
     for (const id of this.puffs.keys()) if (!seen.has(id)) this.puffs.delete(id);
+  }
+
+  /** where a good's pile stands in a site's yard, in tiles: the stream of goods runs between it and the wagon at work */
+  private pileAnchor(site: Site, good: Good): [number, number] {
+    const x = site.cx;
+    const y = site.cy;
+    switch (site.kind) {
+      case 'forest':
+        return [x - 0.9, y - 3.4];
+      case 'sawmill':
+        return good === 'timber' ? [x + 2.4, y - 3.4] : [x - 1.6, y - 1.4];
+      case 'farm':
+        return [x - 1.7, y - 1.1];
+      case 'mill':
+        return good === 'grain' ? [x + 1.6, y - 3.2] : [x + 0.1, y - 3.4];
+      default:
+        return good === 'boards' ? [x - 1.9, y - 1.0] : [x - 0.1, y - 1.5];
+    }
+  }
+
+  /** a few logs, boards or sacks in the air between the yard's pile and the wagon at work, going on or coming off */
+  private goodsStream(list: Veh[]): void {
+    const t = list[0].t;
+    const S = this.cam.s;
+    const work = workingWagon(this.s, t);
+    const good = this.wagonGood(t);
+    if (!work || !good || S < 14 || t.at === null) return;
+    const veh = list[work.wagon + 1];
+    const st = this.s.stations.find((o) => o.cell === t.at);
+    const site = st && this.s.sites.find((o) => o.id === st.siteId);
+    if (!veh || !site) return;
+    const [ax, ay] = this.pileAnchor(site, good);
+    const pile = this.project(ax, ay, 0);
+    const c = this.ctx;
+    const [from, to] = t.dock === 'load' ? [pile, { x: veh.px, y: veh.py }] : [{ x: veh.px, y: veh.py }, pile];
+    for (let i = 0; i < 4; i++) {
+      const u = (this.time * 1.6 + i / 4) % 1;
+      const X = from.x + (to.x - from.x) * u;
+      const Y = from.y + (to.y - from.y) * u - Math.sin(Math.PI * u) * S * 0.8;
+      c.save();
+      c.translate(X, Y);
+      c.rotate(u * 2 + i);
+      c.strokeStyle = OUT;
+      c.lineWidth = Math.max(1, S * 0.04);
+      if (good === 'timber') {
+        c.fillStyle = '#8a5a2b';
+        c.beginPath();
+        c.roundRect(-S * 0.28, -S * 0.07, S * 0.56, S * 0.14, S * 0.07);
+      } else if (good === 'boards') {
+        c.fillStyle = '#e6cf98';
+        c.beginPath();
+        c.rect(-S * 0.26, -S * 0.05, S * 0.52, S * 0.1);
+      } else {
+        c.fillStyle = good === 'flour' ? '#f4f0e4' : '#e2c04a';
+        c.beginPath();
+        c.ellipse(0, 0, S * 0.16, S * 0.1, 0, 0, 7);
+      }
+      c.fill();
+      c.stroke();
+      c.restore();
+    }
   }
 
   /** white puffs from the chimney that drift and fade; new ones come while the train runs */
@@ -999,7 +1187,7 @@ export class Renderer2D {
     if (!st) this.puffs.set(t.id, (st = { list: [], last: 0 }));
     if (t.state === 'run' && this.time - st.last > 0.22) {
       st.last = this.time;
-      const p = this.linePos(lineOf(this.s, t), t.s - t.dir * 0.32);
+      const p = this.enginePos(t, 0.32);
       st.list.push({ x: p.x, y: p.y, lv: p.lv, up: 0.25, age: 0 });
     }
     for (const p of st.list) {
@@ -1539,39 +1727,130 @@ export class Renderer2D {
     return { kind: c <= this.s.cash ? 'ok' : 'dear', cost: c };
   }
 
-  /** the rings on the map: brass where a track starts, green or amber where the drag can end */
+  /**
+   * The light pillars on the map, after Höyry's level exit: a column of light that fades out
+   * upward, standing on a site. Warm brass where a track starts, green where the drag can end and
+   * the cash covers it, amber where it cannot pay; the one under the finger is brighter and wider.
+   * Idle start stations pulse slowly and dim so they do not pull the eye while trains run.
+   */
   private drawMarks(drag: DragView | null, lod: boolean): void {
     const c = this.ctx;
     const S = this.cam.s;
-    const pulse = (Math.sin((this.time * Math.PI * 2) / 1.6) + 1) / 2;
+    this.pillars.clear();
     for (const site of this.s.sites) {
       const m = this.markOf(site);
       if (m.kind === 'plain' || m.kind === 'none') continue;
       const p = this.project(site.cx + 0.5, site.cy + 0.5, 0);
-      if (p.x < -60 || p.x > this.w + 60 || p.y < -60 || p.y > this.h + 60) continue;
+      if (p.x < -80 || p.x > this.w + 80 || p.y < -80 || p.y > this.h + 280) continue;
       const here = !!drag && drag.to === idx(this.s, site.cx, site.cy);
-      const rgb = m.kind === 'start' ? '216,166,58' : m.kind === 'ok' ? '79,191,90' : '240,160,32';
-      // at play zoom the ring is big and steady and the fill pulses; on the whole map it is the old thin pulsing ring
-      let r = lod ? 27 * (1 + 0.07 * pulse) : Math.max(1.3 * S, 22);
-      const sw = lod ? 4 : Math.max(0.22 * S, 4);
-      if (here) r *= lod ? 1.3 : 1.2;
-      c.save();
-      c.globalAlpha = lod ? 0.72 + 0.28 * pulse : 1;
-      c.beginPath();
-      c.ellipse(p.x, p.y, r, r * 0.86, 0, 0, Math.PI * 2);
-      if (!lod || here) {
-        c.fillStyle = here ? `rgba(${rgb},0.4)` : `rgba(${rgb},${0.1 + 0.16 * pulse})`;
+      const idle = m.kind === 'start' && !this.targets;
+      const rgb = m.kind === 'start' ? '255,227,154' : m.kind === 'ok' ? '157,255,160' : '255,196,106';
+      const pulse = idle ? 0.5 + 0.5 * Math.sin(this.time * 2) : 0.5 + 0.5 * Math.sin(this.time * 5);
+      const alpha = here ? 0.7 + 0.2 * pulse : idle ? 0.4 + 0.2 * pulse : 0.55 + 0.25 * pulse;
+      const W = Math.max(1.6 * S, 22) * (here ? 1.3 : 1);
+      const H = Math.max(6 * S, 64);
+      // a soft dark halo, so the light has something to stand against on bright grass
+      const hw = W * 0.9;
+      const hg = c.createLinearGradient(0, p.y - H, 0, p.y);
+      hg.addColorStop(0, 'rgba(10,25,12,0)');
+      hg.addColorStop(1, 'rgba(10,25,12,0.15)');
+      c.fillStyle = hg;
+      c.fillRect(p.x - hw, p.y - H, hw * 2, H);
+      const g = c.createLinearGradient(0, p.y - H, 0, p.y);
+      g.addColorStop(0, `rgba(${rgb},0)`);
+      g.addColorStop(1, `rgba(${rgb},${alpha.toFixed(3)})`);
+      c.fillStyle = g;
+      c.fillRect(p.x - W / 2, p.y - H, W, H);
+      // a bright edge on each side, fading up with the light
+      const eg = c.createLinearGradient(0, p.y - H, 0, p.y);
+      eg.addColorStop(0, 'rgba(255,255,255,0)');
+      eg.addColorStop(1, 'rgba(255,255,255,0.9)');
+      c.fillStyle = eg;
+      c.fillRect(p.x - W / 2, p.y - H, 2, H);
+      c.fillRect(p.x + W / 2 - 2, p.y - H, 2, H);
+      // motes drifting up inside it and fading
+      for (let i = 0; i < 5; i++) {
+        const u = (this.time * 0.35 + i * 0.21 + hash(i, site.cx) * 0.3) % 1;
+        const mx = p.x + (hash(i, site.cy + 3) - 0.5) * W * 0.7 + Math.sin(this.time * 2 + i) * W * 0.06;
+        c.fillStyle = `rgba(255,255,255,${(0.85 * (1 - u)).toFixed(3)})`;
+        c.beginPath();
+        c.arc(mx, p.y - u * H * 0.9, Math.max(1.5, W * 0.045), 0, Math.PI * 2);
         c.fill();
       }
-      c.lineJoin = 'round';
-      c.strokeStyle = '#16120e';
-      c.lineWidth = sw + 4;
-      c.stroke();
-      c.strokeStyle = `rgb(${rgb})`;
-      c.lineWidth = sw;
-      c.stroke();
-      c.restore();
+      c.fillStyle = `rgba(${rgb},${(alpha * 0.9).toFixed(3)})`;
+      c.beginPath();
+      c.ellipse(p.x, p.y, W * 0.75, W * 0.26, 0, 0, Math.PI * 2);
+      c.fill();
+      this.pillars.set(site.id, { w: W, h: H, lod });
     }
+  }
+
+  get picking(): boolean {
+    return this.pickView !== null;
+  }
+
+  /** pick mode begins: remember the view and, once the marks are known, ease to the closest view that shows them all */
+  beginPick(): void {
+    this.pickView = { x: this.cam.x, y: this.cam.y, s: this.cam.s };
+    this.pickFitDue = true;
+  }
+
+  /** pick mode is over: the view the player had comes back unless `keep` */
+  endPick(keep: boolean): void {
+    this.pickFitDue = false;
+    const v = this.pickView;
+    this.pickView = null;
+    if (!v || keep) return;
+    this.followId = null;
+    this.glide = { x: v.x, y: v.y };
+    this.zoomTo = v.s;
+  }
+
+  /**
+   * The closest zoom that shows the origin and every green or amber site inside the HUD, the pick
+   * banner and clear of the zoom buttons, never wider than the whole map and never closer than now.
+   */
+  private fitPick(): void {
+    const t = this.targets;
+    if (!t) return;
+    const pts: { x: number; y: number }[] = [];
+    for (const site of this.s.sites) {
+      const m = this.markOf(site);
+      if (m.kind === 'plain' || m.kind === 'none') continue;
+      // the pillar rises 4.5 tiles above the site, the ring's foot is a tile wide
+      pts.push({ x: site.cx + 0.5 - 1, y: site.cy + 0.5 - 4.5 }, { x: site.cx + 0.5 + 1, y: site.cy + 1.5 });
+    }
+    if (pts.length < 2) return;
+    const a = this.area();
+    const banner = 56;
+    const l = a.l + 28;
+    const r = a.l + a.w - 28;
+    const top = a.t + banner + 14;
+    const bot = a.t + a.h - 28;
+    const x0 = Math.min(...pts.map((p) => p.x));
+    const x1 = Math.max(...pts.map((p) => p.x));
+    const y0 = Math.min(...pts.map((p) => p.y));
+    const y1 = Math.max(...pts.map((p) => p.y));
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    let S = Math.min((r - l) / Math.max(1, x1 - x0), (bot - top) / Math.max(1, y1 - y0));
+    const lvMid = this.levelAt(mx, my) * LIFT;
+    // the zoom buttons stand bottom right: shrink until no mark's foot is under them
+    const buttons = { x0: this.w - 84, y0: this.h - 160 };
+    for (let i = 0; i < 12; i++) {
+      const cxs = (l + r) / 2;
+      const cys = (top + bot) / 2;
+      const under = pts.some((p, k) => k % 2 === 1 && cxs + (p.x - mx) * S > buttons.x0 && cys + (p.y - my) * S > buttons.y0);
+      if (!under) break;
+      S *= 0.92;
+    }
+    S = Math.max(this.wholeScale(), Math.min(this.cam.s, S));
+    // the middle of the box sits at the middle of the free area below the banner
+    const shiftY = ((top + bot) / 2 - this.oy) / S;
+    const shiftX = ((l + r) / 2 - this.ox) / S;
+    this.followId = null;
+    this.glide = { x: mx - shiftX, y: my - lvMid - shiftY };
+    this.zoomTo = S;
   }
 
   draw(dt: number, drag: DragView | null, hint: Hint | null, pending: Route[] | null = null): void {
@@ -1605,7 +1884,7 @@ export class Renderer2D {
       const t = s.trains.find((o) => o.id === this.followId);
       if (!t) this.followId = null;
       else {
-        const p = this.linePos(lineOf(s, t), t.s);
+        const p = this.enginePos(t);
         const k = Math.min(1, dt * 4);
         this.cam.x += (p.x - this.cam.x) * k;
         this.cam.y += (p.y - p.lv * LIFT - this.cam.y) * k;
@@ -1621,7 +1900,6 @@ export class Renderer2D {
     if (lod) this.drawOverview();
     else {
       this.drawChunks();
-      this.drawSpurs();
       this.drawPiles();
     }
     // the route under the finger, and the two on offer after a lift
@@ -1633,6 +1911,10 @@ export class Renderer2D {
     }
     this.drawTrains(dt);
     this.syncTargets(drag);
+    if (this.pickFitDue && this.targets) {
+      this.pickFitDue = false;
+      this.fitPick();
+    }
     this.drawMarks(drag, lod);
     this.overlayFrame(drag, hint, pending, lod);
     if (this.logFps) this.fpsTick(t0);
@@ -1711,7 +1993,10 @@ export class Renderer2D {
       }
       if (refs.n) this.setText(refs.n, String(Math.floor(site.stock)));
       badge.style.opacity = fade;
-      this.place(badge, this.project(site.cx + 0.5, site.cy + 0.5, 0));
+      badge.style.translate = '';
+      const bp = this.project(site.cx + 0.5, site.cy + 0.5, 0);
+      this.place(badge, bp);
+      this.badgeQueue.push({ el: badge, x: bp.x, y: bp.y });
       return;
     }
     badge.style.display = 'none';
@@ -1755,6 +2040,28 @@ export class Renderer2D {
     const pad = 4;
     for (const [id, b] of this.tagBox) if (sx >= b.x0 - pad && sx <= b.x1 + pad && sy >= b.y0 - pad && sy <= b.y1 + pad) return this.s.sites.find((o) => o.id === id) ?? null;
     return null;
+  }
+
+  /** the badges stand centred on their sites; where two would overlap, the later one moves down below the earlier */
+  private layoutBadges(): void {
+    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    for (const b of this.badgeQueue) {
+      if (b.el.style.display === 'none') continue;
+      const w = b.el.offsetWidth;
+      const h = b.el.offsetHeight;
+      let y = b.y - 19;
+      for (let pass = 0; pass < 8; pass++) {
+        const hit = placed.find((o) => b.x - w / 2 < o.x1 + 2 && o.x0 < b.x + w / 2 + 2 && y < o.y1 + 2 && o.y0 < y + h + 2);
+        if (!hit) break;
+        // the shorter move, up or down, clear of the one it hit
+        const down = hit.y1 + 3;
+        const up = hit.y0 - h - 3;
+        y = Math.abs(down - (b.y - 19)) <= Math.abs(up - (b.y - 19)) ? down : up;
+      }
+      placed.push({ x0: b.x - w / 2, x1: b.x + w / 2, y0: y, y1: y + h });
+      b.el.style.transform = `translate(${b.x.toFixed(1)}px, ${(y + 19).toFixed(1)}px)`;
+    }
+    this.badgeQueue.length = 0;
   }
 
   /** put the site tags on the screen, the later one nudged down where it would cover an earlier one */
@@ -1847,6 +2154,7 @@ export class Renderer2D {
     const s = this.s;
     for (const site of s.sites) this.siteLabel(site, lod);
     this.layoutTags();
+    this.layoutBadges();
     const seen = new Set<object>();
     for (const f of s.floats) {
       seen.add(f);
@@ -1884,5 +2192,37 @@ export class Renderer2D {
       this.hintEl = null;
     }
     this.routePlate(drag, pending);
+    this.loadTags(lod);
+  }
+
+  /**
+   * A small tag over a train that stands at a platform, at close up: the good, the load of the
+   * capacity, and a bar that fills as the wagons do. The tag of a train being followed shows at
+   * play zoom too.
+   */
+  private loadTags(lod: boolean): void {
+    const seen = new Set<string>();
+    for (const t of this.s.trains) {
+      const on = !lod && t.state === 'stop' && (this.cam.s >= 34 || (this.followId === t.id && this.cam.s >= 18));
+      if (!on) continue;
+      const key = `load:${t.id}`;
+      seen.add(key);
+      const el = this.label(key, 'tag load-tag');
+      const good = this.wagonGood(t);
+      // the loads aboard, and the one in hand counted by how far it has come
+      const work = workingWagon(this.s, t);
+      const frac = work ? (t.dock === 'load' ? work.progress : -work.progress) : 0;
+      const shown = Math.max(0, Math.min(t.nWagons, t.cargo + frac));
+      const html = `${good ? this.goodIcon(good) : ''}<span>${t.cargo}<span class="u">/${t.nWagons}</span></span><i style="width:${((shown / t.nWagons) * 100).toFixed(1)}%;max-width:calc(100% - 12px)"></i>`;
+      if (el.dataset.html !== html) {
+        el.innerHTML = html;
+        el.dataset.html = html;
+      }
+      const vs = this.vehicles(t);
+      const mid = vs[Math.floor(vs.length / 2)];
+      el.style.display = '';
+      el.style.transform = `translate(${mid.px.toFixed(1)}px, ${(mid.py - this.cam.s * 0.55).toFixed(1)}px)`;
+    }
+    for (const [key, el] of this.labels) if (key.startsWith('load:') && !seen.has(key)) el.style.display = 'none';
   }
 }

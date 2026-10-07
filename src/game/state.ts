@@ -59,6 +59,10 @@ export function createState(sc: ScenarioDef): SimState {
     height[i] = base;
     cover[i] = 0;
     yardMask[i] = 2;
+    // the platform runs the yard's width; the cell beside each end of it is closed too, so no track
+    // brushes the platform's corner
+    const r = yard(d.kind);
+    for (const dx of [r.dx0 - 1, r.dx1 + 1]) if (inside(sc, d.cx + dx, d.cy - 1)) yardMask[idx(sc, d.cx + dx, d.cy - 1)] = Math.max(yardMask[idx(sc, d.cx + dx, d.cy - 1)], 1);
   }
   const s: SimState = {
     scenario: sc,
@@ -92,7 +96,7 @@ export function createState(sc: ScenarioDef): SimState {
     nextId: 1,
   };
   const start = sc.sites.find((d) => d.id === sc.startStation)!;
-  s.stations.push({ id: s.nextId++, cell: idx(s, start.cx, start.cy), siteId: start.id });
+  s.stations.push({ id: s.nextId++, cell: idx(s, start.cx, start.cy), siteId: start.id, crew: false });
   return s;
 }
 
