@@ -13,17 +13,22 @@ game follows your browser's language.*
 
 ## Miten pelataan
 
-**Katso karttaa.** Kartta on maasto: mäet, järvi, metsä. Nipistä kahdella
-sormella, niin kartta lähenee tai loittonee, ja kierrä sormia, niin se
-kääntyy. Yhdellä sormella tyhjästä kohdasta kartta liikkuu. Napauta junaa,
-niin kamera seuraa sitä; napauta tyhjää, niin se päästää irti. Jokaisen
+**Katso karttaa.** Kartta on iso maasto ylhäältä päin: joki, järvi, metsä
+ja harjut. Mäet näkyvät portaina: jokainen porras on kymmenen metriä
+korkeampi kuin edellinen. Yhdellä sormella tyhjästä kohdasta kartta
+liikkuu. Nipistä kahdella sormella tai paina **+** ja **−** oikeassa
+alakulmassa: kartta lähenee aseman ja junan tasolle tai loittonee koko
+kartaksi. Koko kartalla napautus vie lähelle siihen kohtaan. Napauta
+junaa, niin kamera seuraa sitä; napauta tyhjää, niin se päästää irti. Jokaisen
 paikan alla näkyy mitä sillä on (vaalea lappu: tavara ja määrä) ja mitä
 se ostaa (tumma lappu: tavara ja hinta nyt).
 
 **Vedä rata.** Paina sormi asemalle ja vedä se metsälle, sahalle,
 maatilalle, myllylle tai kaupunkiin. Rata piirtyy sormen alle maaston
 mukaan: vihreä on tasaista, keltainen nousee, punainen on jyrkkää, sininen
-on siltaa. Lappu sormen yllä kertoo hinnan, pituuden ja jyrkimmän nousun.
+on siltaa. Lappu sormen yllä kertoo hinnan, pituuden ja jyrkimmän nousun. Kun sormi
+on lähellä ruudun reunaa, kartta liukuu sinne päin, joten pitkänkin radan
+voi vetää yhdellä vedolla.
 Mäki leikataan ja notko pengerretään rataa varten, ja se maksaa. Nosta
 sormi, niin rata on valmis; peruutusnappi on sormen alla sekunnin ajan.
 Kun matkalla on järvi tai mäki, nostaessa aukeaa kaksi nappia: **kierto**,
@@ -48,7 +53,7 @@ isompi kaupunki syö enemmän. Napauta mitä tahansa paikkaa, niin näet mitä
 sillä on, mitä se haluaa ja mitä se maksaa nyt.
 
 **Kaupunki kasvaa**, kun se saa vuodessa tarpeeksi jokaista tavaraa, jota
-kartalla tehdään: kuusi kuormaa lautoja ja kuusi jauhoja. Talot
+kartalla tehdään: kolme kuormaa lautoja ja kolme jauhoja. Talot
 lisääntyvät, ja kirkko nousee koossa kaksi.
 
 **Vuosi on puolitoista minuuttia.** Vuoden lopussa tilikirja näyttää
@@ -67,4 +72,4 @@ maa. Jokaisen voi ottaa kerran.
   molemmat ketjut molempiin kaupunkeihin, eli verkon.
 
 Kassa lopussa antaa yhdestä kolmeen tähteä. Puhelimen voi kääntää kesken
-pelin: kartta kääntyy mukana ja peli jatkuu.
+pelin: näkymä sovittuu uuteen asentoon ja peli jatkuu.
