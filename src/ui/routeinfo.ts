@@ -2,10 +2,10 @@
  * What a planned route says to the player, in words, shared by the plate over the finger, the
  * pill on the way round and the choice card, so the map and the card agree.
  */
-import type { EngineId, SimState } from './types';
-import type { Route } from './grid';
-import { routeTrips } from './sim';
-import { CELL_M } from './content/economy';
+import type { EngineId, SimState } from '../game/types';
+import type { Route } from '../game/grid';
+import { routeTrips } from '../game/sim';
+import { CELL_M } from '../game/content/economy';
 import { tr } from '../i18n';
 
 /** the colour of a grade in percent: green under 1.5, amber to 3.5, red above */
