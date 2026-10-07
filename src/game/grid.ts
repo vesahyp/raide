@@ -5,7 +5,7 @@
  * the grade limit costs its cut and fill, water a bridge, existing track
  * nothing) and the shortest (every cell the same, so it bridges and cuts
  * where that saves cells). When the two differ the player picks.
- * A site's cell is passable only as the route's end.
+ * A site's yard is never passable, and its cell only as the route's end.
  *
  * The rail's height along a route is the land's, cut and filled so that no
  * step is steeper than GRADE_MAX: a hill is crossed in a cutting, a hollow
@@ -26,13 +26,15 @@ export const DIRS: [number, number][] = [
   [1, -1],
 ];
 
-export const TRACK_COST = 1;
-export const BRIDGE_COST = 4;
+export const TRACK_COST = 0.5;
+export const BRIDGE_COST = 2;
 /** per percent of grade, on top of the track's price */
 export const GRADE_COST = 0.25;
 /** per metre of land cut away or filled in, per cell */
-export const EARTH_COST = 0.14;
+export const EARTH_COST = 0.07;
 export const STATION_COST = 20;
+/** the search counts a too steep step this many times: the cut spreads along the ramp the rail needs */
+const RAMP = 6;
 /** the rail's height over the water on a bridge, metres */
 export const BRIDGE_CLEAR = 4;
 
@@ -118,10 +120,10 @@ export function railAt(s: SimState, cell: number): number | null {
   return null;
 }
 
-/** whether a cell can carry track at all: a site's cell only as a station */
+/** whether a cell can carry track at all: a yard never, a site's cell only as the route's end */
 function passable(s: SimState, i: number, end: number): boolean {
   if (i === end) return true;
-  return !s.sites.some((site) => idx(s, site.cx, site.cy) === i);
+  return s.yardMask[i] === 0;
 }
 
 /** what a step from cell a to its neighbour b costs to build, an estimate for the search */
@@ -132,7 +134,8 @@ function stepCost(s: SimState, a: number, b: number, len: number): number {
   const rise = Math.abs(s.height[b] - ha);
   const g = gradeOf(rise, len);
   const over = Math.max(0, rise - (GRADE_MAX / 100) * len * CELL_M);
-  return (TRACK_COST * (1 + GRADE_COST * Math.min(g, GRADE_MAX)) + EARTH_COST * over + 0.05) * len;
+  // a step that is too steep is not the whole cut: the rail climbs on, and the cut grows along the ramp
+  return (TRACK_COST * (1 + GRADE_COST * Math.min(g, GRADE_MAX)) + EARTH_COST * RAMP * over + 0.05) * len;
 }
 
 /**
@@ -153,12 +156,47 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
     const dy = Math.abs(cy(s, i) - ty);
     return (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * 0.05;
   };
-  const open: number[] = [from];
+  // a binary heap on two number arrays, priority and cell: 10800 cells search in a few milliseconds
+  const hp: number[] = [h(from)];
+  const hc: number[] = [from];
+  const push = (pri: number, cell: number) => {
+    let k = hp.length;
+    hp.push(pri);
+    hc.push(cell);
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (hp[p] <= pri) break;
+      hp[k] = hp[p];
+      hc[k] = hc[p];
+      k = p;
+    }
+    hp[k] = pri;
+    hc[k] = cell;
+  };
+  const pop = (): number => {
+    const top = hc[0];
+    const lp = hp.pop()!;
+    const lc = hc.pop()!;
+    const n = hp.length;
+    if (n) {
+      let k = 0;
+      for (;;) {
+        let c = 2 * k + 1;
+        if (c >= n) break;
+        if (c + 1 < n && hp[c + 1] < hp[c]) c++;
+        if (hp[c] >= lp) break;
+        hp[k] = hp[c];
+        hc[k] = hc[c];
+        k = c;
+      }
+      hp[k] = lp;
+      hc[k] = lc;
+    }
+    return top;
+  };
   g[from] = 0;
-  while (open.length) {
-    let bi = 0;
-    for (let k = 1; k < open.length; k++) if (g[open[k]] + h(open[k]) < g[open[bi]] + h(open[bi])) bi = k;
-    const cur = open.splice(bi, 1)[0];
+  while (hp.length) {
+    const cur = pop();
     if (cur === to) break;
     if (closed[cur]) continue;
     closed[cur] = 1;
@@ -177,7 +215,7 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
       if (c < g[ni]) {
         g[ni] = c;
         prev[ni] = cur;
-        open.push(ni);
+        push(c + h(ni), ni);
       }
     }
   }

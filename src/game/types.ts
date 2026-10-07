@@ -2,6 +2,9 @@
 export type Good = 'timber' | 'boards' | 'grain' | 'flour';
 export const GOODS: Good[] = ['timber', 'boards', 'grain', 'flour'];
 
+/** what a tile shows on top of the land: drawing data only, the sim never reads it */
+export type Cover = 'none' | 'forest' | 'field' | 'street';
+
 export type SiteKind = 'forest' | 'sawmill' | 'farm' | 'mill' | 'town';
 
 /** A wagon carries one family of goods: flat wagons timber, box wagons boards and flour, hoppers grain. */
@@ -37,11 +40,13 @@ export interface ScenarioDef {
   w: number;
   h: number;
   /**
-   * the land: height in metres at a point in cells (continuous, so the renderer can sample
-   * between cell centres). Below zero is water: a bridge to cross. A hill is a grade that
-   * slows a train, a cutting and a fill when the line goes through it.
+   * the land: height in metres at a point in cells. The sim reads it at cell centres and cuts it
+   * into terraces (see TERRACE_M). Below zero is water: a bridge to cross. A terrace step is a
+   * grade that slows a train, a cutting and a fill when the line goes through it.
    */
   terrain: (x: number, y: number) => number;
+  /** what covers the land at a point: forest, a field, a street. Drawing data for the renderer */
+  cover: (x: number, y: number) => Cover;
   sites: SiteDef[];
   /** the station the player starts with, a site id */
   startStation: string;
@@ -168,8 +173,12 @@ export interface SimState {
   w: number;
   h: number;
   water: Uint8Array;
-  /** the land's height per cell in metres, at the cell's centre */
+  /** the land's height per cell in metres: whole terraces, water below zero */
   height: Float32Array;
+  /** what covers each cell: 0 none, 1 forest, 2 field, 3 street. Drawing data, water is always 0 */
+  cover: Uint8Array;
+  /** 0 free, 1 a site's yard cell, 2 a site's own cell: the cells a route may not cross */
+  yardMask: Uint8Array;
   /** track links per cell: a bitmask of the eight directions that carry track out of the cell */
   track: Uint8Array;
   sites: Site[];

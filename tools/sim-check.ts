@@ -1,6 +1,6 @@
 /**
  * npm run sim-check: the rules asserted headless. The bot plays both scenarios and must win
- * them; the first paid delivery lands inside 90 s; the routes offer a real choice at the lake
+ * them; the first paid delivery lands inside 90 s; the routes offer a real choice at the river
  * and the ridge; the strong engine beats the light one over the cutting with a load; a town
  * grows only when both goods reach it; demand falls and recovers; trains never share a block;
  * undo gives the cash back.
@@ -8,7 +8,7 @@
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
 import { step, plan, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad } from '../src/game/sim';
-import { idx } from '../src/game/grid';
+import { idx, route } from '../src/game/grid';
 import { Bot } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
 import type { SimState } from '../src/game/types';
@@ -46,44 +46,50 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
 {
   const s = createState(HARJU);
   build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0]);
-  const lake = plan(s, cell(s, 'sawmill'), cell(s, 'tampere'));
-  check(lake.length === 2 && lake[0].mode === 'cheap' && lake[1].mode === 'short' && lake[1].bridge.length >= 4 && lake[1].cost > lake[0].cost && lake[1].length < lake[0].length - 2, `the lake offers the cheap way round and the dear bridge (${lake.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} cells`).join(', ')})`);
-  build(s, plan(s, cell(s, 'sawmill'), cell(s, 'farm'))[0]);
-  const ridge = plan(s, cell(s, 'farm'), cell(s, 'mill'));
-  check(ridge.length === 2 && ridge[1].cutting.length >= 1 && ridge[1].cost > ridge[0].cost && ridge[1].length < ridge[0].length, `the ridge offers the way round and the cutting (${ridge.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} cells, worst ${o.worst.toFixed(1)} %, cut ${o.cutting.length}, fill ${o.fill.length}`).join(', ')})`);
+  const river = plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'));
+  check(river.length === 2 && river[0].bridge.length >= 2 && river[1].cutting.length >= 1, `sawmill to Hämeenlinna crosses the river on a bridge, and the short way cuts the hill (${river.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} tiles, bridge ${o.bridge.length}, cut ${o.cutting.length}`).join(', ')})`);
+  build(s, river[0]);
+  const ridge = plan(s, cell(s, 'hameenlinna'), cell(s, 'farm'));
+  check(ridge.length === 2 && ridge[0].mode === 'cheap' && ridge[1].mode === 'short' && ridge[1].cutting.length >= 1 && ridge[1].cost > ridge[0].cost && ridge[1].length < ridge[0].length - 5, `the ridge offers the way round through the saddle and the cutting (${ridge.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} tiles, worst ${o.worst.toFixed(1)} %, cut ${o.cutting.length}, fill ${o.fill.length}`).join(', ')})`);
   check(ridge[1].worst > 3 && ridge[1].worst <= 5.01 && ridge[0].worst < ridge[1].worst, `the cutting is a real climb inside the grade limit and the way round is flatter (${ridge[1].worst.toFixed(1)} % against ${ridge[0].worst.toFixed(1)} %)`);
+  check(!ridge[0].cells.some((c) => s.yardMask[c] === 1) && !ridge[1].cells.some((c) => s.yardMask[c] === 1), 'no route crosses a yard');
+  // A* on 10800 cells: the second search, once the code is warm, takes under 15 ms
+  route(s, cell(s, 'hameenlinna'), cell(s, 'farm'));
+  const t0 = performance.now();
+  route(s, cell(s, 'hameenlinna'), cell(s, 'farm'), 'cheap');
+  const ms = performance.now() - t0;
+  check(s.w * s.h === 10800 && ms < 15, `route() from Hämeenlinna to Peltola on ${s.w * s.h} cells takes ${ms.toFixed(1)} ms`);
   // the engines over the cutting, both with a full load of grain: the strong one is faster
-  const line = build(s, ridge[1])!;
   const trip = (engine: 'hilma' | 'jyry') => {
     const s2 = createState(HARJU);
     s2.cash = 9999;
     build(s2, plan(s2, cell(s2, 'forest'), cell(s2, 'sawmill'))[0]);
-    build(s2, plan(s2, cell(s2, 'sawmill'), cell(s2, 'farm'))[0]);
-    const l = build(s2, plan(s2, cell(s2, 'farm'), cell(s2, 'mill'))[1])!;
+    build(s2, plan(s2, cell(s2, 'sawmill'), cell(s2, 'hameenlinna'))[0]);
+    const l = build(s2, plan(s2, cell(s2, 'hameenlinna'), cell(s2, 'farm')).find((o) => o.mode === 'short')!)!;
     const t = buyTrain(s2, l.id, 'hopper', engine)!;
     siteById(s2, 'farm').stock = 6;
     // there and back: the climb is on one side going out and on the other coming home
     let t0 = -1;
     let there = false;
-    for (let k = 0; k < 60 * 120; k++) {
+    let cargo = 0;
+    for (let k = 0; k < 60 * 240; k++) {
       step(s2);
+      cargo = Math.max(cargo, t.cargo);
       if (t0 < 0 && t.state === 'run') t0 = s2.time;
       if (t0 >= 0 && t.state === 'stop' && t.at === l.path[l.path.length - 1]) there = true;
-      if (there && t.state === 'stop' && t.at === l.path[0]) return { time: s2.time - t0, cargo: siteById(s2, 'mill').delivered };
+      if (there && t.state === 'stop' && t.at === l.path[0]) return { time: s2.time - t0, cargo };
     }
     return { time: Infinity, cargo: 0 };
   };
   const h = trip('hilma');
   const j = trip('jyry');
   check(h.cargo === 2 && j.cargo === 2 && j.time < h.time * 0.8, `Jyry takes a full load over the cutting and comes back faster than Hilma (${j.time.toFixed(1)} s against ${h.time.toFixed(1)} s)`);
-  void line;
   // demand falls with deliveries and recovers over months
   const p0 = price(s, 'boards', 'hameenlinna', 10);
   siteById(s, 'hameenlinna').taken.boards = 10;
   const p1 = price(s, 'boards', 'hameenlinna', 10);
   check(p1 <= p0 * 0.45, `a filled town pays the floor (${p0} -> ${p1})`);
   s.cash = 9999;
-  build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0]);
   for (let k = 0; k < 60 * YEAR_SECONDS * 0.6; k++) step(s);
   const p2 = price(s, 'boards', 'hameenlinna', 10);
   check(p2 === p0, `the price recovers within a few months (${p1} -> ${p2})`);

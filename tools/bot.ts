@@ -7,7 +7,7 @@
  * in tools/hand.ts makes the same moves by touch.
  */
 import type { EngineId, SimState, WagonType, YearEndChoice } from '../src/game/types';
-import type { RouteMode } from '../src/game/grid';
+import type { Route, RouteMode } from '../src/game/grid';
 import { build, buyTrain, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad } from '../src/game/sim';
 import { idx } from '../src/game/grid';
 import { siteById } from '../src/game/state';
@@ -35,26 +35,27 @@ export const PLANS: Record<string, BotPlan> = {
     ],
     perks: ['wagon', 'speed', 'forest'],
   },
-  // the boards chain to the near town first, then the flour chain through the cutting with the
-  // strong engine, then the far town over the bridge, then both chains to both towns
+  // the boards chain to both towns first, then the mill by the lake and the grain from behind
+  // the ridge (the way round through the saddle, with the strong engine), then flour to both
   harju: {
     steps: [
       { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
       { kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat' },
       { kind: 'line', from: 'sawmill', to: 'hameenlinna', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'hameenlinna'], wagons: 'box' },
-      { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'short' },
+      { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
-      { kind: 'line', from: 'sawmill', to: 'farm', mode: 'short' },
-      { kind: 'line', from: 'farm', to: 'mill', mode: 'short' },
-      { kind: 'train', line: ['farm', 'mill'], wagons: 'hopper', engine: 'jyry', fullLoad: true },
-      { kind: 'line', from: 'mill', to: 'tampere', mode: 'short' },
-      { kind: 'train', line: ['mill', 'tampere'], wagons: 'box' },
+      { kind: 'line', from: 'tampere', to: 'mill', mode: 'short' },
+      { kind: 'line', from: 'mill', to: 'farm', mode: 'short' },
+      { kind: 'train', line: ['mill', 'farm'], wagons: 'hopper', engine: 'jyry', fullLoad: true },
+      { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
       { kind: 'line', from: 'mill', to: 'hameenlinna', mode: 'short' },
       { kind: 'train', line: ['mill', 'hameenlinna'], wagons: 'box' },
-      { kind: 'wagon', train: 0 },
+      { kind: 'wagon', train: 3 },
+      { kind: 'wagon', train: 3 },
       { kind: 'wagon', train: 1 },
       { kind: 'wagon', train: 2 },
+      { kind: 'wagon', train: 0 },
     ],
     perks: ['forest', 'wagon', 'speed'],
   },
@@ -63,6 +64,8 @@ export const PLANS: Record<string, BotPlan> = {
 export class Bot {
   done = 0;
   log: string[] = [];
+  /** the routes of the line step being waited on: a search is too dear to repeat every frame */
+  private routes: { step: number; lines: number; options: Route[] } | null = null;
   constructor(public plan: BotPlan) {}
 
   static for(s: SimState): Bot {
@@ -90,7 +93,8 @@ export class Bot {
     if (step.kind === 'line') {
       const a = siteById(s, step.from);
       const b = siteById(s, step.to);
-      const options = plan(s, idx(s, a.cx, a.cy), idx(s, b.cx, b.cy));
+      if (!this.routes || this.routes.step !== this.done || this.routes.lines !== s.lines.length) this.routes = { step: this.done, lines: s.lines.length, options: plan(s, idx(s, a.cx, a.cy), idx(s, b.cx, b.cy)) };
+      const options = this.routes.options;
       if (!options.length) throw new Error(`no route ${step.from} -> ${step.to}`);
       const r = options.find((o) => o.mode === step.mode) ?? options[0];
       // keep enough for the train that follows
