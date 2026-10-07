@@ -1,6 +1,11 @@
 /**
- * The hand-made maps. A scenario is data: a size, the water, the ridges,
- * the sites, the start and the goal.
+ * The hand-made maps. A scenario is data: a size, the land as a height
+ * function, the sites, the start and the goal.
+ *
+ * The land is metres above the water: a sum of hills (and a basin for a
+ * lake), a river channel, and a little noise so no slope is flat. Below
+ * zero is water. The sim reads the height at cell centres; the renderer
+ * samples it everywhere.
  *
  * Sawmill: a forest, a sawmill and a town across a river, one chain,
  * deliver 20 boards before 1866. The tutorial.
@@ -11,23 +16,43 @@
  */
 import type { ScenarioDef } from '../types';
 
-function cells(w: number, h: number, fill: (x: number, y: number) => boolean): number[] {
-  const out: number[] = [];
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (fill(x, y)) out.push(y * w + x);
-  return out;
-}
-
 const W = 16;
 const H = 24;
 
-/** the river winds across the lower map; a lake sits in the top right corner */
-function sawmillWater(x: number, y: number): boolean {
-  // three rows wide, winding under one row per column so a diagonal step cannot slip between cells
-  const river = 15.5 + Math.sin(x * 0.42 + 0.6) * 1.3;
-  if (Math.abs(y + 0.5 - river) < 1.7) return true;
-  const lx = (x + 0.5 - 13.6) / 2.6;
-  const ly = (y + 0.5 - 3.2) / 2.1;
-  return lx * lx + ly * ly < 1;
+interface Hill {
+  x: number;
+  y: number;
+  /** metres at the top; negative for a basin */
+  h: number;
+  /** radius in cells, where the hill is at 60 % of its height */
+  r: number;
+  /** stretch along x, for a ridge; 1 is round */
+  sx?: number;
+}
+
+const gauss = (x: number, y: number, o: Hill): number => {
+  const dx = (x - o.x) / (o.sx ?? 1);
+  const dy = y - o.y;
+  return o.h * Math.exp(-(dx * dx + dy * dy) / (2 * o.r * o.r));
+};
+const noise = (x: number, y: number): number => 1.6 * Math.sin(x * 1.3 + 0.4) * Math.cos(y * 0.9) + 1.1 * Math.sin((x + y) * 0.7 + 1.7) + 0.6 * Math.cos(x * 2.1 - y * 1.7);
+
+/** land from hills and basins: a base height plus the hills, plus the noise */
+function land(base: number, hills: Hill[], extra: (x: number, y: number) => number = () => 0) {
+  return (x: number, y: number): number => {
+    let h = base + noise(x, y) + extra(x, y);
+    for (const o of hills) h += gauss(x, y, o);
+    return h;
+  };
+}
+
+/** a river: a channel that follows a winding line of cells, `depth` metres below the land */
+function river(line: (x: number) => number, width: number, depth: number) {
+  return (x: number, y: number): number => {
+    const d = Math.abs(y - line(x));
+    const t = Math.min(1, d / width);
+    return -depth * (1 - t * t * (3 - 2 * t));
+  };
 }
 
 export const SAWMILL: ScenarioDef = {
@@ -36,8 +61,16 @@ export const SAWMILL: ScenarioDef = {
   blurb: { fi: '1862. 20 lautakuormaa ennen vuotta 1866', en: '1862. 20 loads of boards before 1866' },
   w: W,
   h: H,
-  water: cells(W, H, sawmillWater),
-  ridge: [],
+  // a rise to the north under the forest, a river across the lower map, a lake in the top right
+  terrain: land(
+    7,
+    [
+      { x: 3, y: 2, h: 14, r: 4 },
+      { x: 14, y: 3, h: -22, r: 1.5 },
+      { x: 4, y: 21, h: 8, r: 3 },
+    ],
+    river((x) => 16 + Math.sin(x * 0.42 + 0.6) * 1.3, 2.4, 15),
+  ),
   sites: [
     { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 3, cy: 5 },
     { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 9, cy: 11 },
@@ -52,26 +85,21 @@ export const SAWMILL: ScenarioDef = {
   engines: ['hilma'],
 };
 
-/** a lake in the middle of the map, between the mills and the towns */
-function harjuWater(x: number, y: number): boolean {
-  const lx = (x + 0.5 - 8.9) / 5.0;
-  const ly = (y + 0.5 - 14.2) / 3.2;
-  return lx * lx + ly * ly < 1;
-}
-/** a ridge across the top right, between the farm and the mill */
-function harjuRidge(x: number, y: number): boolean {
-  const crest = 5.6 + Math.sin(x * 0.5) * 0.4;
-  return x >= 6 && Math.abs(y + 0.5 - crest) < 1.05;
-}
-
 export const HARJU: ScenarioDef = {
   id: 'harju',
   name: { fi: 'Harju', en: 'Harju' },
   blurb: { fi: '1862. Kaksi kaupunkia kokoon 3 ennen vuotta 1872', en: '1862. Both towns to size 3 before 1872' },
   w: W,
   h: H,
-  water: cells(W, H, harjuWater),
-  ridge: cells(W, H, harjuRidge),
+  // the ridge runs across the top right between the farm and the mill; the lake fills the
+  // middle; a hill rises in the south west corner and the forest stands on a rise
+  terrain: land(6, [
+    { x: 11, y: 5.6, h: 48, r: 1.3, sx: 3.2 },
+    { x: 8.9, y: 14.2, h: -40, r: 1.65, sx: 1.56 },
+    { x: 2, y: 2, h: 9, r: 3 },
+    { x: 3, y: 21, h: 16, r: 2.6 },
+    { x: 15, y: 15, h: 10, r: 3 },
+  ]),
   sites: [
     { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 2, cy: 3 },
     { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 5, cy: 8 },

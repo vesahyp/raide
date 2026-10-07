@@ -10,6 +10,8 @@
 // summary.json. Exits non-zero when the slice is not fun by its rules: a run not won, the first
 // paid delivery later than 90 s, a page error.
 import { chromium, devices } from 'playwright';
+// headless Chromium draws WebGL in software unless told otherwise
+const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -37,7 +39,7 @@ for (let i = 0; ; i++) {
   if (i > 120) throw new Error(`no preview server on port ${port} after 60 s`);
   await new Promise((r) => setTimeout(r, 500));
 }
-const browser = await chromium.launch();
+const browser = await chromium.launch(GPU);
 let failed = false;
 const check = (ok, what) => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
@@ -52,8 +54,7 @@ const look = (page) =>
     const r = window.__renderer;
     const hand = window.__hand;
     if (!s || !r) return null;
-    const m = r.cam.m;
-    const toS = (x, y) => ({ x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] });
+    const toS = (x, y) => r.project(x, y, 2);
     const cellS = (c) => toS((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5);
     const sites = {};
     for (const site of s.sites) sites[site.id] = cellS(site.cy * s.w + site.cx);
@@ -279,7 +280,7 @@ const ffmpegDir = existsSync(cache) && readdirSync(cache).find((d) => d.startsWi
 const ffmpeg = ffmpegDir && join(cache, ffmpegDir, 'ffmpeg-mac');
 if (ffmpeg && existsSync(ffmpeg)) {
   mkdirSync(join(OUT, 'sheets'), { recursive: true });
-  const sheets = await chromium.launch();
+  const sheets = await chromium.launch(GPU);
   for (const r of summary) {
     const frames = join(OUT, 'tmp-frames');
     rmSync(frames, { recursive: true, force: true });

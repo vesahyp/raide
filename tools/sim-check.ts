@@ -50,7 +50,8 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(lake.length === 2 && lake[0].mode === 'cheap' && lake[1].mode === 'short' && lake[1].bridge.length >= 4 && lake[1].cost > lake[0].cost && lake[1].length < lake[0].length - 2, `the lake offers the cheap way round and the dear bridge (${lake.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} cells`).join(', ')})`);
   build(s, plan(s, cell(s, 'sawmill'), cell(s, 'farm'))[0]);
   const ridge = plan(s, cell(s, 'farm'), cell(s, 'mill'));
-  check(ridge.length === 2 && ridge[1].cutting.length >= 1 && ridge[1].cost > ridge[0].cost && ridge[1].length < ridge[0].length, `the ridge offers the way round and the cutting (${ridge.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} cells`).join(', ')})`);
+  check(ridge.length === 2 && ridge[1].cutting.length >= 1 && ridge[1].cost > ridge[0].cost && ridge[1].length < ridge[0].length, `the ridge offers the way round and the cutting (${ridge.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} cells, worst ${o.worst.toFixed(1)} %, cut ${o.cutting.length}, fill ${o.fill.length}`).join(', ')})`);
+  check(ridge[1].worst > 3 && ridge[1].worst <= 5.01 && ridge[0].worst < ridge[1].worst, `the cutting is a real climb inside the grade limit and the way round is flatter (${ridge[1].worst.toFixed(1)} % against ${ridge[0].worst.toFixed(1)} %)`);
   // the engines over the cutting, both with a full load of grain: the strong one is faster
   const line = build(s, ridge[1])!;
   const trip = (engine: 'hilma' | 'jyry') => {
@@ -61,17 +62,20 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
     const l = build(s2, plan(s2, cell(s2, 'farm'), cell(s2, 'mill'))[1])!;
     const t = buyTrain(s2, l.id, 'hopper', engine)!;
     siteById(s2, 'farm').stock = 6;
+    // there and back: the climb is on one side going out and on the other coming home
     let t0 = -1;
+    let there = false;
     for (let k = 0; k < 60 * 120; k++) {
       step(s2);
       if (t0 < 0 && t.state === 'run') t0 = s2.time;
-      if (t0 >= 0 && t.state === 'stop' && t.at === l.path[l.path.length - 1]) return { time: s2.time - t0, cargo: siteById(s2, 'mill').delivered };
+      if (t0 >= 0 && t.state === 'stop' && t.at === l.path[l.path.length - 1]) there = true;
+      if (there && t.state === 'stop' && t.at === l.path[0]) return { time: s2.time - t0, cargo: siteById(s2, 'mill').delivered };
     }
     return { time: Infinity, cargo: 0 };
   };
   const h = trip('hilma');
   const j = trip('jyry');
-  check(h.cargo === 2 && j.cargo === 2 && j.time < h.time * 0.8, `Jyry pulls a full load over the cutting faster than Hilma (${j.time.toFixed(1)} s against ${h.time.toFixed(1)} s)`);
+  check(h.cargo === 2 && j.cargo === 2 && j.time < h.time * 0.8, `Jyry takes a full load over the cutting and comes back faster than Hilma (${j.time.toFixed(1)} s against ${h.time.toFixed(1)} s)`);
   void line;
   // demand falls with deliveries and recovers over months
   const p0 = price(s, 'boards', 'hameenlinna', 10);

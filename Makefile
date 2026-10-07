@@ -9,6 +9,7 @@
 #   make balance        # the bot plays the scenario: when the goal falls, what the money did
 #   make shots-setup    # once: install Playwright
 #   make shots          # phone screenshots into shots/
+#   make look           # the quick look: the bot plays on an emulated iPhone, screenshots into shots/look/
 #   make icon           # render public/icon.svg to the PNG icons
 #   make touch-check    # lays track and buys a train by touch on an emulated phone
 #   make rotate-check   # turning the phone mid-game must keep the state and the layout
@@ -29,7 +30,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots icon touch-check rotate-check playthrough pwa-check mockups scene3d plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots look icon touch-check rotate-check playthrough pwa-check mockups scene3d plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -53,6 +54,12 @@ shots-setup:
 
 shots:
 	node scripts/shots.mjs
+
+# SCENARIO=harju SECONDS=30 BOT=0 ORIENT=portrait; the pictures are the check for a renderer change
+SCENARIO ?= harju
+SECONDS ?= 30
+look: build
+	node scripts/look.mjs $(SCENARIO) $(SECONDS)
 
 icon:
 	node scripts/icon.mjs

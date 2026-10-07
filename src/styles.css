@@ -57,7 +57,7 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .round:active { transform: translateY(2px); box-shadow: none; }
 
 /* --- the game --- */
-.game { position: absolute; inset: 0; background: #5f7f4e; }
+.game { position: absolute; inset: 0; background: #a9cde0; }
 .game canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hud { position: absolute; left: calc(var(--sal) + 8px); right: calc(var(--sar) + 8px); top: calc(var(--sat) + 8px); height: 48px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
 .hud > * { pointer-events: auto; }
@@ -78,6 +78,33 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
   .hud-goal .until { display: none; }
   .hud-year, .hud-goal, .hud-cash { padding: 0 9px; font-size: 18px; }
 }
+
+/* --- the overlay over the map: names, chips, floats, the hand, the plate --- */
+.map-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.map-overlay > * { position: absolute; left: 0; top: 0; will-change: transform; }
+.tag { transform-origin: 0 0; }
+.site-tag { margin-left: 0; translate: -50% 0; text-align: center; }
+.site-tag .name { font-weight: 800; font-size: 14px; color: #fff; text-shadow: 0 1px 0 #1b1a16, 0 0 4px rgba(20, 20, 15, 0.9), 0 0 2px rgba(20, 20, 15, 0.9); white-space: nowrap; }
+.site-tag .name small { font-weight: 700; font-size: 11px; color: var(--gold); padding: 0 4px; border-radius: 6px; background: rgba(27, 42, 30, 0.9); }
+.site-tag .chips { display: flex; gap: 3px; justify-content: center; margin-top: 2px; }
+.chip { display: inline-flex; align-items: center; gap: 3px; position: relative; padding: 2px 5px 4px 3px; border-radius: 7px; font-weight: 800; font-size: 13px; line-height: 1; white-space: nowrap; }
+.chip.has { background: rgba(239, 230, 207, 0.95); color: var(--ink); border: 1.5px solid #6b4f2e; }
+.chip.wants { background: rgba(27, 42, 30, 0.92); color: var(--gold); border: 1.5px solid var(--brass); }
+.chip.wants.low { color: #ff9c8c; border-color: #c0392b; }
+.chip .gi { width: 16px; height: 16px; }
+.chip i { position: absolute; left: 3px; bottom: 1px; height: 2px; border-radius: 1px; background: currentColor; opacity: 0.8; }
+.float { font-weight: 800; font-size: 16px; translate: -50% -50%; text-shadow: 0 1px 0 #1b1a16, 0 0 3px rgba(20, 20, 15, 0.9); }
+.float.pay { color: var(--gold); }
+.float.cost { color: #ff9c8c; }
+.float.note { color: #fff; }
+.hand { width: 34px; height: 34px; translate: -50% -50%; border-radius: 50%; border: 3px solid #fff; background: rgba(255, 255, 255, 0.25); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3); transition: opacity 0.2s; }
+.hand::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #fff; translate: -50% -50%; }
+.plate { translate: -50% -100%; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(27, 42, 30, 0.94); border: 2px solid var(--brass-dim); font-weight: 700; font-size: 14px; color: var(--bone); white-space: nowrap; }
+.plate b { font-size: 18px; color: var(--gold); }
+.plate b.red { color: #ff9c8c; }
+.plate .g { font-weight: 800; }
+.plate .bridge { color: #8ac0ea; }
+.plate .cut, .plate .fill { color: #d9b27a; }
 
 /* the cancel under the thumb */
 .btn.cancel { position: absolute; transform: translate(-50%, -50%); min-width: 0; padding: 10px 18px; background: var(--red); border-color: var(--red-dark); color: #fff; box-shadow: 0 3px 0 var(--red-dark); z-index: 5; }

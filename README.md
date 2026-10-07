@@ -13,26 +13,36 @@ game follows your browser's language.*
 
 ## Miten pelataan
 
+**Katso karttaa.** Kartta on maasto: mäet, järvi, metsä. Nipistä kahdella
+sormella, niin kartta lähenee tai loittonee, ja kierrä sormia, niin se
+kääntyy. Yhdellä sormella tyhjästä kohdasta kartta liikkuu. Napauta junaa,
+niin kamera seuraa sitä; napauta tyhjää, niin se päästää irti. Jokaisen
+paikan alla näkyy mitä sillä on (vaalea lappu: tavara ja määrä) ja mitä
+se ostaa (tumma lappu: tavara ja hinta nyt).
+
 **Vedä rata.** Paina sormi asemalle ja vedä se metsälle, sahalle,
-maatilalle, myllylle tai kaupunkiin. Rata piirtyy sormen alle ja sen hinta
-näkyy viivalla. Nosta sormi, niin rata on valmis; peruutusnappi on sormen
-alla sekunnin ajan. Kun matkalla on järvi tai harju, nostaessa aukeaa
-kaksi nappia: **kierto**, joka on halpa ja pitkä, tai **silta** tai
-**leikkaus**, joka on kallis ja lyhyt. Lyhyt rata tekee enemmän matkoja
-vuodessa. Harjun leikkauksessa kevyt veturi ryömii, ja kuorma hidastaa
-sitä lisää.
+maatilalle, myllylle tai kaupunkiin. Rata piirtyy sormen alle maaston
+mukaan: vihreä on tasaista, keltainen nousee, punainen on jyrkkää, sininen
+on siltaa. Lappu sormen yllä kertoo hinnan, pituuden ja jyrkimmän nousun.
+Mäki leikataan ja notko pengerretään rataa varten, ja se maksaa. Nosta
+sormi, niin rata on valmis; peruutusnappi on sormen alla sekunnin ajan.
+Kun matkalla on järvi tai mäki, nostaessa aukeaa kaksi nappia: **kierto**,
+joka on halpa ja pitkä, tai **silta** tai **leikkaus**, joka on kallis ja
+lyhyt. Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt
+veturi ryömii, ja kuorma hidastaa sitä lisää.
 
 **Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan:
 vaunut, veturi ja Osta-nappi. Lavavaunut kuljettavat tukkeja, umpivaunut
 lautoja ja jauhoja, viljavaunut viljaa. Pikku-Hilma on kevyt ja nopea,
-Jyry hidas ja vahva: se vetää harjun yli. Juna lähtee heti ja ajaa
+Jyry hidas ja vahva: se vetää mäen yli. Juna lähtee heti ja ajaa
 linjaansa edestakaisin itsekseen. Napauta rataa, niin linjakortti aukeaa
 uudelleen; napauta junaa, niin sen oma kortti aukeaa: vaunu lisää, veturin
 vaihto, **odota täysi kuorma**, tai myynti puoleen hintaan.
 
 **Tavara liikkuu.** Metsä kasvattaa tukkeja, saha tekee tukeista lautoja;
 maatila kasvattaa viljaa, mylly jauhaa siitä jauhoja. Kaupungit ostavat
-laudat ja jauhot. Jokainen toimitus maksaa heti, ja luku lentää asemalta.
+laudat ja jauhot. Varasto näkyy pinona radan vieressä ja kuorma vaunuissa.
+Jokainen toimitus maksaa heti, ja luku lentää asemalta.
 Hinta laskee, kun kaupunki täyttyy, ja nousee taas kuukausien mittaan, ja
 isompi kaupunki syö enemmän. Napauta mitä tahansa paikkaa, niin näet mitä
 sillä on, mitä se haluaa ja mitä se maksaa nyt.

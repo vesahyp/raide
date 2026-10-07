@@ -3,6 +3,8 @@
 // Starts its own dev server on port 5199. `node scripts/shots.mjs en` takes the English set
 // into shots/en/; `ORIENT=landscape` turns the phone.
 import { chromium, devices } from 'playwright';
+// headless Chromium draws WebGL in software unless told otherwise
+const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
@@ -15,7 +17,7 @@ const scenario = process.env.SCENARIO || 'sawmill';
 const dir = `shots/${scenario}${lang === 'en' ? '/en' : ''}${landscape ? '/landscape' : ''}`;
 mkdirSync(dir, { recursive: true });
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(GPU);
 const ctx = await browser.newContext({ ...devices[landscape ? 'iPhone 15 landscape' : 'iPhone 15'], hasTouch: true });
 const page = await ctx.newPage();
 const errors = [];
@@ -38,7 +40,7 @@ try {
   await page.waitForFunction(() => window.__sim.year >= 1864, null, { timeout: 300000 });
   await shot('06-year-three');
   // the cards, opened on the running game: a train, a site, a line
-  await page.evaluate(() => { const s = window.__sim; const m = window.__renderer.cam.m; const c = s.lines[0].path[2]; const x = (c % s.w) + 0.5, y = Math.floor(c / s.w) + 0.5; window.__pt = { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }; });
+  await page.evaluate(() => { const s = window.__sim; const c = s.lines[0].path[2]; window.__pt = window.__renderer.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2); });
   const pt = await page.evaluate(() => window.__pt);
   await page.touchscreen.tap(pt.x, pt.y);
   await page.waitForTimeout(400);
@@ -46,7 +48,7 @@ try {
   const row = page.locator('.train-row').first();
   if (await row.count()) { await row.tap(); await page.waitForTimeout(400); await shot('08-train-card'); }
   await page.locator('.round.close').tap();
-  const site = await page.evaluate(() => { const s = window.__sim; const m = window.__renderer.cam.m; const o = s.sites.find((x) => x.kind === 'town'); const x = o.cx + 0.5, y = o.cy + 0.5; return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }; });
+  const site = await page.evaluate(() => { const s = window.__sim; const o = s.sites.find((x) => x.kind === 'town'); return window.__renderer.project(o.cx + 0.5, o.cy + 0.5, 2); });
   await page.touchscreen.tap(site.x, site.y);
   await page.waitForTimeout(400);
   await shot('09-site-card');

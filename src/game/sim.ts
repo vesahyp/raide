@@ -8,10 +8,10 @@
  */
 import type { EngineId, Good, Line, SimState, Train, WagonType, YearEndChoice, Float } from './types';
 import { GOODS } from './types';
-import { routeOptions, link, unlink, idx, cx, cy, stepLen, DIRS, type Route } from './grid';
+import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, type Route } from './grid';
 import { siteAt, stationAt, siteById, goodsOnMap, zeroGoods } from './state';
 import {
-  BASE_PRICE, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GROW_NEED, MAKES, MILL_EATS, MONTHS,
+  BASE_PRICE, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, GROW_NEED, MAKES, MILL_EATS, MONTHS,
   PERK_FOREST, PERK_SPEED, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, UNDO_SECONDS,
   WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
@@ -44,6 +44,34 @@ export function cellAlong(line: Line, d: number): number {
   let k = 0;
   while (k < n - 1 && line.dist[k + 1] <= d) k++;
   return line.path[k];
+}
+
+/** the rail's height in metres at a distance along the path */
+export function railAlong(line: Line, d: number): number {
+  const n = line.path.length;
+  const end = line.dist[n - 1];
+  d = Math.max(0, Math.min(end, d));
+  let k = 1;
+  while (k < n - 1 && line.dist[k] < d) k++;
+  const seg = line.dist[k] - line.dist[k - 1];
+  const t = seg > 0 ? (d - line.dist[k - 1]) / seg : 0;
+  return line.rail[k - 1] + (line.rail[k] - line.rail[k - 1]) * t;
+}
+
+/** the grade under a distance along the path, in percent, positive uphill in the direction given */
+export function gradeAlong(line: Line, d: number, dir: 1 | -1): number {
+  const n = line.path.length;
+  let k = 1;
+  while (k < n - 1 && line.dist[k] < d) k++;
+  const seg = line.dist[k] - line.dist[k - 1];
+  return seg > 0 ? dir * gradeOf(line.rail[k] - line.rail[k - 1], seg) : 0;
+}
+
+/** the share of its speed an engine keeps on a grade with a load: 1 on the flat and downhill */
+export function gradeFactor(engine: EngineId, grade: number, cargo: number): number {
+  if (grade <= 0) return 1;
+  const g = Math.min(1, grade / GRADE_MAX);
+  return Math.max(0.2, 1 - g * (1 - ENGINES[engine].climb) - g * GRADE_LOAD * cargo);
 }
 
 export function trainLength(t: Train): number {
@@ -108,7 +136,7 @@ export function build(s: SimState, r: Route): Line | null {
   let line = s.lines.find((l) => (l.stops[0] === a.id && l.stops[1] === station!.id) || (l.stops[0] === station!.id && l.stops[1] === a.id));
   let newLine: number | null = null;
   if (!line) {
-    line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), block: new Set(r.cells.slice(1, -1)) };
+    line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), rail: r.rail, block: new Set(r.cells.slice(1, -1)) };
     s.lines.push(line);
     newLine = line.id;
   }
@@ -355,10 +383,10 @@ function waitingForLoad(s: SimState, t: Train): boolean {
 function depart(s: SimState, t: Train, line: Line, turn: boolean): boolean {
   if (blockBusy(s, t, line)) return false;
   const end = line.dist[line.dist.length - 1];
-  const L = Math.min(trainLength(t), end * 0.45);
-  // the train turns: the leading end is the old tail, the engine draws at the front again
+  // the train turns: the leading end is the old tail, the engine draws at the front again. The
+  // engine starts at the station; the wagons stand behind it on the siding the renderer draws
   if (turn) t.dir = t.dir === 1 ? -1 : 1;
-  t.s = t.dir === 1 ? L : end - L;
+  t.s = t.dir === 1 ? 0 : end;
   t.state = 'run';
   t.at = null;
   t.slot = freeSlot(s, t, nextStopCell(s, t));
@@ -383,10 +411,9 @@ function moveTrain(s: SimState, t: Train): void {
     }
     return;
   }
-  // the speed under the leading end: a ridge cuts it, more with a load
+  // the speed under the leading end: a climb cuts it, more with a load
   const base = engineSpeed(s, t);
-  const under = cellAlong(line, t.s);
-  t.speed = s.ridge[under] ? base * ENGINES[t.engine].climb * Math.max(0.3, 1 - GRADE_LOAD * t.cargo) : base;
+  t.speed = base * gradeFactor(t.engine, gradeAlong(line, t.s, t.dir), t.cargo);
   const step = t.speed * DT;
   t.s += t.dir * step;
   t.odometer += step;

@@ -1,17 +1,18 @@
 /**
- * One finger on the map. A drag that starts on a station builds track to
- * the site or station it ends on; the route and its cost follow the finger,
- * and when the lake or the ridge offers two routes the lift hands them to
- * the UI to choose from. A tap on a train opens its card, a tap on a site
- * the site's, a tap on a station or a track cell the line's. Pointer
- * events, so a mouse works the same way. No pan, no zoom: the camera shows
- * the whole map.
+ * Fingers on the map. A drag that starts on a station builds track to the
+ * site or station it ends on; the route and its cost follow the finger,
+ * and when the lake or a hill offers two routes the lift hands them to the
+ * UI to choose from. A drag that starts anywhere else pans the view. Two
+ * fingers pinch to zoom and twist to turn. A tap on a train opens its card
+ * and the camera follows it; a tap on a site opens the site's; a tap on a
+ * station or a track cell the line's. Pointer events, so a mouse works the
+ * same way (one finger only).
  */
 import type { SimState, Line, Site, Train } from '../game/types';
-import { plan, build, lineOf, along, trainLength } from '../game/sim';
+import { plan, build } from '../game/sim';
 import { idx, inside, route, type Route } from '../game/grid';
 import { stationAt } from '../game/state';
-import { toWorld, type Camera } from '../render/camera';
+import type { Renderer3D } from '../render/render3d';
 
 export interface Drag {
   from: number;
@@ -35,6 +36,8 @@ export interface InputEvents {
   onLine: (line: Line) => void;
   onTrain: (train: Train) => void;
   onSite: (site: Site) => void;
+  /** a tap on nothing: the cards close, the camera lets go of its train */
+  onGround: () => void;
   /** a build the cash does not cover */
   onNote: (cell: number, text: string) => void;
   onAny: () => void;
@@ -45,13 +48,24 @@ const GRAB = 1.1;
 /** how close to a site's centre the finger must be for the route to snap to it */
 const SNAP = 1.4;
 
+interface Finger {
+  id: number;
+  x: number;
+  y: number;
+  x0: number;
+  y0: number;
+}
+
 export class Input {
   drag: Drag | null = null;
-  private down: { x: number; y: number; cell: number; id: number } | null = null;
+  private fingers: Finger[] = [];
+  private mode: 'none' | 'build' | 'pan' | 'pinch' = 'none';
+  private pinch: { dist: number; ang: number } | null = null;
+  private moved = 0;
   constructor(
     private canvas: HTMLCanvasElement,
     private s: SimState,
-    private cam: () => Camera,
+    private r: Renderer3D,
     private ev: InputEvents,
   ) {
     canvas.style.touchAction = 'none';
@@ -69,7 +83,8 @@ export class Input {
   }
 
   private cellAt(sx: number, sy: number): { cell: number; x: number; y: number } | null {
-    const p = toWorld(this.cam(), sx, sy);
+    const p = this.r.pick(sx, sy);
+    if (!p) return null;
     const x = Math.floor(p.x);
     const y = Math.floor(p.y);
     if (!inside(this.s, x, y)) return null;
@@ -81,7 +96,7 @@ export class Input {
     let best: number | null = null;
     let bd = reach;
     for (const st of this.s.stations) {
-      const d = Math.hypot(st.cell % this.s.w + 0.5 - x, Math.floor(st.cell / this.s.w) + 0.5 - y);
+      const d = Math.hypot((st.cell % this.s.w) + 0.5 - x, Math.floor(st.cell / this.s.w) + 0.5 - y);
       if (d < bd) {
         bd = d;
         best = st.cell;
@@ -105,18 +120,49 @@ export class Input {
 
   private onDown = (e: PointerEvent): void => {
     this.ev.onAny();
-    if (this.down) return;
-    const at = this.cellAt(e.clientX, e.clientY);
-    if (!at) return;
     this.canvas.setPointerCapture?.(e.pointerId);
-    this.down = { x: e.clientX, y: e.clientY, cell: at.cell, id: e.pointerId };
-    const from = this.stationNear(at.x, at.y, GRAB);
-    if (from !== null) this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
+    this.fingers.push({ id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
+    if (this.fingers.length === 1) {
+      this.moved = 0;
+      const at = this.cellAt(e.clientX, e.clientY);
+      const from = at ? this.stationNear(at.x, at.y, GRAB) : null;
+      if (from !== null) {
+        this.mode = 'build';
+        this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
+      } else this.mode = 'pan';
+    } else if (this.fingers.length === 2) {
+      // a second finger: whatever the first was doing, this is a pinch now
+      this.mode = 'pinch';
+      this.drag = null;
+      const [a, b] = this.fingers;
+      this.pinch = { dist: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
+    }
   };
 
   private onMove = (e: PointerEvent): void => {
-    if (!this.down || e.pointerId !== this.down.id) return;
-    if (!this.drag) return;
+    const f = this.fingers.find((o) => o.id === e.pointerId);
+    if (!f) return;
+    const dx = e.clientX - f.x;
+    const dy = e.clientY - f.y;
+    f.x = e.clientX;
+    f.y = e.clientY;
+    this.moved = Math.max(this.moved, Math.hypot(f.x - f.x0, f.y - f.y0));
+    if (this.mode === 'pinch' && this.fingers.length >= 2 && this.pinch) {
+      const [a, b] = this.fingers;
+      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      let da = ang - this.pinch.ang;
+      if (da > Math.PI) da -= 2 * Math.PI;
+      if (da < -Math.PI) da += 2 * Math.PI;
+      this.r.pinch(dist / Math.max(1, this.pinch.dist), da, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      this.pinch = { dist, ang };
+      return;
+    }
+    if (this.mode === 'pan') {
+      if (this.moved > 6) this.r.pan(dx, dy);
+      return;
+    }
+    if (this.mode !== 'build' || !this.drag) return;
     const d = this.drag;
     d.sx = e.clientX;
     d.sy = e.clientY;
@@ -148,13 +194,26 @@ export class Input {
   };
 
   private onUp = (e: PointerEvent): void => {
-    if (!this.down || e.pointerId !== this.down.id) return;
-    const down = this.down;
+    const k = this.fingers.findIndex((o) => o.id === e.pointerId);
+    if (k < 0) return;
+    this.fingers.splice(k, 1);
+    if (this.mode === 'pinch') {
+      // the last finger up ends the gesture; one finger left pans
+      if (this.fingers.length === 0) this.mode = 'none';
+      else {
+        this.mode = 'pan';
+        this.moved = 99;
+      }
+      this.pinch = null;
+      return;
+    }
+    const mode = this.mode;
     const drag = this.drag;
-    this.down = null;
+    this.mode = 'none';
     this.drag = null;
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-    if (drag && drag.route && !drag.loose && moved > 12) {
+    if (this.fingers.length) return;
+    const moved = this.moved;
+    if (mode === 'build' && drag && drag.route && !drag.loose && moved > 12) {
       if (drag.options.length > 1) {
         this.ev.onChoice(drag.options, e.clientX, e.clientY);
         return;
@@ -169,12 +228,15 @@ export class Input {
     }
     if (moved > 12) return;
     // a tap: a train, a station, a track cell, or a site
+    const train = this.r.trainAt(e.clientX, e.clientY);
     const at = this.cellAt(e.clientX, e.clientY);
-    if (!at) return;
+    if (!at) {
+      if (train) return this.ev.onTrain(train);
+      return this.ev.onGround();
+    }
     // the site's own cell is the site's, even with a train standing in its station
-    const close = this.siteNear(at.x, at.y, 0.85);
+    const close = this.siteNear(at.x, at.y, 0.7);
     if (close) return this.ev.onSite(close);
-    const train = this.trainNear(at.x, at.y);
     if (train) return this.ev.onTrain(train);
     const st = stationAt(this.s, at.cell) ? at.cell : this.stationNear(at.x, at.y, GRAB);
     const site = this.siteNear(at.x, at.y, SNAP);
@@ -185,17 +247,6 @@ export class Input {
     }
     const onTrack = this.s.lines.find((l) => l.path.includes(at.cell));
     if (onTrack) return this.ev.onLine(onTrack);
+    this.ev.onGround();
   };
-
-  private trainNear(x: number, y: number): Train | null {
-    for (const t of this.s.trains) {
-      const line = lineOf(this.s, t);
-      const L = trainLength(t);
-      for (let k = 0; k <= 3; k++) {
-        const p = along(line, t.s - t.dir * (L * k) / 3, this.s.w);
-        if (Math.hypot(p.x - x, p.y - y) < 0.8) return t;
-      }
-    }
-    return null;
-  }
 }

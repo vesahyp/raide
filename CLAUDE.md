@@ -24,8 +24,9 @@ The Räkkä architecture, copied from `sora` (ADR 0001):
 
 - **Vite + TypeScript + React.** React renders the title, the HUD, the
   cards and the result. The map never goes through React.
-- **Canvas 2D** for the map. No engine, no image assets: the terrain, the
-  sites, the track and the trains are drawn with paths.
+- **three.js** for the map (ADR 0002): a low-poly height field carved by
+  the lines, flat-shaded boxes and cones for everything on it, a tilted
+  orthographic camera. No image assets.
 - **A headless sim** under `src/game/`, stepped at a fixed `DT` of 1/60 s,
   the one authority on money, goods, trains and blocks.
 - **The bot plays the checks.** `tools/bot.ts` plays the scenario headless
@@ -39,23 +40,30 @@ src/
   game/               the simulation, no DOM anywhere in here
     types.ts          ScenarioDef, Site, Station, Line, Train, SimState
     grid.ts           the grid the player never sees: eight directions, A* routing two ways (the
-                        cheapest and the shortest, which bridges water and cuts a ridge), the costs
-                        (track 1, cutting 3, bridge 4, station 20), the track links per cell
+                        cheapest and the shortest, which bridges water and cuts through a hill),
+                        the rail profile (the land clamped to GRADE_MAX, cut and fill paid for),
+                        the costs (track 1 plus the grade, earth per metre, bridge 4, station 20),
+                        the track links per cell
     state.ts          createState(scenario), siteAt, stationAt, siteById, goodsOnMap
     sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
-                        rule, grades (a ridge cuts the speed by the engine's climb and the load),
+                        rule, grades (a climb cuts the speed by the engine's climb share and the load),
                         loading, the full-load wait, paying, demand, town growth at the year end;
                         plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/
                         closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
-      economy.ts      every number the balance is made of: prices, demand, the two engines, the
-                        wagons and what they carry, growth
-      scenarios.ts    the hand-made maps: size, water, ridge, sites, start, goal, the engines on sale
+      economy.ts      every number the balance is made of: prices, demand, the cell in metres and
+                        the grade limit, the two engines, the wagons and what they carry, growth
+      scenarios.ts    the hand-made maps: size, the land as a height function (water below zero),
+                        sites, start, goal, the engines on sale
   render/
-    camera.ts         the map fitted to the screen, turned a quarter in landscape; toScreen, toWorld
-    renderer.ts       the baked land, water, sites, stations, track, bridges, trains, smoke, the
-                        hand that shows the first drag, floats and labels; ?dbg=1 draws the path
-  input/input.ts      one finger: drag from a station to build, tap to open a card; pointer events
+    render3d.ts       the map in three.js: the land mesh carved by the lines, water, instanced pines,
+                        sites with their stock as piles, track with sleepers, rails, bridges and a
+                        siding past each station, trains with their loads, the ghost route coloured
+                        by grade, the HTML overlay (names, chips, floats, the hand, the plate), the
+                        tilted orthographic camera with fit, pan, pinch, turn and follow, pick and
+                        project for the input
+  input/input.ts      fingers: one from a station builds, one elsewhere pans, two pinch and twist,
+                        a tap opens a card and a tap on a train follows it; pointer events
   audio.ts            a few synthesised sounds; track.ts the tracker shim
   ui/
     Game.tsx          the loop, the HUD (year, cash, goal), the cards: the route choice after a lift
@@ -74,6 +82,8 @@ tools/
   sim-check.ts        npm run sim-check: the rules asserted headless, the bot must win both maps
   balance.ts          npm run balance: the year by year numbers of the bot's game (SCENARIO=harju)
 scripts/
+  look.mjs            make look: the bot plays on an emulated iPhone, screenshots in both orientations
+                        and one with the camera on a train; the check for a renderer change
   shots.mjs           phone screenshots with Playwright, the bot playing
   touch-check.mjs     lays track and buys a train by real touches on an emulated phone
   rotate-check.mjs    turns the phone mid-game: the state stays, the canvas and the HUD fit
@@ -122,6 +132,10 @@ docs/
 - `make dev` (http://localhost:5173, also on the LAN for a phone).
 - **Before committing:** `make check` (typecheck, build, sim-check) must
   pass.
+- **A renderer change is judged by looking at `make look`**, the pictures in
+  `shots/look/`, in both orientations. Playwright draws WebGL in software
+  unless launched with the GPU flags in `scripts/look.mjs`; every phone
+  script passes them.
 - **A control or balance change is proved by thumb, on video.**
   `make playthrough` plays the scenario on an emulated iPhone in portrait
   and in landscape with the hand in `tools/hand.ts`, every input a touch,

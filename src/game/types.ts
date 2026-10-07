@@ -36,10 +36,12 @@ export interface ScenarioDef {
   /** map size in cells; the grid the player never sees, eight directions */
   w: number;
   h: number;
-  /** water cells, as cell indexes: a bridge to cross */
-  water: number[];
-  /** ridge cells: a cutting to cross, and a grade that slows a train */
-  ridge: number[];
+  /**
+   * the land: height in metres at a point in cells (continuous, so the renderer can sample
+   * between cell centres). Below zero is water: a bridge to cross. A hill is a grade that
+   * slows a train, a cutting and a fill when the line goes through it.
+   */
+  terrain: (x: number, y: number) => number;
   sites: SiteDef[];
   /** the station the player starts with, a site id */
   startStation: string;
@@ -88,6 +90,8 @@ export interface Line {
   path: number[];
   /** cumulative distance along the path, in cells, per path index */
   dist: number[];
+  /** the rail's height in metres per path index: the land, cut and filled to the grade limit */
+  rail: number[];
   /** the block: the cells between the two stations. One running train at a time on any of them */
   block: Set<number>;
 }
@@ -162,7 +166,8 @@ export interface SimState {
   w: number;
   h: number;
   water: Uint8Array;
-  ridge: Uint8Array;
+  /** the land's height per cell in metres, at the cell's centre */
+  height: Float32Array;
   /** track links per cell: a bitmask of the eight directions that carry track out of the cell */
   track: Uint8Array;
   sites: Site[];

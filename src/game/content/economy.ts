@@ -61,10 +61,15 @@ export interface EngineDef {
 }
 /** the engines of the wood era: a light wood burner, and a slow strong one for grades */
 export const ENGINES: Record<EngineId, EngineDef> = {
-  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 50, upkeep: 15, speed: 1.4, climb: 0.3, blurb: { fi: 'kevyt ja nopea, ryömii harjulla', en: 'light and fast, crawls on a ridge' } },
-  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 90, upkeep: 22, speed: 1.1, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää harjun yli', en: 'slow and strong, pulls over the ridge' } },
+  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 50, upkeep: 15, speed: 1.6, climb: 0.3, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
+  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 90, upkeep: 22, speed: 1.25, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
 };
-/** a loaded wagon takes this share off a train's speed on a ridge */
+/** a cell's side in metres: grades and the distance factor are read in these */
+export const CELL_M = 200;
+/** the steepest grade a line is built at, in percent; steeper land is cut and filled to it */
+export const GRADE_MAX = 4;
+/** on the grade limit an engine keeps its climb share of its speed; less grade, less loss */
+/** a loaded wagon takes this share off a train's speed on the grade limit */
 export const GRADE_LOAD = 0.07;
 export const WAGON_PRICE = 10;
 export const WAGONS_DEFAULT = 2;

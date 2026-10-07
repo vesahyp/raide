@@ -6,10 +6,15 @@ import { RAW_RATE, RAW_START } from './content/economy';
 export const zeroGoods = (): Record<Good, number> => Object.fromEntries(GOODS.map((g) => [g, 0])) as Record<Good, number>;
 
 export function createState(sc: ScenarioDef): SimState {
-  const water = new Uint8Array(sc.w * sc.h);
-  const ridge = new Uint8Array(sc.w * sc.h);
-  for (const i of sc.water) water[i] = 1;
-  for (const i of sc.ridge) if (!water[i]) ridge[i] = 1;
+  const n = sc.w * sc.h;
+  const water = new Uint8Array(n);
+  const height = new Float32Array(n);
+  for (let y = 0; y < sc.h; y++)
+    for (let x = 0; x < sc.w; x++) {
+      const i = idx(sc, x, y);
+      height[i] = sc.terrain(x + 0.5, y + 0.5);
+      water[i] = height[i] < 0 ? 1 : 0;
+    }
   const sites: Site[] = sc.sites.map((d) => ({
     ...d,
     stock: RAW_RATE[d.kind] ? RAW_START : 0,
@@ -21,17 +26,18 @@ export function createState(sc: ScenarioDef): SimState {
     size: d.kind === 'town' ? d.size ?? 1 : 0,
     grewAt: -1,
   }));
-  // a site's cell is never water or ridge
+  // a site's cell is never water
   for (const d of sc.sites) {
-    water[idx(sc, d.cx, d.cy)] = 0;
-    ridge[idx(sc, d.cx, d.cy)] = 0;
+    const i = idx(sc, d.cx, d.cy);
+    water[i] = 0;
+    height[i] = Math.max(1, height[i]);
   }
   const s: SimState = {
     scenario: sc,
     w: sc.w,
     h: sc.h,
     water,
-    ridge,
+    height,
     track: new Uint8Array(sc.w * sc.h),
     sites,
     stations: [],

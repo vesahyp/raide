@@ -4,12 +4,14 @@
 // the card again, a drag from a site with no station builds nothing, and the pause menu opens
 // and closes. `make touch-check` (PORT=5187 when another repo's dev server holds the default).
 import { chromium, devices } from 'playwright';
+// headless Chromium draws WebGL in software unless told otherwise
+const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn } from 'node:child_process';
 
 const port = Number(process.env.PORT) || 5197;
 const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 2500));
-const browser = await chromium.launch();
+const browser = await chromium.launch(GPU);
 const context = await browser.newContext({ ...devices['iPhone 15'], hasTouch: true });
 const page = await context.newPage();
 const cdp = await context.newCDPSession(page);
@@ -40,8 +42,7 @@ const drag = async (a, b) => {
 const where = () =>
   page.evaluate(() => {
     const s = window.__sim;
-    const m = window.__renderer.cam.m;
-    const toS = (x, y) => ({ x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] });
+    const toS = (x, y) => window.__renderer.project(x, y, 2);
     const out = {};
     for (const site of s.sites) out[site.id] = toS(site.cx + 0.5, site.cy + 0.5);
     out.cash = s.cash;
@@ -112,10 +113,8 @@ try {
   // a tap on the track opens the card again
   const mid = await page.evaluate(() => {
     const s = window.__sim;
-    const m = window.__renderer.cam.m;
     const c = s.lines[0].path[3];
-    const x = (c % s.w) + 0.5, y = Math.floor(c / s.w) + 0.5;
-    return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] };
+    return window.__renderer.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
   });
   await tap(mid.x, mid.y);
   await page.waitForTimeout(250);

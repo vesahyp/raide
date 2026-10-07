@@ -11,7 +11,7 @@ import { createState, siteById, goodsOnMap } from '../game/state';
 import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf } from '../game/sim';
 import { ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
-import { Renderer, OPTION_COLOUR } from '../render/renderer';
+import { Renderer3D, OPTION_COLOUR } from '../render/render3d';
 import { Input } from '../input/input';
 import { Bot } from '../../tools/bot';
 import { tr, t as tt, num } from '../i18n';
@@ -38,6 +38,7 @@ interface Hud {
 
 export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQuit: () => void; onAgain: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const simRef = useRef<SimState | null>(null);
   if (!simRef.current) simRef.current = createState(scenario);
   const s = simRef.current;
@@ -54,11 +55,11 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const renderer = new Renderer(canvas, s);
+    const renderer = new Renderer3D(canvas, overlayRef.current!, s);
     const params = new URLSearchParams(location.search);
     const speed = Math.max(0.25, Number(params.get('speed') ?? 1));
     const bot = params.get('bot') === '1' ? Bot.for(s) : null;
-    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer; __pace?: number; __plan?: (a: number, b: number) => unknown };
+    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer3D; __pace?: number; __plan?: (a: number, b: number) => unknown };
     w.__sim = s;
     w.__renderer = renderer;
     w.__pace = speed;
@@ -66,7 +67,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     const input = new Input(
       canvas,
       s,
-      () => renderer.cam,
+      renderer,
       {
         onBuild: (line, sx, sy) => {
           track('build', { scenario: scenario.id, cost: s.lastBuild?.cost ?? 0, bridge: s.lastBuild ? s.lastBuild.cells.filter((c) => s.water[c]).length : 0 });
@@ -75,8 +76,15 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         },
         onChoice: (options, sx, sy) => setCard({ kind: 'choice', options, sx, sy }),
         onLine: (line) => setCard({ kind: 'line', lineId: line.id }),
-        onTrain: (train) => setCard({ kind: 'train', trainId: train.id }),
+        onTrain: (train) => {
+          renderer.follow(train);
+          setCard({ kind: 'train', trainId: train.id });
+        },
         onSite: (site) => setCard({ kind: 'site', siteId: site.id }),
+        onGround: () => {
+          renderer.follow(null);
+          setCard((c) => (c && (c.kind === 'line' || c.kind === 'train' || c.kind === 'site') ? null : c));
+        },
         onNote: (cell) => note(s, cell, tr('Ei rahaa', 'No cash')),
         onAny: () => unlock(),
       },
@@ -128,9 +136,13 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       if (document.visibilityState !== 'visible') setPaused(true);
     };
     document.addEventListener('visibilitychange', onVis);
+    const onResize = () => renderer.resize();
+    window.addEventListener('resize', onResize);
     return () => {
       cancelAnimationFrame(raf);
       input.dispose();
+      renderer.dispose();
+      window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [s, scenario]);
@@ -144,6 +156,8 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   return (
     <div className="game">
       <canvas ref={canvasRef} />
+      <div className="map-overlay" ref={overlayRef} />
+      <GoodIcons />
       <div className="hud" data-ui>
         <div className="hud-year">
           <span className="num">{hud.year}</span>
@@ -288,7 +302,7 @@ function CardHead({ title, onClose }: { title: React.ReactNode; onClose: () => v
 function ChoiceCard({ s, options, onPick, onClose }: { s: SimState; options: Route[]; onPick: (r: Route) => void; onClose: () => void }) {
   const [a, b] = options;
   const name = (r: Route) => (r.bridge.length ? tr('Silta', 'Bridge') : r.cutting.length ? tr('Leikkaus', 'Cutting') : r.mode === 'cheap' ? tr('Kierto', 'Around') : tr('Suora', 'Direct'));
-  const sub = (r: Route) => `${r.length.toFixed(0)} ${tr('ruutua', 'cells')}${r.bridge.length ? `, ${tr('silta', 'bridge')} ${r.bridge.length}` : ''}${r.cutting.length ? `, ${tr('leikkaus', 'cutting')} ${r.cutting.length}` : ''}`;
+  const sub = (r: Route) => `${(r.length * 0.2).toFixed(1)} km, ${r.worst < 1 ? tr('tasainen', 'flat') : `${tr('nousu', 'climb')} ${r.worst.toFixed(0)} %`}${r.bridge.length ? `, ${tr('silta', 'bridge')}` : ''}${r.fill.length ? `, ${tr('penger', 'embankment')}` : ''}`;
   return (
     <div className="card sheet choice-card" data-ui>
       <CardHead title={tr('Kumpaa kautta?', 'Which way?')} onClose={onClose} />
@@ -302,7 +316,7 @@ function ChoiceCard({ s, options, onPick, onClose }: { s: SimState; options: Rou
           </button>
         ))}
       </div>
-      <p className="small">{tr('Lyhyt rata tekee enemmän matkoja vuodessa. Harjulla kevyt veturi ryömii.', 'A short line makes more trips a year. On the ridge the light engine crawls.')}</p>
+      <p className="small">{tr('Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt veturi ryömii.', 'A short line makes more trips a year. On a steep climb the light engine crawls.')}</p>
     </div>
   );
 }
@@ -576,6 +590,37 @@ function ResultCard({ s, onAgain, onQuit }: { s: SimState; onAgain: () => void; 
         {tr('Alkuun', 'Title')}
       </button>
     </div>
+  );
+}
+
+/** the goods glyphs the chips use, as SVG symbols once in the page */
+function GoodIcons() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden>
+      <defs>
+        <symbol id="g-timber" viewBox="0 0 24 24">
+          <rect x="2" y="6" width="18" height="5" rx="2.5" fill="#8a5a2b" /><circle cx="20" cy="8.5" r="2.5" fill="#d9b27a" /><circle cx="20" cy="8.5" r="1" fill="#8a5a2b" />
+          <rect x="4" y="13" width="18" height="5" rx="2.5" fill="#9a6633" /><circle cx="4" cy="15.5" r="2.5" fill="#d9b27a" /><circle cx="4" cy="15.5" r="1" fill="#9a6633" />
+        </symbol>
+        <symbol id="g-boards" viewBox="0 0 24 24">
+          <rect x="2" y="5" width="20" height="4" rx="1" fill="#e8d2a0" stroke="#8a6a3a" strokeWidth="1" />
+          <rect x="2" y="10" width="20" height="4" rx="1" fill="#e2c892" stroke="#8a6a3a" strokeWidth="1" />
+          <rect x="2" y="15" width="20" height="4" rx="1" fill="#e8d2a0" stroke="#8a6a3a" strokeWidth="1" />
+        </symbol>
+        <symbol id="g-grain" viewBox="0 0 24 24">
+          <path d="M12 22 V9" stroke="#b08a2a" strokeWidth="2" fill="none" />
+          <g fill="#e9c547" stroke="#a7811f" strokeWidth="0.8">
+            <ellipse cx="12" cy="5" rx="2.4" ry="3.2" /><ellipse cx="8.5" cy="9" rx="2.4" ry="3.2" transform="rotate(-35 8.5 9)" /><ellipse cx="15.5" cy="9" rx="2.4" ry="3.2" transform="rotate(35 15.5 9)" />
+            <ellipse cx="8.5" cy="14" rx="2.4" ry="3.2" transform="rotate(-35 8.5 14)" /><ellipse cx="15.5" cy="14" rx="2.4" ry="3.2" transform="rotate(35 15.5 14)" />
+          </g>
+        </symbol>
+        <symbol id="g-flour" viewBox="0 0 24 24">
+          <path d="M6 9 Q5 21 12 21 Q19 21 18 9 Z" fill="#f4f0e4" stroke="#8a8070" strokeWidth="1" />
+          <path d="M7 9 L17 9 L15 5 L9 5 Z" fill="#e3dcc8" stroke="#8a8070" strokeWidth="1" />
+          <path d="M8 8 L16 8" stroke="#b5382c" strokeWidth="2" />
+        </symbol>
+      </defs>
+    </svg>
   );
 }
 

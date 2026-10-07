@@ -5,11 +5,13 @@
 // and the sim is the same object with the same trains. `make rotate-check` (PORT=5187 when
 // another repo's dev server holds the default).
 import { chromium, devices } from 'playwright';
+// headless Chromium draws WebGL in software unless told otherwise
+const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn } from 'node:child_process';
 const port = Number(process.env.PORT) || 5197;
 const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 2500));
-const browser = await chromium.launch();
+const browser = await chromium.launch(GPU);
 const phone = devices['iPhone 15'];
 const portrait = { width: phone.viewport.width, height: phone.viewport.height };
 const landscape = { width: phone.viewport.height, height: phone.viewport.width };
@@ -45,7 +47,13 @@ const state = () =>
     const c = document.querySelector('.game canvas');
     const r = c.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const cam = window.__renderer.cam;
+    // the map's corners on the screen, from the renderer's projection
+    const sim = window.__sim;
+    const pts = [[0, 0], [sim.w, 0], [0, sim.h], [sim.w, sim.h]].map(([x, y]) => window.__renderer.project(x, y, 0));
+    const cam = { left: Math.min(...pts.map((p) => p.x)), top: Math.min(...pts.map((p) => p.y)), width: 0, height: 0, turned: window.innerWidth > window.innerHeight, scale: 0 };
+    cam.width = Math.max(...pts.map((p) => p.x)) - cam.left;
+    cam.height = Math.max(...pts.map((p) => p.y)) - cam.top;
+    cam.scale = cam.width / sim.w;
     const hud = document.querySelector('.hud').getBoundingClientRect();
     const pause = document.querySelector('.round.pause').getBoundingClientRect();
     const sheet = document.querySelector('.card.sheet, .card.overlay')?.getBoundingClientRect();
@@ -103,10 +111,8 @@ try {
   // the train card through a turn
   await page.evaluate(() => {
     const s = window.__sim;
-    const m = window.__renderer.cam.m;
     const c = s.lines[0].path[3];
-    const x = (c % s.w) + 0.5, y = Math.floor(c / s.w) + 0.5;
-    window.__mid = { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] };
+    window.__mid = window.__renderer.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
   });
   const mid = await page.evaluate(() => window.__mid);
   await page.touchscreen.tap(mid.x, mid.y);
