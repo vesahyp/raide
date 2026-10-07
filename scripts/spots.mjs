@@ -47,7 +47,7 @@ try {
     // a view: zoom steps, wait for the zoom to settle, centre on a tile, wait for the pan, shoot,
     // then check that each running train sits on its rails
     const go = async (name, x, y, steps) => {
-      await page.evaluate((steps) => { const r = window.__renderer; r.follow(null); for (const st of steps) r.zoomStep(st); }, steps);
+      await page.evaluate((steps) => { const r = window.__renderer; r.follow(null); for (const st of steps) { if (st > 1 || st === 0) r.zoomTo = st || r.wholeScale(); else r.zoomStep(st); } }, steps);
       await page.waitForFunction(() => window.__renderer.zoomTo === null, null, { timeout: 10000 });
       await page.evaluate(([x, y]) => { const r = window.__renderer; const p = r.project(x, y); r.pan(innerWidth / 2 - p.x, innerHeight / 2 - p.y); }, [x, y]);
       await page.waitForTimeout(600);
@@ -85,6 +85,15 @@ try {
     await go('bridge', 46, 34, [-1]);
     await go('ridge', 92, 38, []);
     await go('whole', 60, 45, [-1, -1, -1]);
+    // the sky (a step above 1 is a scale in px a tile, 0 is the whole map): route zoom has the first faint clouds, play zoom none, the whole map the most; a pick
+    // (the same fade as a held drag) halves them so routes and targets read
+    await go('clouds-route', 60, 45, [12]);
+    await go('clouds-play', 36, 34, [23]);
+    await go('clouds-whole', 60, 45, [0]);
+    await page.evaluate(() => { const r = window.__renderer; r.laying = { from: window.__sim.stations[0].cell, reverse: false }; });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: `${OUT}/clouds-drag-${orient}.png` });
+    await page.evaluate(() => { window.__renderer.laying = null; });
     await go('close', 15, 29, [1, 1, 1, 1]);
     console.log(orient, await page.evaluate(() => JSON.stringify({ lines: window.__sim.lines.length, trains: window.__sim.trains.length, year: window.__sim.year })));
     await ctx.close();

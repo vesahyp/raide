@@ -18,6 +18,7 @@ import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, demand, SLOTS_MAX, workingWagon } from '../game/sim';
+import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
 import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, DEMAND_FLOOR, TERRACE_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
@@ -253,6 +254,8 @@ export class Renderer2D {
   private apronAt = new Map<number, Apron>();
   private kSeen = new Map<number, number>();
   /** the pillars drawn this frame, by site, so the HTML labels keep clear of their bright foot */
+  /** the cloud cover that fades in when the map is zoomed out */
+  private clouds: Clouds;
   private pillars = new Map<string, { w: number; h: number; lod: boolean }>();
   private statics = new Map<number, Obj[]>();
   private chunks = new Map<string, Chunk>();
@@ -313,6 +316,7 @@ export class Renderer2D {
     this.terrA = new Uint8Array(n);
     this.nearTrack = new Uint8Array(n);
     for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) this.jA[y * s.w + x] = hash(x * 7 + 1, y * 13 + 5);
+    this.clouds = new Clouds(s.w, s.h, s.scenario.id);
     this.rebuildLand();
     this.resize();
     this.fit();
@@ -2013,6 +2017,9 @@ export class Renderer2D {
       this.drawRoute(drag.route, drag.loose ? 'rgba(255,255,255,.85)' : null, false, false);
     }
     this.drawTrains(dt);
+    // clouds and their shadows over land, track and trains, under the pillars and the HTML overlay
+    this.clouds.draw(c, this.dpr, this.time, dt, this.cam.s, this.wholeScale(), !!drag || this.picking || !!this.laying,
+      (x) => this.sx(x), (y) => this.sy(y), { w: this.w, h: this.h });
     this.syncTargets(drag);
     if (this.pickFitDue && this.targets) {
       this.pickFitDue = false;
