@@ -1,6 +1,6 @@
 # 0002: The map is three.js, the land is a height field, the camera tilts and zooms
 
-Date: 2026-10-07. Status: accepted. Changes the Canvas 2D part of ADR 0001.
+Date: 2026-10-07. Status: superseded by 0003. Changes the Canvas 2D part of ADR 0001.
 
 ## Context
 
