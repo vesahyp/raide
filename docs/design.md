@@ -370,16 +370,43 @@ phone is in a pocket.
 
 ### Art direction
 
-Top-down with a small lean, drawn procedurally on Canvas 2D like the three
-sibling games. The map reads as a Finnish summer: pale lake blue, pine
-green in two tones, ridge brown with contour lines, towns as clusters of red
-and ochre wooden houses that multiply as the town grows. Track is a dark
-double line with sleepers visible at every zoom, and trains are drawn at
-twice their map scale so a wagon is a readable rectangle on a phone, with a
-white smoke trail that follows the engine. The HUD is a brass and dark green
-dashboard with large round buttons, and the year-end card looks like a
-ledger page. Winter arrives every year as a palette change: snow on the land,
-ice on the lakes, the same map.
+Decided 2026-10-07 on the top-down mockups in `docs/mockups/topdown/`.
+Vesa: "These look great! The zoom levels all seem relevant. Tile step hills
+also brilliant! Can see them clearly."
+
+- **Höyry's style, top down, zoomed in like Prison Architect.** Flat Canvas
+  2D, one colour for each face, a dark outline on everything, a soft drop
+  shadow down and to the right, a 3/4 lean: a building shows its roof and
+  its front wall. No image assets: every sprite is drawn with canvas paths.
+- **A big map that the player scrolls.** A scenario is a tile map of about
+  120 by 90 tiles, about seven portrait screens. At play zoom a tile is
+  about 23 px.
+- **Hills are one-tile terrace steps.** The land is a whole number of
+  terraces of 10 m. Each terrace has its own colour (meadow green, light
+  green, dry olive, tan heath with stones on the ridge), a front face of
+  earth and a dark rim. The steps are hard, one tile wide, so a hill reads at
+  a glance without contour lines. A cutting is a channel through a terrace
+  with grey rock walls; an embankment has sand sides; a bridge is a timber
+  deck on piers over the water.
+- **Four zoom levels, all in use.** Pinch moves between them smoothly.
+  1. Close up (a tile about 55 px): the station, its piles and the train
+     loading wagon by wagon.
+  2. Play zoom (about 23 px): the yards, the lines, the trains with their
+     loads. Most of the game happens here.
+  3. Route zoom (about 13 to 17 px): wide enough to drag a route over a
+     ridge and see the way round.
+  4. The whole map: terraces become colour bands, lines are brass, trains
+     are dots, sites are badges, and a frame shows where play zoom was.
+- **Goods are things on the map.** A yard shows its stock as log piles,
+  board stacks and sacks; a wagon shows its load. Chips over each site show
+  what it has (cream) and what it pays (dark).
+- **The map reads as a Finnish summer**: lake blue, pines and birches,
+  towns as clusters of red, ochre and white wooden houses that multiply as
+  the town grows, a white church. Trains are an engine with a tender and
+  wagons, with white smoke. The HUD is a brass and dark green dashboard with
+  large round buttons, and the year-end card looks like a ledger page.
+  Winter arrives every year as a palette change: snow on the land, ice on
+  the lakes, the same map.
 
 ### Left out on purpose
 
@@ -391,7 +418,8 @@ ice on the lakes, the same map.
   choose destinations (cargodist).
 - Per-wagon cargo micromanagement at stations.
 - Real-time timers, premium currency, gacha, adverts.
-- A free-rotating 3D view. Fixed camera, pinch zoom only.
+- A 3D view or a camera that turns. The map is top down; pinch zooms and
+  one finger scrolls.
 - Multiplayer.
 - Electrified track as a build step until the electric era exists.
 
@@ -454,6 +482,9 @@ Vesa answered the open questions on 2026-10-06:
   model stays simple (cash, later one loan) and nothing is built for shares
   until that call is made.
 - **The name is open.** Raide is the working name until Vesa decides.
+- **Top down, not 3D** (2026-10-07). The three.js map of ADR 0002 stops.
+  The look is Höyry's, on a big scrolling map, with one-tile terrace hills
+  and four zoom levels. See Art direction.
 
 ## Second slice: Harju
 
