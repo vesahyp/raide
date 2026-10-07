@@ -7,7 +7,7 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad } from '../src/game/sim';
+import { step, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad, buyers } from '../src/game/sim';
 import { idx, route } from '../src/game/grid';
 import { Bot } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
@@ -152,6 +152,14 @@ function play(sc: typeof SAWMILL) {
     check(p.x >= 0 && p.x <= s.w && p.y >= 0 && p.y <= s.h, `${sc.id}: train ${t.id} is on the map (${p.x.toFixed(1)}, ${p.y.toFixed(1)}), length ${trainLength(t).toFixed(1)}`);
   }
   return s;
+}
+{
+  const s0 = createState(HARJU);
+  const saw = siteById(s0, 'sawmill');
+  const b = buyers(s0, saw);
+  check(b.length === 2 && b.every((x) => x.site.kind === 'town' && x.price > 0 && x.km > 0 && !x.linked), `on Harju the sawmill's buyers are the two towns and both pay (${b.map((x) => `${x.site.id} ${x.price} at ${x.km} km`).join(', ')})`);
+  check(b[0].price >= b[1].price, 'buyers come highest price first');
+  check(buyers(s0, siteById(s0, 'hameenlinna')).length === 0, 'a town has no buyers');
 }
 play(SAWMILL);
 const h = play(HARJU);

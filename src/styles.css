@@ -83,7 +83,7 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .map-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .map-overlay > * { position: absolute; left: 0; top: 0; will-change: transform; }
 .tag { transform-origin: 0 0; }
-.site-tag { margin-left: 0; translate: -50% 0; text-align: center; }
+.site-tag { margin-left: 0; translate: -50% -100%; transform-origin: 50% 100%; text-align: center; }
 .site-tag .name { font-weight: 800; font-size: 14px; color: #fff; text-shadow: 0 1px 0 #1b1a16, 0 0 4px rgba(20, 20, 15, 0.9), 0 0 2px rgba(20, 20, 15, 0.9); white-space: nowrap; }
 .site-tag .name small { font-weight: 700; font-size: 11px; color: var(--gold); padding: 0 4px; border-radius: 6px; background: rgba(27, 42, 30, 0.9); }
 .site-tag .chips { display: flex; gap: 3px; justify-content: center; margin-top: 2px; }
@@ -102,6 +102,10 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .badge { translate: -50% -19px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .badge .c { width: 34px; height: 34px; border-radius: 50%; background: #f1e7cc; border: 2px solid #16120e; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgba(22, 18, 14, 0.5); }
 .badge .gi { width: 22px; height: 22px; }
+.badge .c { position: relative; }
+.badge .n { position: absolute; right: -7px; top: -6px; min-width: 16px; padding: 1px 3px; border-radius: 8px; background: #16120e; color: var(--gold); font: 900 11px/14px var(--f-body); font-style: normal; text-align: center; }
+.badge .wd { display: flex; gap: 1px; padding: 1px 3px; border-radius: 9px; background: rgba(27, 42, 30, 0.92); border: 1.5px solid var(--brass); }
+.badge .wd .gi { width: 14px; height: 14px; }
 .badge .nm { font-weight: 900; font-size: 12px; color: #fff; white-space: nowrap; text-shadow: 0 0 3px #16120e, 0 1px 2px #16120e; }
 .float { font-weight: 800; font-size: 16px; translate: -50% -50%; text-shadow: 0 1px 0 #1b1a16, 0 0 3px rgba(20, 20, 15, 0.9); }
 .float.pay { color: var(--gold); }
@@ -225,13 +229,37 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .btn.act.on { border-color: var(--brass); background: var(--pine-3); }
 .btn.act:disabled { opacity: 0.45; box-shadow: none; }
 
-/* --- a site's wants --- */
-.want { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--hair); font-weight: 700; }
-.want .want-name { width: 64px; }
-.want .bar { flex: 1; height: 10px; border-radius: 5px; background: rgba(239, 230, 207, 0.2); overflow: hidden; }
-.want .bar i { display: block; height: 100%; background: var(--gold); }
-.want .num { color: var(--gold); width: 32px; text-align: right; }
-.want small { font-weight: 500; font-size: 12px; color: var(--bone-dim); }
+/* --- the site card: has, wants, why it is stuck, buyers, and the button that lays track --- */
+.card.sheet.site-card { max-height: calc(100% - 8px); overflow-y: auto; }
+.site-card .card-head { margin-bottom: 4px; }
+.srow { display: grid; grid-template-columns: 62px 1fr; align-items: start; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hair); }
+.srow .sl { font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.04em; padding-top: 7px; }
+.srow .sc { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gline { display: flex; align-items: center; gap: 7px; min-height: 30px; font-weight: 800; font-size: 17px; min-width: 0; }
+.gline .gi { width: 22px; height: 22px; flex: none; }
+.gline .of { font-weight: 600; font-size: 14px; color: var(--bone-dim); margin-left: -4px; }
+.gline .gold { color: var(--gold); min-width: 26px; }
+.gline .bar { flex: 1; min-width: 40px; max-width: 120px; height: 10px; border-radius: 5px; background: rgba(239, 230, 207, 0.2); overflow: hidden; }
+.gline .bar i { display: block; height: 100%; background: var(--gold); }
+.gline .bar.low i { background: #e0553f; }
+.gline small { font-weight: 600; font-size: 13px; color: var(--bone-dim); white-space: nowrap; }
+.gline.buyer .bn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.gline .link { width: 16px; height: 16px; color: var(--brass); flex: none; }
+.site-card .stuck { margin: 4px 0; padding: 6px 10px; border-radius: 10px; background: rgba(224, 85, 63, 0.16); border: 1.5px solid rgba(224, 85, 63, 0.6); color: #ffb3a6; font-weight: 700; font-size: 14px; }
+.site-card .btn.lay { margin-top: 8px; min-height: 52px; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .site-card .btn.lay { min-height: 44px; margin-top: 4px; padding-top: 8px; padding-bottom: 8px; }
+  .srow { padding: 2px 0; }
+  .gline { min-height: 26px; }
+  .srow .sl { padding-top: 5px; }
+}
+
+/* pick mode: the banner at the top, with its Cancel */
+.pick-banner { position: absolute; left: 50%; top: calc(var(--sat) + 64px); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 14px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; font-weight: 800; font-size: 16px; white-space: nowrap; z-index: 5; }
+.pick-banner .btn { min-width: 0; min-height: 40px; margin: 0; padding: 6px 14px; font-size: 16px; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .pick-banner { top: calc(var(--sat) + 8px); }
+}
 .card.ledger .grew { margin: 0 0 6px; font-weight: 700; color: #2f6b3a; }
 .btn.route small b { font-weight: 900; }
 .btn.route .trips { white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 700; color: var(--bone); }

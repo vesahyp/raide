@@ -4,12 +4,12 @@
  * times a second; the cards open on the sim's events (a build, a choice of
  * routes, a year end, the result) and on taps: a line, a train, a site.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineId, Good, Line, ScenarioDef, SimState, Site, Train, WagonType, YearEndChoice } from '../game/types';
 import { GOODS } from '../game/types';
-import { createState, siteById, goodsOnMap } from '../game/state';
-import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf } from '../game/sim';
-import { ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { createState, siteById, goodsOnMap, stationAt } from '../game/state';
+import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf, buyers } from '../game/sim';
+import { ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RAW_CAP, RAW_RATE, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
 import { earthWord, gradeText, GRADE_COL, perYear, routeKm, tripsByEngine } from './routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
@@ -50,6 +50,9 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const [paused, setPaused] = useState(false);
   const [muted, setMutedState] = useState(isMuted());
   const [, bump] = useState(0);
+  // pick mode, from the site card's "lay track from here": the site the track starts at or ends at
+  const [lay, setLay] = useState<{ siteId: string } | null>(null);
+  const inputRef = useRef<Input | null>(null);
   const cardRef = useRef<Card>(null);
   cardRef.current = card;
   const pausedRef = useRef(false);
@@ -90,8 +93,10 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         },
         onNote: (cell) => note(s, cell, tr('Ei rahaa', 'No cash')),
         onAny: () => unlock(),
+        onLayEnd: () => setLay(null),
       },
     );
+    inputRef.current = input;
     w.__input = input;
     track('scenario_start', { scenario: scenario.id });
     const start = siteById(s, scenario.startStation);
@@ -151,6 +156,18 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     };
   }, [s, scenario]);
 
+  // the map and the fingers follow the pick mode; a card that opens ends it
+  useEffect(() => {
+    const site = lay ? siteById(s, lay.siteId) : null;
+    const cell = site ? idx(s, site.cx, site.cy) : null;
+    const reverse = cell !== null && !stationAt(s, cell);
+    if (rendRef.current) rendRef.current.laying = cell === null ? null : { from: cell, reverse };
+    if (inputRef.current) inputRef.current.laying = cell === null ? null : { cell, reverse };
+  }, [lay, s]);
+  useEffect(() => {
+    if (card && lay) setLay(null);
+  }, [card, lay]);
+
   const goal = scenario.goal;
   const close = () => setCard(null);
   const line = card?.kind === 'line' ? s.lines.find((l) => l.id === card.lineId) ?? null : null;
@@ -184,6 +201,14 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           <svg viewBox="0 0 24 24" className="glyph"><rect x="6" y="5" width="4" height="14" fill="currentColor" /><rect x="14" y="5" width="4" height="14" fill="currentColor" /></svg>
         </button>
       </div>
+      {lay && (
+        <div className="pick-banner" data-ui>
+          <span>{stationAt(s, idx(s, siteById(s, lay.siteId).cx, siteById(s, lay.siteId).cy)) ? tr('Napauta, minne rata menee', 'Tap where the track goes') : tr('Napauta asema, josta rata alkaa', 'Tap the station the track starts from')}</span>
+          <button className="btn" data-act="pick-cancel" onClick={() => setLay(null)}>
+            {tr('Peru', 'Cancel')}
+          </button>
+        </div>
+      )}
       {card === null && !paused && (
         <div className="zoom" data-ui>
           <button className="round" aria-label={tr('Lähemmäs', 'Zoom in')} data-zoom="in" onClick={() => rendRef.current?.zoomStep(1)}>
@@ -244,7 +269,17 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         />
       )}
       {train && <TrainCard s={s} train={train} onClose={close} onSold={close} />}
-      {site && <SiteCard s={s} site={site} onClose={close} />}
+      {site && (
+        <SiteCard
+          s={s}
+          site={site}
+          onClose={close}
+          onLay={() => {
+            setCard(null);
+            setLay({ siteId: site.id });
+          }}
+        />
+      )}
       {card?.kind === 'yearEnd' && s.yearEnd && (
         <YearEndCard
           s={s}
@@ -481,48 +516,125 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
   );
 }
 
-/** The site card: what it has, what it wants and pays now, how far a town is from growing. */
-function SiteCard({ s, site, onClose }: { s: SimState; site: Site; onClose: () => void }) {
+const KIND_NAME: Record<string, [string, string]> = { forest: ['metsä', 'forest'], sawmill: ['saha', 'sawmill'], farm: ['maatila', 'farm'], mill: ['mylly', 'mill'], town: ['kaupunki', 'town'] };
+/** the producer of a good named the way the sentence wants it: Finnish "from", English "a" */
+const FROM_KIND: Record<string, [string, string]> = { forest: ['metsästä', 'a forest'], farm: ['maatilalta', 'a farm'] };
+const NO_GOOD: Record<string, string> = { timber: 'tukkeja', grain: 'viljaa' };
+
+/** one line on why a site does nothing right now, or null when it is not stuck */
+function stuckText(s: SimState, site: Site): string | null {
+  const station = s.stations.find((x) => x.siteId === site.id);
+  if (!station) return tr('Ei vielä rautatiellä', 'Not on the railway yet');
+  const makes = MAKES[site.kind];
+  const lines = s.lines.filter((l) => l.stops.includes(station.id));
+  const input = TAKES[site.kind][0];
+  if (makes && input) {
+    const fed = lines.some((l) => {
+      const other = s.stations.find((x) => x.id === (l.stops[0] === station.id ? l.stops[1] : l.stops[0]));
+      return other && MAKES[siteById(s, other.siteId).kind] === input;
+    });
+    if (!fed) {
+      const from = s.sites.find((o) => MAKES[o.kind] === input);
+      const k = from ? FROM_KIND[from.kind] : null;
+      return `${tr(`Ei ${NO_GOOD[input] ?? ''} tule`, `No ${tt(GOOD_NAME[input])} comes in`)}: ${k ? tr(`ei rataa ${k[0]}`, `no line from ${k[1]}`) : tr('ei rataa', 'no line')}`;
+    }
+  }
+  if (makes && site.stock >= RAW_CAP - 0.01 && !s.trains.some((t) => lines.some((l) => l.id === t.lineId) && WAGON_GOODS[t.wagons].includes(makes)))
+    return tr('Täynnä: mikään juna ei hae', 'Full: no train picks it up');
+  return null;
+}
+
+/** a small rail mark: a line joins the two stations */
+const LinkMark = () => (
+  <svg className="link" viewBox="0 0 24 24" role="img" aria-label={tr('rata on', 'line exists')}>
+    <g stroke="currentColor" strokeLinecap="round">
+      <path d="M8.5 3 V21 M15.5 3 V21" strokeWidth="2.4" />
+      <path d="M5.5 6.5 H18.5 M5.5 11 H18.5 M5.5 15.5 H18.5 M5.5 20 H18.5" strokeWidth="2" />
+    </g>
+  </svg>
+);
+
+const GoodIcon = ({ good }: { good: Good }) => (
+  <svg className="gi" aria-label={tt(GOOD_NAME[good])}>
+    <use href={`#g-${good}`} />
+  </svg>
+);
+
+/**
+ * The site card: what it has, what it wants and pays now, why it is stuck, who buys its output, and
+ * a button that starts the track from here (or joins the site to the railway when it has no station).
+ */
+function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClose: () => void; onLay: () => void }) {
   const makes = MAKES[site.kind];
   const takes = TAKES[site.kind].filter((g) => goodsOnMap(s).includes(g));
-  const kindName: Record<string, [string, string]> = { forest: ['metsä', 'forest'], sawmill: ['saha', 'sawmill'], farm: ['maatila', 'farm'], mill: ['mylly', 'mill'], town: ['kaupunki', 'town'] };
+  const cell = idx(s, site.cx, site.cy);
+  const hasStation = !!stationAt(s, cell);
+  // a site with no station can be joined when some station reaches it; worked out when the stations change, not each frame
+  const reachable = useMemo(() => hasStation || s.stations.some((st) => plan(s, st.cell, cell).length > 0), [s, cell, hasStation, s.stations.length]);
+  const stuck = stuckText(s, site);
+  const list = buyers(s, site);
+  const raw = !!RAW_RATE[site.kind];
   return (
-    <div className="card sheet" data-ui>
+    <div className="card sheet site-card" data-ui>
       <CardHead
         title={
           <>
-            {tt(site.name)} <small className="line-name">{tr(...kindName[site.kind])}{site.kind === 'town' ? ` ${tr('koko', 'size')} ${site.size}` : ''}</small>
+            {tt(site.name)} <small className="line-name">{tr(...KIND_NAME[site.kind])}{site.kind === 'town' ? ` ${tr('koko', 'size')} ${site.size}` : ''}</small>
           </>
         }
         onClose={onClose}
       />
       {makes && (
-        <p className="small">
-          {tr('Tarjolla', 'Has')}: <b>{Math.floor(site.stock)}</b> {tt(GOOD_NAME[makes])}
-          {site.rate > 0 && ` · ${site.rate.toFixed(1)}/${tr('kk', 'mo')}`}
-        </p>
-      )}
-      {takes.map((g) => (
-        <div key={g} className="want">
-          <span className="want-name">{tt(GOOD_NAME[g])}</span>
-          <span className="bar">
-            <i style={{ width: `${100 * demand(site.taken[g])}%` }} />
-          </span>
-          <span className="num">{price(s, g, site.id, 0)}</span>
-          {site.kind === 'town' && (
-            <small>
-              {tr('kasvuun', 'to grow')} {site.fed[g]}/{GROW_NEED}
-            </small>
-          )}
+        <div className="srow" data-sec="has">
+          <span className="sl">{tr('Tarjolla', 'Has')}</span>
+          <div className="gline">
+            <GoodIcon good={makes} />
+            <b>{Math.floor(site.stock)}</b>
+            {raw && <span className="of">/{RAW_CAP}</span>}
+            <span className="bar">
+              <i style={{ width: `${Math.min(100, (100 * site.stock) / RAW_CAP)}%` }} />
+            </span>
+            {site.rate > 0 && <small>{site.rate.toFixed(1)}/{tr('kk', 'mo')}</small>}
+          </div>
         </div>
-      ))}
-      <p className="small">
-        {site.kind === 'town'
-          ? tr('Hinta laskee kun kaupunki täyttyy ja nousee kuukausien mittaan. Kaupunki kasvaa, kun se saa vuodessa tarpeeksi kumpaakin.', 'The price falls as the town fills and climbs back over the months. The town grows when a year brings enough of each good.')
-          : makes
-            ? tr('Vedä asemalta tänne, niin juna hakee kuorman.', 'Drag from a station here and a train picks the load up.')
-            : ''}
-      </p>
+      )}
+      {takes.length > 0 && (
+        <div className="srow" data-sec="wants">
+          <span className="sl">{tr('Haluaa', 'Wants')}</span>
+          <div className="sc">
+            {takes.map((g) => (
+              <div key={g} className="gline">
+                <GoodIcon good={g} />
+                <b className="gold">{price(s, g, site.id, 0)}</b>
+                <span className={`bar${demand(site.taken[g]) < 0.55 ? ' low' : ''}`}>
+                  <i style={{ width: `${100 * demand(site.taken[g])}%` }} />
+                </span>
+                {site.kind === 'town' && <small>{tr('kasvuun', 'to grow')} {Math.min(GROW_NEED, Math.floor(site.fed[g]))}/{GROW_NEED}</small>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {stuck && <p className="stuck">{stuck}</p>}
+      {list.length > 0 && (
+        <div className="srow" data-sec="buyers">
+          <span className="sl">{tr('Ostajat', 'Buyers')}</span>
+          <div className="sc">
+            {list.map((b) => (
+              <div key={b.site.id} className="gline buyer" data-buyer={b.site.id}>
+                <GoodIcon good={b.good} />
+                <span className="bn">{tt(b.site.name)}</span>
+                <b className="gold">{b.price}</b>
+                <small>{b.km.toFixed(1)} km</small>
+                {b.linked && <LinkMark />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <button className="btn primary wide lay" data-act="lay" disabled={!reachable} onClick={onLay}>
+        {hasStation ? tr('Vedä rata täältä', 'Lay track from here') : tr('Liitä rautatiehen', 'Join to the railway')}
+      </button>
     </div>
   );
 }

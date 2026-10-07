@@ -8,9 +8,10 @@
  * edge of the screen a drag scrolls the view, faster the closer it gets
  * (`update`, called each frame). On the whole-map zoom a drag only pans, a
  * tap on a train follows it and a tap anywhere else zooms in there. A tap on
- * a train opens its card and the camera follows it; a tap on a site opens the
- * site's; a tap on a station or a track cell the line's. Pointer events, so a
- * mouse works the same way (one finger only).
+ * a train opens its card and the camera follows it; a tap on a site or on its
+ * name and chips opens the site's; a tap on a station or a track cell the line's. Pointer events, so a
+ * mouse works the same way (one finger only). With `laying` set (the site card's
+ * "lay track from here") a tap on a marked site builds as the lift of a drag would.
  */
 import type { SimState, Line, Site, Train } from '../game/types';
 import { plan, build } from '../game/sim';
@@ -45,6 +46,8 @@ export interface InputEvents {
   /** a build the cash does not cover */
   onNote: (cell: number, text: string) => void;
   onAny: () => void;
+  /** pick mode is over: a tap built, offered the choice or fell on nothing */
+  onLayEnd: () => void;
 }
 
 /** how close to a station's centre a finger must land to start a drag, in cells */
@@ -66,6 +69,12 @@ interface Finger {
 
 export class Input {
   drag: Drag | null = null;
+  /**
+   * Pick mode, from the site card's "lay track from here": `cell` is the site's cell. A tap on a
+   * marked site does what the lift of a drag on it does; `reverse` is a site with no station,
+   * where the marked ones are the stations that can reach it and the track runs from the one tapped.
+   */
+  laying: { cell: number; reverse: boolean } | null = null;
   private fingers: Finger[] = [];
   private mode: 'none' | 'build' | 'pan' = 'none';
   private pinch: { dist: number; ang: number; mx: number; my: number } | null = null;
@@ -136,7 +145,7 @@ export class Input {
       this.moved = 0;
       const at = this.cellAt(e.clientX, e.clientY);
       const from = at ? this.stationNear(at.x, at.y, GRAB) : null;
-      if (from !== null && !this.r.whole) {
+      if (from !== null && !this.r.whole && !this.laying) {
         this.mode = 'build';
         this.dragId = e.pointerId;
         this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
@@ -234,6 +243,31 @@ export class Input {
     d.ok = !d.loose && !!d.route && d.route.cost <= this.s.cash;
   }
 
+  /** a tap in pick mode: the marked site under the finger gets its track, anything else ends the mode */
+  private tapLaying(sx: number, sy: number): void {
+    const lay = this.laying!;
+    this.laying = null;
+    let best: number | null = null;
+    let bd = 44;
+    for (const site of this.s.sites) {
+      const cell = idx(this.s, site.cx, site.cy);
+      if (cell === lay.cell || (lay.reverse && !stationAt(this.s, cell))) continue;
+      const p = this.r.project(site.cx + 0.5, site.cy + 0.5, 0);
+      const d = Math.hypot(p.x - sx, p.y - sy);
+      if (d < bd) {
+        bd = d;
+        best = cell;
+      }
+    }
+    const options = best === null ? [] : lay.reverse ? plan(this.s, best, lay.cell) : plan(this.s, lay.cell, best);
+    this.ev.onLayEnd();
+    if (!options.length) return;
+    if (options.length > 1) return this.ev.onChoice(options, sx, sy);
+    if (options[0].cost > this.s.cash) return this.ev.onNote(options[0].cells[options[0].cells.length - 1], 'cash');
+    const line = build(this.s, options[0]);
+    if (line) this.ev.onBuild(line, sx, sy);
+  }
+
   private onUp = (e: PointerEvent): void => {
     const k = this.fingers.findIndex((o) => o.id === e.pointerId);
     if (k < 0) return;
@@ -274,6 +308,7 @@ export class Input {
       return;
     }
     if (moved > 12) return;
+    if (this.laying) return this.tapLaying(e.clientX, e.clientY);
     // a tap: a train, a station, a track cell, or a site
     const train = this.r.trainAt(e.clientX, e.clientY);
     if (this.r.whole) {
@@ -282,6 +317,9 @@ export class Input {
       this.r.zoomAt(e.clientX, e.clientY);
       return this.ev.onGround();
     }
+    // a tap on a site's name and chips opens the site
+    const tagged = this.r.siteTagAt(e.clientX, e.clientY);
+    if (tagged) return this.ev.onSite(tagged);
     const at = this.cellAt(e.clientX, e.clientY);
     if (!at) {
       if (train) return this.ev.onTrain(train);

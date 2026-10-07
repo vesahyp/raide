@@ -319,7 +319,7 @@ export function boardStack(v: View, x: number, y: number, layers: number, lv: nu
   const Y = v.y(y, lv);
   const Wd = S * 1.5;
   const Dd = S * 0.9;
-  const step = S * 0.1;
+  const step = S * 0.14;
   const lw = Math.max(1, S * 0.05);
   c.fillStyle = 'rgba(20,30,10,.3)';
   c.fillRect(X + S * 0.15, Y + S * 0.15 - layers * step, Wd, Dd + layers * step);

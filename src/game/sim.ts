@@ -6,12 +6,12 @@
  * over. The player's moves are the exported functions below; the UI and
  * the bot call the same ones.
  */
-import type { EngineId, Good, Line, SimState, Train, WagonType, YearEndChoice, Float } from './types';
+import type { EngineId, Good, Line, SimState, Site, Train, WagonType, YearEndChoice, Float } from './types';
 import { GOODS } from './types';
 import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, type Route } from './grid';
 import { siteAt, stationAt, siteById, goodsOnMap, zeroGoods } from './state';
 import {
-  BASE_PRICE, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, GROW_NEED, MAKES, MILL_EATS, MONTHS,
+  BASE_PRICE, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, GROW_NEED, MAKES, MILL_EATS, MONTHS,
   PERK_FOREST, PERK_SPEED, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, UNDO_SECONDS,
   WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
@@ -128,6 +128,26 @@ export function distanceFactor(cells: number): number {
 export function price(s: SimState, good: Good, siteId: string, lineLength: number): number {
   const site = siteById(s, siteId);
   return Math.round(BASE_PRICE[good] * demand(site.taken[good]) * distanceFactor(lineLength));
+}
+
+/**
+ * Every site that takes what this site makes: the price it pays now for one load from here (the
+ * straight distance in tiles feeds the distance factor), the straight distance in km, and whether
+ * a line already joins the two stations. The highest price first.
+ */
+export function buyers(s: SimState, site: Site): { site: Site; good: Good; price: number; km: number; linked: boolean }[] {
+  const good = MAKES[site.kind];
+  if (!good) return [];
+  const mine = s.stations.find((st) => st.siteId === site.id);
+  const out: { site: Site; good: Good; price: number; km: number; linked: boolean }[] = [];
+  for (const o of s.sites) {
+    if (o === site || !TAKES[o.kind].includes(good)) continue;
+    const tiles = Math.hypot(o.cx - site.cx, o.cy - site.cy);
+    const theirs = s.stations.find((st) => st.siteId === o.id);
+    const linked = !!mine && !!theirs && s.lines.some((l) => l.stops.includes(mine.id) && l.stops.includes(theirs.id));
+    out.push({ site: o, good, price: price(s, good, o.id, tiles), km: Math.round((tiles * CELL_M) / 100) / 10, linked });
+  }
+  return out.sort((a, b) => b.price - a.price);
 }
 
 export function trainPrice(engine: EngineId = 'hilma', nWagons = WAGONS_DEFAULT): number {

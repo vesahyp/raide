@@ -50,7 +50,10 @@ laudat ja jauhot. Varasto näkyy pinona radan vieressä ja kuorma vaunuissa.
 Jokainen toimitus maksaa heti, ja luku lentää asemalta.
 Hinta laskee, kun kaupunki täyttyy, ja nousee taas kuukausien mittaan, ja
 isompi kaupunki syö enemmän. Napauta mitä tahansa paikkaa, niin näet mitä
-sillä on, mitä se haluaa ja mitä se maksaa nyt.
+sillä on, mitä se haluaa ja mitä se maksaa nyt, keille sen tavara kelpaa
+ja millä hinnalla, ja miksi se seisoo, jos seisoo. Kortin **Vedä rata
+täältä** -napista kartta näyttää, minne radan voi vetää; napauta kohdetta,
+niin rata rakentuu.
 
 **Kaupunki kasvaa**, kun se saa vuodessa tarpeeksi jokaista tavaraa, jota
 kartalla tehdään: kolme kuormaa lautoja ja kolme jauhoja. Talot

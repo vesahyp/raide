@@ -18,7 +18,7 @@ import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, demand } from '../game/sim';
-import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, BASE_PRICE, TERRACE_M, yard } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, BASE_PRICE, TERRACE_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, church, drawEngine, drawWagon, hash, logPile, makeView, pine,
@@ -116,6 +116,25 @@ interface PileLayer {
   canvas: HTMLCanvasElement;
 }
 
+/** the nodes of one site label or badge that change between frames */
+interface TagRefs {
+  key: string;
+  has: { b: HTMLElement; i: HTMLElement } | null;
+  wants: { good: Good; b: HTMLElement; i: HTMLElement; chip: HTMLElement }[];
+  /** a badge's count on a raw site */
+  n: HTMLElement | null;
+}
+
+interface TagPlace {
+  id: string;
+  el: HTMLElement;
+  x: number;
+  y: number;
+  k: number;
+  w: number;
+  h: number;
+}
+
 interface Puff {
   x: number;
   y: number;
@@ -179,7 +198,15 @@ export class Renderer2D {
   // the overlay
   private labels = new Map<string, HTMLElement>();
   /** what a drag from one station can reach: the cheapest cost by site cell, null when no route; worked out once per drag */
-  private targets: { from: number; cost: Map<number, number | null> } | null = null;
+  private targets: { key: string; from: number; cost: Map<number, number | null> } | null = null;
+  /** the site card's "lay track from here": the marks are shown as for a drag, from this cell; `reverse` marks the stations that can reach this site instead */
+  laying: { from: number; reverse: boolean } | null = null;
+  /** what each site's label was built from, and the nodes its numbers live in, so a frame only sets text and widths */
+  private tags = new Map<string, TagRefs>();
+  /** the labels placed this frame, laid out together so none covers another */
+  private tagQueue: TagPlace[] = [];
+  /** where each site tag stands on the screen now, for a tap on a label */
+  private tagBox = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
   private floatEls = new Map<object, HTMLElement>();
   private hintEl: HTMLElement | null = null;
   private plateEl: HTMLElement | null = null;
@@ -426,15 +453,16 @@ export class Renderer2D {
       return { key: per.join(','), draw: (v) => per.forEach((m, i) => logPile(v, x - 2.9 + i * 2, y - 3.9, m, lv)) };
     }
     if (site.kind === 'sawmill') {
-      const logs = Math.min(9, Math.round(site.taken.timber * 1.0));
-      const layers = Math.min(10, Math.floor(site.stock));
-      const stacks = [Math.min(5, layers), Math.max(0, layers - 5)];
+      // logs in follow the recent deliveries (full at the demand fill), boards out follow the stock (full at the raw cap)
+      const logs = Math.min(9, Math.ceil(site.taken.timber * 0.9));
+      const layers = Math.min(12, Math.round(site.stock * 2));
+      const stacks = [Math.min(6, layers), Math.max(0, layers - 6)];
       return {
         key: `${logs}:${stacks.join(',')}`,
         draw: (v) => {
           logPile(v, x + 1.8, y - 3.9, logs, lv);
-          boardStack(v, x - 3.0, y - 2.0, stacks[0], lv);
-          boardStack(v, x - 1.3, y - 2.0, stacks[1], lv);
+          boardStack(v, x - 3.0, y - 1.75, stacks[0], lv);
+          boardStack(v, x - 1.3, y - 1.75, stacks[1], lv);
         },
       };
     }
@@ -444,12 +472,24 @@ export class Renderer2D {
     }
     if (site.kind === 'mill') {
       const flour = Math.min(9, Math.floor(site.stock * 1.5));
-      const grain = Math.min(6, Math.round(site.taken.grain * 0.8));
+      const grain = Math.min(6, Math.ceil(site.taken.grain * 0.6));
       return {
         key: `${flour}:${grain}`,
         draw: (v) => {
           sacks(v, x - 0.6, y - 3.9, flour, '#f4f0e4', lv);
           sacks(v, x + 1.0, y - 3.5, grain, '#e9c547', lv, 2);
+        },
+      };
+    }
+    if (site.kind === 'town') {
+      // what the town was sent lately waits by the platform and shrinks as the town eats it
+      const boards = Math.min(10, Math.ceil(site.taken.boards));
+      const flour = Math.min(9, Math.ceil(site.taken.flour));
+      return {
+        key: `${boards}:${flour}`,
+        draw: (v) => {
+          boardStack(v, x - 2.9, y - 1.45, boards, lv);
+          sacks(v, x - 0.9, y - 1.95, flour, '#f4f0e4', lv);
         },
       };
     }
@@ -1463,28 +1503,37 @@ export class Renderer2D {
 
   // ------------------------------------------------------------------ where a track can start and end
 
-  /** the marks for a drag: planned once when the drag starts, dropped when it ends */
+  /** the marks for a drag or a pick: planned once when it starts, dropped when it ends */
   private syncTargets(drag: DragView | null): void {
-    if (!drag) {
+    const src = drag ? { from: drag.from, reverse: false } : this.laying;
+    if (!src) {
       this.targets = null;
       return;
     }
-    if (this.targets && this.targets.from === drag.from) return;
+    const key = `${src.reverse ? 'in' : 'out'}${src.from}`;
+    if (this.targets && this.targets.key === key) return;
     const cost = new Map<number, number | null>();
-    for (const site of this.s.sites) {
-      const cell = idx(this.s, site.cx, site.cy);
-      if (cell === drag.from) continue;
-      const opts = plan(this.s, drag.from, cell);
-      cost.set(cell, opts.length ? Math.min(...opts.map((r) => r.cost)) : null);
+    const cheapest = (from: number, to: number): number | null => {
+      const opts = plan(this.s, from, to);
+      return opts.length ? Math.min(...opts.map((r) => r.cost)) : null;
+    };
+    if (src.reverse) {
+      for (const st of this.s.stations) if (st.cell !== src.from) cost.set(st.cell, cheapest(st.cell, src.from));
+    } else {
+      for (const site of this.s.sites) {
+        const cell = idx(this.s, site.cx, site.cy);
+        if (cell !== src.from) cost.set(cell, cheapest(src.from, cell));
+      }
     }
-    this.targets = { from: drag.from, cost };
+    this.targets = { key, from: src.from, cost };
   }
 
-  /** how a site is marked now: start (idle station), plain, ok (reachable and paid for), dear (reachable, cash short), none */
+  /** how a site is marked now: start (idle station, or where the track starts), plain, ok (reachable and paid for), dear (reachable, cash short), none */
   private markOf(site: Site): { kind: 'start' | 'plain' | 'ok' | 'dear' | 'none'; cost: number } {
     const cell = idx(this.s, site.cx, site.cy);
     const t = this.targets;
     if (!t) return { kind: this.s.stations.some((o) => o.cell === cell) ? 'start' : 'plain', cost: 0 };
+    if (cell === t.from) return { kind: 'start', cost: 0 };
     const c = t.cost.get(cell);
     if (c === undefined || c === null) return { kind: 'none', cost: 0 };
     return { kind: c <= this.s.cash ? 'ok' : 'dear', cost: c };
@@ -1612,6 +1661,7 @@ export class Renderer2D {
     if (!el) {
       el = document.createElement('div');
       el.className = cls;
+      el.dataset.key = key;
       this.overlay.appendChild(el);
       this.labels.set(key, el);
     }
@@ -1628,46 +1678,109 @@ export class Renderer2D {
     return `<svg class="gi"><use href="#g-${g}"/></svg>`;
   }
 
-  /** a site's name and its chips: what it has (count and stock bar), what it pays (price and demand bar) */
-  private siteLabel(site: Site, lod: boolean, drag: DragView | null): void {
+  /** a number into a node, written only when it changed */
+  private setText(el: HTMLElement, text: string): void {
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  /**
+   * A site's name and its chips: what it has (count and stock bar), what it wants (price and
+   * demand bar, red at the floor). The nodes are made once per look of the label; a frame sets
+   * the numbers and the bar widths. In the whole-map look the label is a badge: the made good's
+   * icon, a count on a raw site, the name and a dot for each wanted good.
+   */
+  private siteLabel(site: Site, lod: boolean): void {
     const s = this.s;
     const mk = this.markOf(site);
     const fade = mk.kind === 'none' ? '0.35' : '';
     const cost = mk.kind === 'ok' || mk.kind === 'dear' ? `<span class="chip cost${mk.kind === 'dear' ? ' dear' : ''}"><svg class="gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#d8a63a" stroke="#16120e" stroke-width="2"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#8a6414" stroke-width="2"/></svg><b>${mk.cost}</b></span>` : '';
-    void drag;
     const el = this.label(`site:${site.id}`, 'tag site-tag');
     const badge = this.label(`badge:${site.id}`, 'badge');
+    const makes = MAKES[site.kind];
+    const takes = TAKES[site.kind].filter((g) => s.sites.some((o) => MAKES[o.kind] === g));
     if (lod) {
       el.style.display = 'none';
-      const makes = MAKES[site.kind];
-      const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
-      const html = `<span class="c">${icon}</span><span class="nm">${tt(site.name)}</span>${cost}`;
+      const raw = !!RAW_RATE[site.kind];
+      const key = `b|${makes}|${takes.join()}|${raw}|${mk.kind}|${mk.cost}`;
+      let refs = this.tags.get(`badge:${site.id}`);
+      if (!refs || refs.key !== key) {
+        const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
+        badge.innerHTML = `<span class="c">${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => this.goodIcon(g)).join('')}</span>` : ''}${cost}`;
+        refs = { key, has: null, wants: [], n: badge.querySelector('.n') };
+        this.tags.set(`badge:${site.id}`, refs);
+      }
+      if (refs.n) this.setText(refs.n, String(Math.floor(site.stock)));
       badge.style.opacity = fade;
-      if (badge.innerHTML !== html) badge.innerHTML = html;
       this.place(badge, this.project(site.cx + 0.5, site.cy + 0.5, 0));
       return;
     }
     badge.style.display = 'none';
-    const makes = MAKES[site.kind];
-    const takes = TAKES[site.kind].filter((g) => s.sites.some((o) => MAKES[o.kind] === g));
     const rail = mk.kind === 'start' ? RAIL_BADGE : '';
-    let html = `<div class="name">${rail}${tt(site.name)}${site.kind === 'town' ? ` <small>${site.size}</small>` : ''}${cost}</div><div class="chips">`;
-    if (makes) {
-      const n = Math.floor(site.stock);
-      html += `<span class="chip has">${this.goodIcon(makes)}<b>${n}</b><i style="width:${Math.min(100, (100 * site.stock) / RAW_CAP)}%"></i></span>`;
+    const key = `t|${makes}|${takes.join()}|${mk.kind}|${mk.cost}|${site.size}`;
+    let refs = this.tags.get(`site:${site.id}`);
+    if (!refs || refs.key !== key) {
+      let html = `<div class="name">${rail}${tt(site.name)}${site.kind === 'town' ? ` <small>${site.size}</small>` : ''}${cost}</div><div class="chips">`;
+      if (makes) html += `<span class="chip has">${this.goodIcon(makes)}<b></b><i></i></span>`;
+      for (const g of takes) html += `<span class="chip wants">${this.goodIcon(g)}<b></b><i></i></span>`;
+      el.innerHTML = html + '</div>';
+      const chips = Array.from(el.querySelectorAll<HTMLElement>('.chip.wants'));
+      const has = el.querySelector<HTMLElement>('.chip.has');
+      refs = {
+        key,
+        has: has ? { b: has.querySelector('b')!, i: has.querySelector('i')! } : null,
+        wants: takes.map((good, k) => ({ good, chip: chips[k], b: chips[k].querySelector('b')!, i: chips[k].querySelector('i')! })),
+        n: null,
+      };
+      this.tags.set(`site:${site.id}`, refs);
     }
-    for (const g of takes) {
-      const dm = demand(site.taken[g]);
-      const p = price(s, g, site.id, 0);
-      html += `<span class="chip wants${dm < 0.55 ? ' low' : ''}">${this.goodIcon(g)}<b>${p}</b><i style="width:${Math.round(100 * (p / Math.max(1, BASE_PRICE[g])))}%"></i></span>`;
+    if (refs.has) {
+      this.setText(refs.has.b, String(Math.floor(site.stock)));
+      refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / RAW_CAP)}%`;
     }
-    html += '</div>';
-    if (el.innerHTML !== html) el.innerHTML = html;
+    for (const w of refs.wants) {
+      const p = price(s, w.good, site.id, 0);
+      this.setText(w.b, String(p));
+      w.i.style.width = `${Math.round(100 * (p / Math.max(1, BASE_PRICE[w.good])))}%`;
+      w.chip.classList.toggle('low', demand(site.taken[w.good]) < 0.55);
+    }
     el.style.opacity = fade;
-    el.style.translate = '-50% -100%';
-    // the tag stands over the yard, which is north of the station
+    // the tag stands over the yard, which is north of the station; the route look shrinks it
     const top = site.cy + yard(site.kind).dy0;
-    this.place(el, this.project(site.cx + 0.5, top - (site.kind === 'town' ? 0.3 : 1.35), 0));
+    const p = this.project(site.cx + 0.5, top - (site.kind === 'town' ? 0.3 : 1.35), 0);
+    this.tagQueue.push({ id: site.id, el, x: p.x, y: p.y, k: this.cam.s < 20 ? 0.85 : 1, w: 0, h: 0 });
+  }
+
+  /** the site whose tag is under a screen point, so a tap on a name and its chips opens the site */
+  siteTagAt(sx: number, sy: number): Site | null {
+    const pad = 4;
+    for (const [id, b] of this.tagBox) if (sx >= b.x0 - pad && sx <= b.x1 + pad && sy >= b.y0 - pad && sy <= b.y1 + pad) return this.s.sites.find((o) => o.id === id) ?? null;
+    return null;
+  }
+
+  /** put the site tags on the screen, the later one nudged down where it would cover an earlier one */
+  private layoutTags(): void {
+    const q = this.tagQueue;
+    const show = (p: TagPlace) => p.x > -200 && p.x < this.w + 200 && p.y > -100 && p.y < this.h + 200;
+    for (const p of q) p.el.style.display = show(p) ? '' : 'none';
+    for (const p of q) if (show(p)) {
+      p.w = p.el.offsetWidth * p.k;
+      p.h = p.el.offsetHeight * p.k;
+    }
+    const placed: TagPlace[] = [];
+    this.tagBox.clear();
+    for (const p of q) {
+      if (!show(p)) continue;
+      // the tag's box: bottom centre at (x, y)
+      for (let pass = 0; pass < 6; pass++) {
+        const hit = placed.find((o) => Math.abs(o.x - p.x) < (o.w + p.w) / 2 + 2 && p.y - p.h < o.y + 2 && o.y - o.h < p.y + 2);
+        if (!hit) break;
+        p.y = hit.y + 2 + p.h;
+      }
+      placed.push(p);
+      this.tagBox.set(p.id, { x0: p.x - p.w / 2, y0: p.y - p.h, x1: p.x + p.w / 2, y1: p.y });
+      p.el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) scale(${p.k})`;
+    }
+    q.length = 0;
   }
 
   /** the plate above the finger (below it in the top quarter), kept inside the free area */
@@ -1732,7 +1845,8 @@ export class Renderer2D {
 
   private overlayFrame(drag: DragView | null, hint: Hint | null, pending: Route[] | null, lod: boolean): void {
     const s = this.s;
-    for (const site of s.sites) this.siteLabel(site, lod, drag);
+    for (const site of s.sites) this.siteLabel(site, lod);
+    this.layoutTags();
     const seen = new Set<object>();
     for (const f of s.floats) {
       seen.add(f);
