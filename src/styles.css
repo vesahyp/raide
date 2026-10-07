@@ -109,12 +109,19 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .float.note { color: #fff; }
 .hand { width: 34px; height: 34px; translate: -50% -50%; border-radius: 50%; border: 3px solid #fff; background: rgba(255, 255, 255, 0.25); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3); transition: opacity 0.2s; }
 .hand::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #fff; translate: -50% -50%; }
-.plate { translate: -50% -100%; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(27, 42, 30, 0.94); border: 2px solid var(--brass-dim); font-weight: 700; font-size: 14px; color: var(--bone); white-space: nowrap; }
-.plate b { font-size: 18px; color: var(--gold); }
+.plate { display: flex; flex-direction: column; gap: 4px; padding: 7px 12px; border-radius: 14px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; color: var(--bone); white-space: nowrap; }
+.plate .top { display: flex; align-items: center; gap: 8px; }
+.plate .coin { width: 20px; height: 20px; border-radius: 50%; background: var(--gold); border: 2px solid #8a6a1f; box-sizing: border-box; flex: none; }
+.plate b { font-size: 24px; font-weight: 900; color: var(--gold); line-height: 1; }
 .plate b.red { color: #ff9c8c; }
-.plate .g { font-weight: 800; }
+.plate .km { font-size: 17px; font-weight: 800; color: var(--bone); }
+.plate .sub { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 14px; }
+.plate .g { font-weight: 900; }
 .plate .bridge { color: #8ac0ea; }
 .plate .cut, .plate .fill { color: #d9b27a; }
+.plate .eng { display: inline-flex; align-items: center; gap: 4px; }
+.plate .eng .pic { transform: scale(0.8); margin: 0 -2px; }
+.pill { translate: -50% -50%; font-weight: 900; font-size: 13px; padding: 3px 8px; border-radius: 8px; border: 2px dashed #16120e; white-space: nowrap; background: rgba(239, 230, 207, 0.96); color: #2a2418; }
 
 /* the zoom buttons, bottom right, out of the way of the cards (hidden while one is open) */
 .zoom { position: absolute; right: calc(var(--sar) + 12px); bottom: calc(var(--sab) + 16px); display: flex; flex-direction: column; gap: 10px; z-index: 3; }
@@ -226,3 +233,6 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .want .num { color: var(--gold); width: 32px; text-align: right; }
 .want small { font-weight: 500; font-size: 12px; color: var(--bone-dim); }
 .card.ledger .grew { margin: 0 0 6px; font-weight: 700; color: #2f6b3a; }
+.btn.route small b { font-weight: 900; }
+.btn.route .trips { white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 700; color: var(--bone); }
+.btn.route .trips .pic { transform: scale(0.75); margin: 0 -3px; }

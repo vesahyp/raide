@@ -16,8 +16,9 @@
 import type { Good, Line, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
+import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../game/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, demand } from '../game/sim';
-import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, BASE_PRICE, TERRACE_M, CELL_M, yard } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, BASE_PRICE, TERRACE_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, church, drawEngine, drawWagon, hash, logPile, makeView, pine,
@@ -26,7 +27,6 @@ import {
 
 export const OPTION_COLOUR = ['rgba(239,230,207,0.95)', 'rgba(70,150,230,0.95)'];
 
-const GRADE_COL = (g: number) => (g < 1.5 ? '#3fa84b' : g < 3.5 ? '#e8a82b' : '#d8402f');
 
 export interface Hint {
   from: number;
@@ -35,6 +35,8 @@ export interface Hint {
 
 export interface DragView {
   route: Route | null;
+  /** the routes the lift would offer: one, or the cheap one and the way round */
+  options?: Route[];
   from: number;
   sx: number;
   sy: number;
@@ -181,6 +183,7 @@ export class Renderer2D {
   private floatEls = new Map<object, HTMLElement>();
   private hintEl: HTMLElement | null = null;
   private plateEl: HTMLElement | null = null;
+  private pillEl: HTMLElement | null = null;
 
   // the frame timer for ?fps=1
   private sideOf = new Map<number, number>();
@@ -999,17 +1002,18 @@ export class Renderer2D {
     const n = r.cells.length;
     const band = Math.max(3, S * 0.7);
     const grade = (k: number) => Math.abs(gradeOf(r.rail[k] - r.rail[k - 1], stepLen(cx(s, r.cells[k]) - cx(s, r.cells[k - 1]), cy(s, r.cells[k]) - cy(s, r.cells[k - 1]))));
-    c.lineCap = 'round';
+    const bridge = new Set(r.bridge);
+    c.lineCap = dashed ? 'butt' : 'round';
     c.lineJoin = 'round';
-    c.setLineDash(dashed ? [Math.max(4, S * 0.6), Math.max(3, S * 0.45)] : []);
-    // the cuttings and the fills: blocks either side of the band
+    // the cuttings and the fills: grey and sand blocks either side of the band
     if (S >= LOD_S) {
-      for (const [list, col] of [[r.cutting, 'rgba(143,137,124,.95)'], [r.fill, 'rgba(201,168,106,.95)']] as [number[], string][])
+      const at = new Map(r.cells.map((cell, k) => [cell, k]));
+      for (const [list, col] of [[r.cutting, 'rgba(150,144,131,.97)'], [r.fill, 'rgba(214,180,110,.97)']] as [number[], string][])
         for (const cell of list) {
-          const k = r.cells.indexOf(cell);
-          if (k < 1 || k >= n - 1) continue;
-          const a = this.routePoint(r, k - 1);
-          const b = this.routePoint(r, k + 1);
+          const k = at.get(cell);
+          if (k === undefined) continue;
+          const a = this.routePoint(r, Math.max(0, k - 1));
+          const b = this.routePoint(r, Math.min(n - 1, k + 1));
           const p = this.routePoint(r, k);
           const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
           c.save();
@@ -1017,25 +1021,39 @@ export class Renderer2D {
           c.rotate(ang);
           c.fillStyle = col;
           c.strokeStyle = OUT;
-          c.lineWidth = 1;
+          c.lineWidth = 1.5;
           for (const side of [-1, 1]) {
             c.beginPath();
-            c.rect(-S * 0.5, side * S * 0.75 - S * 0.25, S, S * 0.5);
+            c.rect(-S * 0.5, side * S * 0.62 - S * 0.17, S, S * 0.34);
             c.fill();
             c.stroke();
           }
           c.restore();
         }
     }
-    c.setLineDash(dashed ? [Math.max(4, S * 0.6), Math.max(3, S * 0.45)] : []);
+    const dash = dashed ? [Math.max(5, S * 0.55), Math.max(4, S * 0.4)] : [];
     for (const pass of [0, 1, 2]) {
+      if (pass === 2 && !stripe) continue;
+      c.setLineDash(dash);
+      c.lineWidth = pass === 0 ? band + 5 : pass === 1 ? band : band * 0.32;
+      // one colour all along: one path, so a dash runs on across the corners
+      const single = pass === 0 || (pass === 1 && colour !== null && bridge.size === 0);
+      if (single) {
+        c.strokeStyle = pass === 0 ? (dashed ? '#2a2418' : '#fff') : colour!;
+        c.beginPath();
+        for (let k = 0; k < n; k++) {
+          const p = this.routePoint(r, k);
+          if (k) c.lineTo(p[0], p[1]);
+          else c.moveTo(p[0], p[1]);
+        }
+        c.stroke();
+        continue;
+      }
       for (let k = 1; k < n; k++) {
         const a = this.routePoint(r, k - 1);
         const b = this.routePoint(r, k);
-        const g = grade(k);
-        if (pass === 2 && !stripe) continue;
-        c.strokeStyle = pass === 0 ? '#fff' : pass === 1 ? colour ?? GRADE_COL(g) : GRADE_COL(g);
-        c.lineWidth = pass === 0 ? band + 5 : pass === 1 ? band : band * 0.32;
+        const over = bridge.has(r.cells[k]) && bridge.has(r.cells[k - 1]);
+        c.strokeStyle = pass === 1 ? (over ? '#3d8fd6' : colour ?? GRADE_COL(grade(k))) : GRADE_COL(grade(k));
         c.beginPath();
         c.moveTo(a[0], a[1]);
         c.lineTo(b[0], b[1]);
@@ -1043,7 +1061,7 @@ export class Renderer2D {
       }
     }
     c.setLineDash([]);
-    // the chevrons point uphill on a steep step
+    // white chevrons point uphill on every step steeper than 1.5 %, one a step so they never touch
     if (S >= LOD_S)
       for (let k = 1; k < n; k++) {
         if (grade(k) < 1.5) continue;
@@ -1054,12 +1072,15 @@ export class Renderer2D {
         c.save();
         c.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
         c.rotate(ang);
-        c.strokeStyle = '#fff';
-        c.lineWidth = Math.max(2, S * 0.14);
+        c.lineCap = 'round';
+        c.lineJoin = 'round';
+        // white on a grade colour, dark on the cream way round
+        c.strokeStyle = colour === OPTION_COLOUR[0] ? '#2a2418' : '#fff';
+        c.lineWidth = Math.max(2, S * 0.15);
         c.beginPath();
-        c.moveTo(-S * 0.15, -S * 0.22);
-        c.lineTo(S * 0.12, 0);
-        c.lineTo(-S * 0.15, S * 0.22);
+        c.moveTo(-S * 0.14, -S * 0.2);
+        c.lineTo(S * 0.1, 0);
+        c.lineTo(-S * 0.14, S * 0.2);
         c.stroke();
         c.restore();
       }
@@ -1556,7 +1577,11 @@ export class Renderer2D {
     }
     // the route under the finger, and the two on offer after a lift
     if (pending) pending.forEach((r, i) => this.drawRoute(r, OPTION_COLOUR[i] ?? OPTION_COLOUR[0], i > 0, true));
-    else if (drag?.route) this.drawRoute(drag.route, drag.loose ? 'rgba(255,255,255,.85)' : null, !drag.ok, false);
+    else if (drag?.route) {
+      // the way round beside the one the lift builds first: dashed cream
+      if (!drag.loose && drag.options && drag.options.length > 1) this.drawRoute(drag.options[1], OPTION_COLOUR[0], true, false);
+      this.drawRoute(drag.route, drag.loose ? 'rgba(255,255,255,.85)' : null, false, false);
+    }
     this.drawTrains(dt);
     this.syncTargets(drag);
     this.drawMarks(drag, lod);
@@ -1645,11 +1670,26 @@ export class Renderer2D {
     this.place(el, this.project(site.cx + 0.5, top - (site.kind === 'town' ? 0.3 : 1.35), 0));
   }
 
-  /** the plate on a route under the finger: cost, length, worst grade, bridge or cutting */
+  /** the plate above the finger (below it in the top quarter), kept inside the free area */
+  private placeBox(el: HTMLElement, sx: number, sy: number, gap: number): void {
+    const a = this.area();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const m = 8;
+    const below = sy < this.h * 0.25;
+    const x = Math.min(a.l + a.w - w - m, Math.max(a.l + m, sx - w / 2));
+    const y = Math.min(this.h - h - m, Math.max(a.t + m, below ? sy + gap : sy - gap - h));
+    el.style.translate = '0 0';
+    el.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
+  }
+
+  /** the plate on a route under the finger: cost and length, then worst grade, earthwork, trips a year; and the pill on the way round */
   private routePlate(drag: DragView | null, pending: Route[] | null): void {
     const r = drag?.route ?? null;
-    if (!r || drag?.loose || pending) {
+    const show = !!r && !drag!.loose && !pending;
+    if (!show) {
       if (this.plateEl) this.plateEl.style.display = 'none';
+      if (this.pillEl) this.pillEl.style.display = 'none';
       return;
     }
     if (!this.plateEl) {
@@ -1657,12 +1697,37 @@ export class Renderer2D {
       this.plateEl.className = 'tag plate';
       this.overlay.appendChild(this.plateEl);
     }
-    const km = ((r.length * CELL_M) / 1000).toFixed(1);
-    const earth = r.bridge.length ? `<span class="bridge">${r.bridge.length} bridge</span>` : r.cutting.length ? '<span class="cut">cutting</span>' : r.fill.length ? '<span class="fill">embankment</span>' : '';
-    const html = `<b class="${drag!.ok ? '' : 'red'}">${r.cost}</b><span>${km} km</span><span class="g" style="color:${GRADE_COL(r.worst)}">${r.worst < 1 ? 'flat' : `${r.worst.toFixed(0)} %`}</span>${earth}`;
+    const earth = earthWord(r);
+    const trips = tripsByEngine(this.s, r)
+      .map((x) => `<span class="eng"><i class="pic eng${x.engine === 'jyry' ? ' strong' : ''}"></i>${perYear(x.trips)}</span>`)
+      .join('');
+    const html =
+      `<div class="top"><i class="coin"></i><b class="${drag!.ok ? '' : 'red'}">${r.cost}</b><span class="km">${routeKm(r)} km</span></div>` +
+      `<div class="sub"><span class="g" style="color:${GRADE_COL(r.worst)}">${r.worst < 1 ? '' : '▲ '}${gradeText(r)}</span>${earth ? `<span class="${earth.kind}">${earth.text}</span>` : ''}${trips}</div>`;
     if (this.plateEl.innerHTML !== html) this.plateEl.innerHTML = html;
     this.plateEl.style.display = '';
-    this.plateEl.style.transform = `translate(${drag!.sx.toFixed(0)}px, ${(drag!.sy - 64).toFixed(0)}px)`;
+    this.placeBox(this.plateEl, drag!.sx, drag!.sy, 56);
+    // the way round: a pill at the middle of its band, its cost and the best engine's trips a year
+    const alt = drag!.options && drag!.options.length > 1 ? drag!.options[1] : null;
+    if (!alt) {
+      if (this.pillEl) this.pillEl.style.display = 'none';
+      return;
+    }
+    if (!this.pillEl) {
+      this.pillEl = document.createElement('div');
+      this.pillEl.className = 'pill alt';
+      this.overlay.appendChild(this.pillEl);
+    }
+    const mid = Math.floor(alt.cells.length / 2);
+    const [px, py] = this.routePoint(alt, mid);
+    const text = `${alt.cost} · ${perYear(bestTrips(this.s, alt))}`;
+    if (this.pillEl.textContent !== text) this.pillEl.textContent = text;
+    this.pillEl.style.display = '';
+    const a = this.area();
+    const hw = this.pillEl.offsetWidth / 2 + 6;
+    const x = Math.min(a.l + a.w - hw, Math.max(a.l + hw, px));
+    const y = Math.min(this.h - 20, Math.max(a.t + 16, py));
+    this.pillEl.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
   }
 
   private overlayFrame(drag: DragView | null, hint: Hint | null, pending: Route[] | null, lod: boolean): void {

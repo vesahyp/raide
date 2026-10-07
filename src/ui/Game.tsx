@@ -9,8 +9,9 @@ import type { EngineId, Good, Line, ScenarioDef, SimState, Site, Train, WagonTyp
 import { GOODS } from '../game/types';
 import { createState, siteById, goodsOnMap } from '../game/state';
 import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf } from '../game/sim';
-import { CELL_M, ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
+import { earthWord, gradeText, GRADE_COL, perYear, routeKm, tripsByEngine } from '../game/routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
 import { Input } from '../input/input';
 import { Bot } from '../../tools/bot';
@@ -315,19 +316,30 @@ function CardHead({ title, onClose }: { title: React.ReactNode; onClose: () => v
 function ChoiceCard({ s, options, onPick, onClose }: { s: SimState; options: Route[]; onPick: (r: Route) => void; onClose: () => void }) {
   const [a, b] = options;
   const name = (r: Route) => (r.bridge.length ? tr('Silta', 'Bridge') : r.cutting.length ? tr('Leikkaus', 'Cutting') : r.mode === 'cheap' ? tr('Kierto', 'Around') : tr('Suora', 'Direct'));
-  const sub = (r: Route) => `${((r.length * CELL_M) / 1000).toFixed(1)} km, ${r.worst < 1 ? tr('tasainen', 'flat') : `${tr('nousu', 'climb')} ${r.worst.toFixed(0)} %`}${r.bridge.length ? `, ${tr('silta', 'bridge')}` : ''}${r.fill.length ? `, ${tr('penger', 'embankment')}` : ''}`;
   return (
     <div className="card sheet choice-card" data-ui>
       <CardHead title={tr('Kumpaa kautta?', 'Which way?')} onClose={onClose} />
       <div className="routes">
-        {[a, b].map((r, i) => (
-          <button key={r.mode} className="btn route" data-route={r.mode} disabled={r.cost > s.cash} style={{ borderColor: OPTION_COLOUR[i] }} onClick={() => onPick(r)}>
-            <span className="swatch" style={{ background: OPTION_COLOUR[i] }} />
-            <span className="name">{name(r)}</span>
-            <span className="cost num">{r.cost}</span>
-            <small>{sub(r)}</small>
-          </button>
-        ))}
+        {[a, b].map((r, i) => {
+          const earth = earthWord(r);
+          return (
+            <button key={r.mode} className="btn route" data-route={r.mode} disabled={r.cost > s.cash} style={{ borderColor: OPTION_COLOUR[i] }} onClick={() => onPick(r)}>
+              <span className="swatch" style={{ background: OPTION_COLOUR[i] }} />
+              <span className="name">{name(r)}</span>
+              <span className="cost num">{r.cost}</span>
+              <small>
+                {routeKm(r)} km · <b style={{ color: GRADE_COL(r.worst) }}>{r.worst < 1 ? '' : '▲ '}{gradeText(r)}</b>
+                {earth ? ` · ${earth.text}` : ''}
+              </small>
+              {tripsByEngine(s, r).map((x) => (
+                <small key={x.engine} className="trips">
+                  <i className={`pic eng${x.engine === 'jyry' ? ' strong' : ''}`} />
+                  {tt(ENGINES[x.engine].name).replace(/^(Little |Pikku-)/, '')} {perYear(x.trips)}
+                </small>
+              ))}
+            </button>
+          );
+        })}
       </div>
       <p className="small">{tr('Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt veturi ryömii.', 'A short line makes more trips a year. On a steep climb the light engine crawls.')}</p>
     </div>

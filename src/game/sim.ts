@@ -72,14 +72,32 @@ export function gradeAlong(line: Line, d: number, dir: 1 | -1): number {
  * the grade of every step; `dir` 1 runs from stop 0 to stop 1. The stop at the end is not in it.
  */
 export function tripTime(s: SimState, line: Line, engine: EngineId, cargo: number, dir: 1 | -1): number {
+  return railTime(s, line.rail, line.dist, engine, cargo, dir);
+}
+
+/** the seconds over a rail profile: every step at the engine's speed on its grade, shared by built lines and planned routes */
+function railTime(s: SimState, rail: number[], dist: number[], engine: EngineId, cargo: number, dir: 1 | -1): number {
   const base = ENGINES[engine].speed * (s.perks.includes('speed') ? PERK_SPEED : 1);
   let t = 0;
-  for (let k = 1; k < line.path.length; k++) {
-    const seg = line.dist[k] - line.dist[k - 1];
-    const g = dir * gradeOf(line.rail[k] - line.rail[k - 1], seg);
+  for (let k = 1; k < rail.length; k++) {
+    const seg = dist[k] - dist[k - 1];
+    const g = dir * gradeOf(rail[k] - rail[k - 1], seg);
     t += seg / (base * gradeFactor(engine, g, cargo));
   }
   return t;
+}
+
+/**
+ * Round trips a year an engine would make on a planned route: loaded one way (the slower way,
+ * so the number is a floor), empty back, and both stops. The same grades as tripTime.
+ */
+export function routeTrips(s: SimState, r: Route, engine: EngineId, wagons = WAGONS_DEFAULT): number {
+  const dist = pathDist(s, r.cells);
+  const back = railTime(s, r.rail, dist, engine, 0, -1);
+  const out = railTime(s, r.rail, dist, engine, 0, 1);
+  const loadedUp = railTime(s, r.rail, dist, engine, wagons, 1) + back;
+  const loadedDown = railTime(s, r.rail, dist, engine, wagons, -1) + out;
+  return YEAR_SECONDS / (Math.max(loadedUp, loadedDown) + 2 * STOP_SECONDS);
 }
 
 /** the share of its speed an engine keeps on a grade with a load: 1 on the flat and downhill */

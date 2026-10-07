@@ -7,7 +7,7 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, plan, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad } from '../src/game/sim';
+import { step, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad } from '../src/game/sim';
 import { idx, route } from '../src/game/grid';
 import { Bot } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
@@ -53,6 +53,10 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(ridge.length === 2 && ridge[0].mode === 'cheap' && ridge[1].mode === 'short' && ridge[1].cutting.length >= 1 && ridge[1].cost > ridge[0].cost && ridge[1].length < ridge[0].length - 5, `the ridge offers the way round through the saddle and the cutting (${ridge.map((o) => `${o.mode} ${o.cost} for ${o.length.toFixed(0)} tiles, worst ${o.worst.toFixed(1)} %, cut ${o.cutting.length}, fill ${o.fill.length}`).join(', ')})`);
   check(ridge[1].worst > 3 && ridge[1].worst <= 5.01 && ridge[0].worst < ridge[1].worst, `the cutting is a real climb inside the grade limit and the way round is flatter (${ridge[1].worst.toFixed(1)} % against ${ridge[0].worst.toFixed(1)} %)`);
   check(!ridge[0].cells.some((c) => s.yardMask[c] === 1) && !ridge[1].cells.some((c) => s.yardMask[c] === 1), 'no route crosses a yard');
+  const over = ridge.find((o) => o.mode === 'short')!;
+  const tj = routeTrips(s, over, 'jyry');
+  const th = routeTrips(s, over, 'hilma');
+  check(tj > th, `over the ridge Jyry makes more trips a year than Little Hilma (${tj.toFixed(1)} against ${th.toFixed(1)})`);
   // A* on 10800 cells: the second search, once the code is warm, takes under 15 ms
   route(s, cell(s, 'hameenlinna'), cell(s, 'farm'));
   const t0 = performance.now();
@@ -105,6 +109,15 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   siteById(s, 'forest').stock = 4;
   for (let k = 0; k < 60 * 1.5; k++) step(s);
   check(w.state === 'run' && w.cargo === w.nWagons, `and leaves when the load is full (${w.cargo} loaded, ${w.state})`);
+}
+
+// on the flat line the light engine is faster
+{
+  const s = createState(HARJU);
+  const flat = plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0];
+  const th = routeTrips(s, flat, 'hilma');
+  const tj = routeTrips(s, flat, 'jyry');
+  check(th > tj, `on the flat Kuusikko to Koskensaha line Hilma makes more trips a year than Jyry (${th.toFixed(1)} against ${tj.toFixed(1)})`);
 }
 
 // the bot wins both scenarios
