@@ -84,6 +84,8 @@ tools/
 scripts/
   look.mjs            make look: the bot plays on an emulated iPhone, screenshots in both orientations
                         and one with the camera on a train; the check for a renderer change
+  drag-look.mjs       make drag-look: a drag held mid-way and at the site, the lift and the route
+                        choice card; the check for a change to the route plate or the ghost route
   shots.mjs           phone screenshots with Playwright, the bot playing
   touch-check.mjs     lays track and buys a train by real touches on an emulated phone
   rotate-check.mjs    turns the phone mid-game: the state stays, the canvas and the HUD fit
