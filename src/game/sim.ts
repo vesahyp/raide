@@ -67,6 +67,21 @@ export function gradeAlong(line: Line, d: number, dir: 1 | -1): number {
   return seg > 0 ? dir * gradeOf(line.rail[k] - line.rail[k - 1], seg) : 0;
 }
 
+/**
+ * Seconds a train with this engine and load takes from one end of the line to the other, by
+ * the grade of every step; `dir` 1 runs from stop 0 to stop 1. The stop at the end is not in it.
+ */
+export function tripTime(s: SimState, line: Line, engine: EngineId, cargo: number, dir: 1 | -1): number {
+  const base = ENGINES[engine].speed * (s.perks.includes('speed') ? PERK_SPEED : 1);
+  let t = 0;
+  for (let k = 1; k < line.path.length; k++) {
+    const seg = line.dist[k] - line.dist[k - 1];
+    const g = dir * gradeOf(line.rail[k] - line.rail[k - 1], seg);
+    t += seg / (base * gradeFactor(engine, g, cargo));
+  }
+  return t;
+}
+
 /** the share of its speed an engine keeps on a grade with a load: 1 on the flat and downhill */
 export function gradeFactor(engine: EngineId, grade: number, cargo: number): number {
   if (grade <= 0) return 1;
@@ -136,7 +151,7 @@ export function build(s: SimState, r: Route): Line | null {
   let line = s.lines.find((l) => (l.stops[0] === a.id && l.stops[1] === station!.id) || (l.stops[0] === station!.id && l.stops[1] === a.id));
   let newLine: number | null = null;
   if (!line) {
-    line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), rail: r.rail, block: new Set(r.cells.slice(1, -1)) };
+    line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), rail: r.rail, worst: r.worst, block: new Set(r.cells.slice(1, -1)) };
     s.lines.push(line);
     newLine = line.id;
   }
@@ -446,6 +461,7 @@ function yearEnd(s: SimState): void {
   }
   const total = GOODS.reduce((a, g) => a + income[g], 0);
   s.yearEnd = { year: s.year, income, upkeep, profit: total - upkeep, cash: s.cash, choice: null, grew };
+  s.history.push({ year: s.year, cash: s.cash, profit: total - upkeep });
   s.income = zeroGoods();
   s.upkeep = 0;
   s.year++;

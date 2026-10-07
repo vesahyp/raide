@@ -92,6 +92,8 @@ export interface Line {
   dist: number[];
   /** the rail's height in metres per path index: the land, cut and filled to the grade limit */
   rail: number[];
+  /** the steepest step on the line, in percent */
+  worst: number;
   /** the block: the cells between the two stations. One running train at a time on any of them */
   block: Set<number>;
 }
@@ -186,6 +188,8 @@ export interface SimState {
   upkeep: number;
   /** a year end waiting for the player's choice; the sim holds while it is set */
   yearEnd: YearEnd | null;
+  /** every closed year: the cash at its end and its profit, for the ledger's chart */
+  history: { year: number; cash: number; profit: number }[];
   /** choices taken, each once */
   perks: YearEndChoice[];
   /** loads of the goal good delivered at the goal site, for a deliver goal */

@@ -51,6 +51,7 @@ export function createState(sc: ScenarioDef): SimState {
     income: zeroGoods(),
     upkeep: 0,
     yearEnd: null,
+    history: [],
     perks: [],
     goalCount: 0,
     result: null,
