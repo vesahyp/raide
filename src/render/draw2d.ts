@@ -222,6 +222,90 @@ export function church(v: View, x: number, y: number, lv: number): void {
   }
 }
 
+/** a market square: a paved plaza of w by d tiles at (x, y) with a well in the middle and three stalls with striped awnings */
+export function marketSquare(v: View, x: number, y: number, w: number, d: number, lv: number): void {
+  const { c, S } = v;
+  const X = v.x(x);
+  const Y = v.y(y, lv);
+  const lw = Math.max(1, S * 0.05);
+  c.fillStyle = '#cdbf9f';
+  c.fillRect(X, Y, w * S, d * S);
+  c.strokeStyle = 'rgba(22,18,14,.22)';
+  c.lineWidth = Math.max(1, S * 0.03);
+  for (let i = 1; i < w * 2; i++) {
+    c.beginPath();
+    c.moveTo(X + i * S * 0.5, Y);
+    c.lineTo(X + i * S * 0.5, Y + d * S);
+    c.stroke();
+  }
+  c.strokeStyle = OUT;
+  c.lineWidth = lw;
+  c.strokeRect(X, Y, w * S, d * S);
+  // the well
+  c.fillStyle = '#8a8070';
+  c.beginPath();
+  c.ellipse(X + w * S * 0.5, Y + d * S * 0.55, S * 0.32, S * 0.2, 0, 0, 7);
+  c.fill();
+  c.stroke();
+  c.fillStyle = '#3b5468';
+  c.beginPath();
+  c.ellipse(X + w * S * 0.5, Y + d * S * 0.55, S * 0.2, S * 0.11, 0, 0, 7);
+  c.fill();
+  // three stalls along the back: a counter, a striped awning over it
+  const sw = (w * S) / 3;
+  const awn = ['#b5382c', '#2f6f8a', '#c98d3a'];
+  for (let i = 0; i < 3; i++) {
+    const sx = X + i * sw + sw * 0.14;
+    const bw = sw * 0.72;
+    const top = Y + S * 0.18;
+    c.fillStyle = '#7a5a3a';
+    c.fillRect(sx, top + S * 0.3, bw, S * 0.28);
+    c.strokeRect(sx, top + S * 0.3, bw, S * 0.28);
+    c.fillStyle = awn[i];
+    c.fillRect(sx - S * 0.04, top, bw + S * 0.08, S * 0.3);
+    c.fillStyle = '#f0e8d6';
+    for (let k = 0; k < 4; k += 2) c.fillRect(sx - S * 0.04 + ((bw + S * 0.08) / 4) * k, top, (bw + S * 0.08) / 4, S * 0.3);
+    c.strokeRect(sx - S * 0.04, top, bw + S * 0.08, S * 0.3);
+    c.fillStyle = '#e9c547';
+    c.fillRect(sx + bw * 0.2, top + S * 0.2, S * 0.14, S * 0.1);
+  }
+}
+
+/** a stone town hall: a grey block of w by d tiles at (x, y) with a clock tower on its roof */
+export function townHall(v: View, x: number, y: number, w: number, d: number, lv: number): void {
+  const { c, S } = v;
+  building(v, x, y, w, d, { walls: '#c7c0b0', roof: '#4a5a5e', wall: 1.15, door: 1, lv });
+  const lw = Math.max(1, S * 0.05);
+  const Hh = 1.15 * S;
+  const tx = v.x(x + w / 2) - S * 0.3;
+  const ty = v.y(y, lv) - Hh - S * 0.2;
+  c.strokeStyle = OUT;
+  c.lineWidth = lw;
+  c.fillStyle = '#d6d0c0';
+  c.fillRect(tx, ty - S * 0.4, S * 0.6, S * 0.7);
+  c.strokeRect(tx, ty - S * 0.4, S * 0.6, S * 0.7);
+  // the clock
+  c.fillStyle = '#f6f0e0';
+  c.beginPath();
+  c.arc(tx + S * 0.3, ty - S * 0.12, S * 0.16, 0, 7);
+  c.fill();
+  c.stroke();
+  c.beginPath();
+  c.moveTo(tx + S * 0.3, ty - S * 0.12);
+  c.lineTo(tx + S * 0.3, ty - S * 0.22);
+  c.moveTo(tx + S * 0.3, ty - S * 0.12);
+  c.lineTo(tx + S * 0.38, ty - S * 0.12);
+  c.stroke();
+  c.fillStyle = '#3d4a4e';
+  c.beginPath();
+  c.moveTo(tx - S * 0.05, ty - S * 0.4);
+  c.lineTo(tx + S * 0.65, ty - S * 0.4);
+  c.lineTo(tx + S * 0.3, ty - S * 0.95);
+  c.closePath();
+  c.fill();
+  c.stroke();
+}
+
 /** the windmill's tower and cap; its sails are drawn live by `sails` */
 export function windmillBody(v: View, x: number, y: number, lv: number): void {
   const { c, S } = v;

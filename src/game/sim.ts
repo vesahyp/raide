@@ -447,7 +447,7 @@ export function closeYearEnd(s: SimState, choice: YearEndChoice): void {
   s.yearEnd = null;
   if (s.result) return;
   const goal = s.scenario.goal;
-  if (goal.kind === 'towns' && s.sites.filter((x) => x.kind === 'town').every((x) => x.size >= goal.size)) finish(s, true);
+  if (goal.kind === 'towns' && s.sites.filter((x) => x.kind === 'town' && x.size >= goal.size).length >= goal.count) finish(s, true);
   else if (s.year >= goal.beforeYear) finish(s, false);
 }
 
@@ -687,8 +687,11 @@ export function note(s: SimState, cell: number, text: string): void {
 export function goalProgress(s: SimState): number {
   const goal = s.scenario.goal;
   if (goal.kind === 'deliver') return Math.min(1, s.goalCount / goal.count);
+  // each town's climb counts up to the size; the best `count` towns are the ones that matter
   const towns = s.sites.filter((x) => x.kind === 'town');
-  const need = towns.reduce((a, t) => a + (goal.size - (t.size <= goal.size ? (s.scenario.sites.find((d) => d.id === t.id)?.size ?? 1) : goal.size)), 0);
-  const got = towns.reduce((a, t) => a + Math.min(goal.size, t.size) - (s.scenario.sites.find((d) => d.id === t.id)?.size ?? 1), 0);
+  const start = (t: Site): number => s.scenario.sites.find((d) => d.id === t.id)?.size ?? 1;
+  const gain = towns.map((t) => Math.min(goal.size, t.size) - start(t)).sort((a, b) => b - a);
+  const need = towns.map((t) => goal.size - start(t)).sort((a, b) => a - b).slice(0, goal.count).reduce((a, b) => a + b, 0);
+  const got = gain.slice(0, goal.count).reduce((a, b) => a + b, 0);
   return need > 0 ? Math.min(1, got / need) : 1;
 }

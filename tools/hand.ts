@@ -17,13 +17,16 @@ export interface HandView {
   /** the lines on the map, each as its two site ids */
   lines: [string, string][];
   /** the trains, in order, each with its line */
-  trains: { id: number; line: [string, string] }[];
+  trains: { id: number; line: [string, string]; stopped?: boolean }[];
   yearEnd: boolean;
   result: boolean;
   card: 'line' | 'train' | 'site' | 'choice' | 'yearEnd' | 'result' | 'none';
   /** which line's card, or which train's, is open */
   cardLine: [string, string] | null;
   cardTrain: number | null;
+  /** which site's card is open, and the sites whose station has the loading crew */
+  cardSite: string | null;
+  crews: string[];
   /** the next line's cost by mode, when the next step is a line: what the thumb would read off the glass */
   nextCost: { cheap: number; short: number | null } | null;
   trainPrice: { hilma: number; jyry: number };
@@ -35,6 +38,8 @@ export type HandAction =
   | { kind: 'openLine'; line: [string, string] }
   | { kind: 'buy'; wagons: string; engine: string }
   | { kind: 'openTrain'; train: number }
+  | { kind: 'openSite'; site: string }
+  | { kind: 'crew' }
   | { kind: 'act'; what: string }
   | { kind: 'close' }
   | { kind: 'choose' }
@@ -121,6 +126,16 @@ export class Hand {
       if (v.card !== 'none') return { kind: 'close' };
       return { kind: 'openLine', line: step.line };
     }
+    if (step.kind === 'crew') {
+      if (v.crews.includes(step.site)) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      if (v.cash < 30) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.card === 'site' && v.cardSite === step.site) return { kind: 'crew' };
+      if (v.card !== 'none') return { kind: 'close' };
+      return { kind: 'openSite', site: step.site };
+    }
     if (step.kind === 'wagon' || step.kind === 'engine' || (step as { kind: string }).kind === 'fullload') {
       const idx = (step as { train: number }).train;
       const id = step.kind === 'wagon' || step.kind === 'engine' ? v.trains[idx]?.id : idx;
@@ -135,6 +150,8 @@ export class Hand {
         return { kind: 'act', what: step.kind === 'wagon' ? 'wagon' : step.kind === 'engine' ? `engine-${step.engine}` : 'fullload' };
       }
       if (v.card !== 'none') return { kind: 'close' };
+      // a train on the move is hard to hit: the thumb waits for it to stand at a platform
+      if (v.trains.find((t) => t.id === id)?.stopped === false) return { kind: 'wait' };
       return { kind: 'openTrain', train: id };
     }
     return { kind: 'wait' };

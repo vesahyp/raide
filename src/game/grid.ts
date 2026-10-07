@@ -40,6 +40,8 @@ export const STATION_COST = 20;
  * never enters a station cell from the yard side (north) and never on a diagonal.
  */
 export const APPROACH = 8;
+/** the cost of a join to a station's straight stretch at more than 45 degrees, in the cost of the route */
+const KINK_COST = 0.6;
 /** the search counts a too steep step this many times: the cut spreads along the ramp the rail needs */
 const RAMP = 6;
 /** the rail's height over the water on a bridge, metres */
@@ -150,6 +152,8 @@ interface Approach {
   /** the station cell first, the outer cell of the straight stretch last */
   cells: number[];
   cost: number;
+  /** which way the stretch runs from the station: -1 west, 1 east; 0 for a bare cell */
+  dir: number;
 }
 
 /** the straight stretches a route may use at a station cell: west and east along its row, where free */
@@ -174,7 +178,7 @@ function approaches(s: SimState, station: number, mode: RouteMode): Approach[] {
       cost += mode === 'cheap' ? stepCost(s, cells[cells.length - 1], i, 1) : 1;
       cells.push(i);
     }
-    if (ok) out.push({ cells, cost });
+    if (ok) out.push({ cells, cost, dir });
   }
   return out;
 }
@@ -196,7 +200,7 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
   // a site's own cell is reached only along its straight stretch, never through the search
   const free = isSite ? -1 : to;
   const starts = approaches(s, from, mode);
-  const ends: Approach[] = isSite ? approaches(s, to, mode) : [{ cells: [to], cost: 0 }];
+  const ends: Approach[] = isSite ? approaches(s, to, mode) : [{ cells: [to], cost: 0, dir: 0 }];
   if (!starts.length || !ends.length) return null;
   const goals = ends.map((e) => ({ cell: e.cells[e.cells.length - 1], ...e }));
   const h = (i: number) => {
@@ -208,7 +212,7 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
     }
     return best;
   };
-  // a binary heap on two number arrays, priority and cell: 10800 cells search in a few milliseconds
+  // a binary heap on two number arrays, priority and cell: 12000 cells search in a few milliseconds
   const hp: number[] = [];
   const hc: number[] = [];
   const push = (pri: number, cell: number) => {
@@ -253,6 +257,9 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
     g[o] = a.cost;
     push(a.cost + h(o), o);
   }
+  // the path meets a straight stretch at no more than a 45 degree turn when it can: an engine cuts a sharper corner off the rails
+  const startDir = new Map(starts.map((a) => [a.cells[a.cells.length - 1], a.dir]));
+  const goalDir = new Map(ends.map((a) => [a.cells[a.cells.length - 1], a.dir]));
   let best = Infinity;
   let bestGoal: (typeof goals)[number] | null = null;
   while (hp.length) {
@@ -276,10 +283,14 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
       if (!inside(s, nx, ny)) continue;
       const ni = idx(s, nx, ny);
       if (closed[ni] || !passable(s, ni, free)) continue;
+      // a join to a straight stretch at more than 45 degrees costs a few tiles of track, so it is the last resort
+      const leave = startDir.get(cur);
+      const enter = goalDir.get(ni);
+      const kink = (leave && dx * leave <= 0) || (enter && dx * -enter <= 0) ? KINK_COST : 0;
       // a diagonal step between two water cells would run over the water's corner on no bridge
       if (dx !== 0 && dy !== 0 && s.water[idx(s, x + dx, y)] && s.water[idx(s, x, y + dy)] && !s.water[ni] && !s.water[cur]) continue;
       const len = stepLen(dx, dy);
-      const c = g[cur] + (mode === 'cheap' ? stepCost(s, cur, ni, len) : len);
+      const c = g[cur] + (mode === 'cheap' ? stepCost(s, cur, ni, len) : len) + kink;
       if (c < g[ni]) {
         g[ni] = c;
         prev[ni] = cur;

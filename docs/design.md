@@ -402,7 +402,7 @@ also brilliant! Can see them clearly."
   shadow down and to the right, a 3/4 lean: a building shows its roof and
   its front wall. No image assets: every sprite is drawn with canvas paths.
 - **A big map that the player scrolls.** A scenario is a tile map of about
-  120 by 90 tiles, about seven portrait screens. At play zoom a tile is
+  120 by 100 tiles, about seven portrait screens. At play zoom a tile is
   about 23 px.
 - **Hills are one-tile terrace steps.** The land is a whole number of
   terraces of 10 m. Each terrace has its own colour (meadow green, light

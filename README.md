@@ -78,11 +78,12 @@ maa. Jokaisen voi ottaa kerran.
 
 - **Saha:** metsä, saha ja kaupunki joen takana. Opettaa vedon, sillan ja
   junan. Tavoite: 20 lautakuormaa Hämeenlinnaan ennen vuotta 1866.
-- **Harju:** metsä ja saha, maatila ja mylly harjun takana, kaksi kaupunkia
-  ja järvi kaiken keskellä. Kassa riittää alussa kahteen rataan ja kahteen
-  junaan, joten ensimmäinen valinta on kumpi ketju ja kumpi kaupunki ensin.
-  Tavoite: molemmat kaupungit kokoon 3 ennen vuotta 1872. Se vaatii
-  molemmat ketjut molempiin kaupunkeihin, eli verkon.
+- **Harju:** kaksi metsää ja saha, kaksi maatilaa ja mylly, kolme kaupunkia,
+  harju ja järvi kaiken keskellä. Alussa sinulla on asema kummassakin
+  metsässä, joten ensimmäinen valinta on kummasta aloitat, ja sen jälkeen
+  mitkä kaupungit palvelet. Tavoite: kaksi kaupunkia kokoon 3 ennen vuotta
+  1872. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
+  tulot tavaroittain ja kassan vuosi vuodelta.
 
 Kassa lopussa antaa yhdestä kolmeen tähteä. Puhelimen voi kääntää kesken
 pelin: näkymä sovittuu uuteen asentoon ja peli jatkuu.

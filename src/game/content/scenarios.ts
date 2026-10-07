@@ -122,10 +122,10 @@ export const SAWMILL: ScenarioDef = {
   engines: ['hilma'],
 };
 
-// ---------- Harju: 120 by 90 tiles ----------
+// ---------- Harju: 120 by 100 tiles ----------
 
 const HARJU_W = 120;
-const HARJU_H = 90;
+const HARJU_H = 100;
 const HARJU_SITES: SiteDef[] = [
   { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 14, cy: 30 },
   { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 36, cy: 33 },
@@ -133,6 +133,11 @@ const HARJU_SITES: SiteDef[] = [
   { id: 'mill', kind: 'mill', name: { fi: 'Myllykylä', en: 'Myllykylä' }, cx: 62, cy: 66 },
   { id: 'hameenlinna', kind: 'town', name: { fi: 'Hämeenlinna', en: 'Hämeenlinna' }, cx: 73, cy: 36, size: 1 },
   { id: 'tampere', kind: 'town', name: { fi: 'Tampere', en: 'Tampere' }, cx: 27, cy: 72, size: 1 },
+  // the second forest in the north west woods, the second farm south of the lake, the third town
+  // beyond the ridge's south end
+  { id: 'korpela', kind: 'forest', name: { fi: 'Korpela', en: 'Korpela' }, cx: 12, cy: 18 },
+  { id: 'niittyla', kind: 'farm', name: { fi: 'Niittylä', en: 'Niittylä' }, cx: 50, cy: 96 },
+  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 96, cy: 72, size: 1 },
 ];
 const RIVER = [[46, -2], [44, 12], [45.5, 24], [44, 34], [41, 46], [45, 58], [50, 68], [54, 74]];
 const LAKE = { x: 56, y: 77, rx: 17, ry: 8 };
@@ -161,11 +166,18 @@ const harjuLand = landOf(HARJU_SITES, harjuWater, rawHeight);
 
 function harjuCover(x: number, y: number): Cover {
   const L = terraceOf(harjuLand, x, y);
-  // the streets of the two towns, inside their yards
-  if ((Math.abs(y - 30.5) < 0.6 && x > 67 && x < 80) || (Math.abs(x - 73.5) < 0.6 && y > 29 && y < 35.5) || (Math.abs(x - 77.5) < 0.6 && y > 29 && y < 35.5)) return 'street';
-  if ((Math.abs(y - 66.5) < 0.6 && x > 21 && x < 34) || (Math.abs(x - 27.5) < 0.6 && y > 65 && y < 72)) return 'street';
-  // the farm's fields east of the ridge, Tampere's west of the town
+  // the streets of the towns, inside their yards: a main street across the top, a street down from
+  // it at the station, and a second one four tiles east that the town builds at size 3
+  for (const d of HARJU_SITES) {
+    if (d.kind !== 'town') continue;
+    const top = d.cy - 5.5;
+    const main = Math.abs(y - top) < 0.6 && x > d.cx - 6 && x < d.cx + 7;
+    const down = (Math.abs(x - (d.cx + 0.5)) < 0.6 || Math.abs(x - (d.cx + 4.5)) < 0.6) && y > d.cy - 7 && y < d.cy - 0.5;
+    if (main || down) return 'street';
+  }
+  // the fields of the farms: Peltola's east of the ridge, Niittylä's beside it, Tampere's west of the town
   if (Math.hypot((x - 109) / 1.3, y - 33) < 9 && L <= 1) return 'field';
+  if (Math.hypot((x - 55) / 1.3, y - 96) < 6.5 && L === 0) return 'field';
   if (Math.hypot((x - 22) / 1.4, y - 76) < 6 && L === 0) return 'field';
   const f = vnoise(x * 0.11 + 40, y * 0.11) + (x < 32 ? 0.22 : 0) + (L >= 2 ? 0.1 : 0) - (x > 95 ? 0.15 : 0);
   return f > 0.58 && !near(HARJU_SITES, x, y, 5.5) ? 'forest' : 'none';
@@ -174,18 +186,19 @@ function harjuCover(x: number, y: number): Cover {
 export const HARJU: ScenarioDef = {
   id: 'harju',
   name: { fi: 'Harju', en: 'Harju' },
-  blurb: { fi: '1862. Kaksi kaupunkia kokoon 3 ennen vuotta 1872', en: '1862. Both towns to size 3 before 1872' },
+  blurb: { fi: '1862. Kaksi kaupunkia kokoon 3 ennen vuotta 1872', en: '1862. Two towns to size 3 before 1872' },
   w: HARJU_W,
   h: HARJU_H,
   terrain: harjuLand,
   cover: harjuCover,
   sites: HARJU_SITES,
   startStation: 'forest',
+  startStations: ['korpela'],
   cash: 200,
   startYear: 1862,
-  goal: { kind: 'towns', size: 3, beforeYear: 1872 },
+  goal: { kind: 'towns', size: 3, count: 2, beforeYear: 1872 },
   trainsMax: 6,
-  stars: [1200, 2200],
+  stars: [1200, 2600],
   engines: ['hilma', 'jyry'],
 };
 

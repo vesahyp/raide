@@ -79,6 +79,8 @@ const look = (page) =>
     const head = el('.card.sheet h2')?.textContent ?? '';
     const nameOf = (id) => s.sites.find((o) => o.id === id)?.name.fi;
     const cardLine = card === 'line' ? lines.find((l) => head.includes(nameOf(l[0])) && head.includes(nameOf(l[1]))) ?? null : null;
+    const cardSite = card === 'site' ? s.sites.find((o) => head.includes(o.name.fi))?.id ?? null : null;
+    const crews = s.stations.filter((st) => st.crew).map((st) => st.siteId);
     let cardTrain = null;
     if (card === 'train') {
       const earned = (el('.train-row.still .row-text')?.textContent ?? '').match(/(\d+)\s*$/)?.[1];
@@ -97,7 +99,7 @@ const look = (page) =>
     // the middle of each line on the glass, two points to try, to tap the track
     const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
     return {
-      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, nextCost, trainPrice: (() => { const n = Math.min(4, 2 + (s.perks.includes('wagon') ? 1 : 0)); return { hilma: 50 + 10 * n, jyry: 90 + 10 * n }; })(), lineTaps,
+      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, cardSite, crews, nextCost, trainPrice: (() => { const n = Math.min(4, 2 + (s.perks.includes('wagon') ? 1 : 0)); return { hilma: 50 + 10 * n, jyry: 90 + 10 * n }; })(), lineTaps,
       time: s.time, year: s.year, firstPayAt: s.firstPayAt, towns: s.sites.filter((x) => x.kind === 'town').map((x) => x.size), bridges: s.lines.reduce((a, l) => a + l.path.filter((c) => s.water[c]).length, 0), cuttings: s.lines.reduce((a, l) => a + l.path.filter((c, k) => l.rail[k] < s.height[c] - 1 && !s.water[c]).length, 0),
     };
   });
@@ -255,7 +257,8 @@ async function run(orient) {
         stats.drags++;
         await page.waitForTimeout(300);
         const after = await look(page);
-        if (!(after.lines.length > v.lines.length || after.card === 'choice')) {
+        // a year end that opens under the finger ends the drag: the hand makes it again after the choice
+        if (!(after.lines.length > v.lines.length || after.card === 'choice' || after.yearEnd)) {
           stats.error = `drag ${act.from} -> ${act.to} built nothing and offered nothing`;
           await page.screenshot({ path: join(OUT, `${name}-drag.png`) });
           break;
@@ -307,6 +310,19 @@ async function run(orient) {
         await page.waitForTimeout(300);
         const after = await look(page);
         if (after.card !== 'train' && after.card !== 'none') { await tapButton(page.locator('.round.close')); await page.waitForTimeout(200); }
+      } else if (act.kind === 'openSite') {
+        await frameOn((w) => [w.sites[act.site]]);
+        const p = (await look(page)).sites[act.site];
+        await tap(p.x, p.y);
+        stats.taps++;
+        await page.waitForTimeout(300);
+        const after = await look(page);
+        if (after.card !== 'site' && after.card !== 'none') { await tapButton(page.locator('.round.close')); await page.waitForTimeout(200); }
+      } else if (act.kind === 'crew') {
+        if (await tapButton(page.locator('[data-act="crew"]'))) stats.acts++;
+        await page.waitForTimeout(250);
+        await tapButton(page.locator('.round.close'));
+        await page.waitForTimeout(200);
       } else if (act.kind === 'act') {
         const b = page.locator(`[data-act="${act.what}"]`);
         if (!(await b.count())) { stats.error = `no ${act.what} on the train card`; break; }
@@ -398,7 +414,7 @@ check(summary.every((r) => !r.errors?.length), `no page errors (${summary.flatMa
 check(summary.every((r) => r.firstPayAt !== null && r.firstPayAt < 90), `the first paid delivery lands inside 90 s (${summary.map((r) => r.firstPayAt?.toFixed(0) ?? '-').join(' ')})`);
 if (SCENARIO === 'sawmill') check(summary.every((r) => r.drags === 2 && r.buys === 3), `two drags and three trains do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
 if (SCENARIO === 'harju') {
-  check(summary.every((r) => r.lines === 7 && r.trains === 6), `the thumb builds the whole network: seven lines, six trains (${summary.map((r) => `${r.lines}/${r.trains}`).join(' ')})`);
+  check(summary.every((r) => r.lines === 6 && r.trains === 6), `the thumb builds the whole network: six lines, six trains (${summary.map((r) => `${r.lines}/${r.trains}`).join(' ')})`);
   check(summary.every((r) => r.routes.short >= 3 && r.bridges >= 5 && r.cuttings >= 2), `the thumb picks the short route where the plan says, with a bridge and a cutting built (${summary.map((r) => `${r.routes.short} short, ${r.bridges} bridge, ${r.cuttings} cutting`).join('; ')})`);
   check(summary.every((r) => r.acts >= 4), `the thumb works the train cards: wagons and the full-load switch (${summary.map((r) => r.acts).join(' ')})`);
 }

@@ -7,7 +7,7 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt } from '../src/game/sim';
+import { step, closeYearEnd, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, price, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt } from '../src/game/sim';
 import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
@@ -57,12 +57,12 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   const tj = routeTrips(s, over, 'jyry');
   const th = routeTrips(s, over, 'hilma');
   check(tj > th, `over the ridge Jyry makes more trips a year than Little Hilma (${tj.toFixed(1)} against ${th.toFixed(1)})`);
-  // A* on 10800 cells: the second search, once the code is warm, takes under 15 ms
+  // A* on 12000 cells: the second search, once the code is warm, takes under 15 ms
   route(s, cell(s, 'hameenlinna'), cell(s, 'farm'));
   const t0 = performance.now();
   route(s, cell(s, 'hameenlinna'), cell(s, 'farm'), 'cheap');
   const ms = performance.now() - t0;
-  check(s.w * s.h === 10800 && ms < 15, `route() from Hämeenlinna to Peltola on ${s.w * s.h} cells takes ${ms.toFixed(1)} ms`);
+  check(s.w * s.h === 12000 && ms < 15, `route() from Hämeenlinna to Peltola on ${s.w * s.h} cells takes ${ms.toFixed(1)} ms`);
   // the engines over the cutting, both with a full load of grain: the strong one is faster
   const trip = (engine: 'hilma' | 'jyry') => {
     const s2 = createState(HARJU);
@@ -190,6 +190,26 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(tt.full[0] >= tt.empty[0] && tt.full[1] >= tt.empty[1] && lineTrips(s, b, 'jyry', 2) > 0, `a full train is no faster than an empty one (${tt.full[0].toFixed(1)} against ${tt.empty[0].toFixed(1)} s)`);
 }
 
+// the first choice on Harju is a real one: from the start, either forest's line to Koskensaha with
+// one train pays for itself inside two years
+{
+  const back: string[] = [];
+  const results = (['forest', 'korpela'] as const).map((from) => {
+    const s = createState(HARJU);
+    const start = s.cash;
+    const r = plan(s, cell(s, from), cell(s, 'sawmill'))[0];
+    const line = build(s, r)!;
+    buyTrain(s, line.id, 'flat');
+    for (let k = 0; k < 2 * YEAR_SECONDS * 60 + 120; k++) {
+      step(s);
+      if (s.yearEnd) closeYearEnd(s, 'wagon');
+    }
+    back.push(`${from} cost ${r.cost}, cash ${Math.round(s.cash)} of ${start}`);
+    return s.cash >= start;
+  });
+  check(results.every(Boolean), `from the start two different first lines both pay back within two years (${back.join('; ')})`);
+}
+
 // the bot wins both scenarios
 function play(sc: typeof SAWMILL) {
   const s = createState(sc);
@@ -227,13 +247,13 @@ function play(sc: typeof SAWMILL) {
   const s0 = createState(HARJU);
   const saw = siteById(s0, 'sawmill');
   const b = buyers(s0, saw);
-  check(b.length === 2 && b.every((x) => x.site.kind === 'town' && x.price > 0 && x.km > 0 && !x.linked), `on Harju the sawmill's buyers are the two towns and both pay (${b.map((x) => `${x.site.id} ${x.price} at ${x.km} km`).join(', ')})`);
+  check(b.length === 3 && b.every((x) => x.site.kind === 'town' && x.price > 0 && x.km > 0 && !x.linked), `on Harju the sawmill's buyers are the three towns and all pay (${b.map((x) => `${x.site.id} ${x.price} at ${x.km} km`).join(', ')})`);
   check(b[0].price >= b[1].price, 'buyers come highest price first');
   check(buyers(s0, siteById(s0, 'hameenlinna')).length === 0, 'a town has no buyers');
 }
 play(SAWMILL);
 const h = play(HARJU);
-check(h.sites.filter((x) => x.kind === 'town').every((x) => x.size >= 3), `harju: both towns reached size 3 (${h.sites.filter((x) => x.kind === 'town').map((x) => `${x.id} ${x.size}`).join(', ')})`);
+check(h.sites.filter((x) => x.kind === 'town' && x.size >= 3).length >= 2, `harju: two towns reached size 3 (${h.sites.filter((x) => x.kind === 'town').map((x) => `${x.id} ${x.size}`).join(', ')})`);
 
 console.log(failed ? 'sim-check failed' : 'sim-check ok');
 if (failed) throw new Error('sim-check failed');

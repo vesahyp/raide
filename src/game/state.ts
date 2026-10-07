@@ -95,8 +95,10 @@ export function createState(sc: ScenarioDef): SimState {
     firstPayAt: null,
     nextId: 1,
   };
-  const start = sc.sites.find((d) => d.id === sc.startStation)!;
-  s.stations.push({ id: s.nextId++, cell: idx(s, start.cx, start.cy), siteId: start.id, crew: false });
+  for (const id of [sc.startStation, ...(sc.startStations ?? [])]) {
+    const d = sc.sites.find((o) => o.id === id)!;
+    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id, crew: false });
+  }
   return s;
 }
 

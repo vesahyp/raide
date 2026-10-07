@@ -18,10 +18,11 @@ import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, demand, SLOTS_MAX, workingWagon } from '../game/sim';
-import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, BASE_PRICE, TERRACE_M, yard } from '../game/content/economy';
+import { planTown, secondStreet, type TownItem } from './town';
+import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, DEMAND_FLOOR, TERRACE_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
 import {
-  GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, church, drawEngine, drawWagon, hash, logPile, makeView, pine,
+  GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, drawEngine, drawWagon, hash, logPile, makeView, pine,
   crew, platform, sacks, sails, shade, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
 } from './draw2d';
 
@@ -151,10 +152,43 @@ interface PileLayer {
 }
 
 /** the nodes of one site label or badge that change between frames */
+/** one wants chip: its nodes, and what it has shown so far, so a delivery can be seen landing */
+interface WantRefs {
+  good: Good;
+  b: HTMLElement;
+  i: HTMLElement;
+  chip: HTMLElement;
+  /** the loads taken in the last time the chip looked, to see a delivery land */
+  taken: number;
+  /** the price the chip shows now, and the time its text was last written */
+  price: number;
+  at: number;
+  /** the old and the new price, shown as "23 → 19" until this time */
+  change: { from: number; to: number; until: number } | null;
+  /** the bar width in percent now */
+  bar: number;
+}
+
+/** a town's buildings for all sizes, how many are standing, and the rise of the next ones */
+interface TownState {
+  items: TownItem[];
+  shown: number;
+  /** the count when the rise began, and the time the first one starts; null when nothing is rising */
+  from: number;
+  start: number | null;
+  dusted: number;
+}
+
+/** seconds between one new building starting to rise and the next, and how long one takes */
+const RISE_STEP = 0.5;
+const RISE_TIME = 0.6;
+/** seconds the dust of a new house hangs */
+const DUST_TIME = 0.9;
+
 interface TagRefs {
   key: string;
   has: { b: HTMLElement; i: HTMLElement } | null;
-  wants: { good: Good; b: HTMLElement; i: HTMLElement; chip: HTMLElement }[];
+  wants: WantRefs[];
   /** a badge's count on a raw site */
   n: HTMLElement | null;
 }
@@ -242,6 +276,10 @@ export class Renderer2D {
   private pickFitDue = false;
   /** what each site's label was built from, and the nodes its numbers live in, so a frame only sets text and widths */
   private tags = new Map<string, TagRefs>();
+  /** each town's buildings and how many of them stand: the rest rise one by one when the town grows */
+  private towns = new Map<string, TownState>();
+  /** the dust under a house that is going up */
+  private dust: { x: number; y: number; lv: number; t0: number }[] = [];
   /** the labels placed this frame, laid out together so none covers another */
   private tagQueue: TagPlace[] = [];
   /** the whole-map badges placed this frame, nudged down where two would overlap */
@@ -316,6 +354,13 @@ export class Renderer2D {
       this.kindA[i] = water ? 1 : s.cover[i] === 3 ? 2 : s.cover[i] === 2 ? 3 : s.cover[i] === 1 ? 4 : 0;
       this.terrA[i] = Math.max(0, Math.min(3, Math.round(water ? 0 : this.lvA[i])));
     }
+    // a town's second street is laid when the town reaches size 3
+    for (const site of s.sites) {
+      if (site.kind !== 'town') continue;
+      const t = this.townState(site);
+      const k = t.items.findIndex((o) => o.kind === 'street');
+      if (k >= t.shown) for (const i of secondStreet(s, site)) this.kindA[i] = 0;
+    }
     this.nearTrack.fill(0);
     for (let y = 0; y < s.h; y++)
       for (let x = 0; x < s.w; x++)
@@ -332,7 +377,7 @@ export class Renderer2D {
     let h = 17;
     for (const l of s.lines) h = (Math.imul(h, 31) + l.id) | 0;
     for (const st of s.stations) h = (Math.imul(h, 37) + st.id * 8 + this.platformsNeeded(st.cell) + (st.crew ? 1000003 : 0)) | 0;
-    for (const site of s.sites) h = (Math.imul(h, 41) + site.size) | 0;
+    for (const site of s.sites) h = (Math.imul(h, 41) + (site.kind === 'town' ? this.townState(site).shown : 0)) | 0;
     return h;
   }
 
@@ -434,7 +479,7 @@ export class Renderer2D {
     this.looks = s.sites.map((site) => {
       const station = s.stations.some((st) => st.siteId === site.id);
       const ap = this.apronAt.get(idx(s, site.cx, site.cy));
-      const look: SiteLook = { site, lv: s.height[site.cy * s.w + site.cx] / TERRACE_M, statics: [], hub: null, stationKey: (station ? 1 : 0) + (site.kind === 'town' ? site.size * 2 : 0) + (ap ? 100 * ap.k + (ap.west ? 1000 : 0) + (ap.east ? 2000 : 0) : 0) + (s.stations.find((st) => st.siteId === site.id)?.crew ? 5000 : 0) };
+      const look: SiteLook = { site, lv: s.height[site.cy * s.w + site.cx] / TERRACE_M, statics: [], hub: null, stationKey: (station ? 1 : 0) + (site.kind === 'town' ? this.townState(site).shown * 2 : 0) + (ap ? 100 * ap.k + (ap.west ? 1000 : 0) + (ap.east ? 2000 : 0) : 0) + (s.stations.find((st) => st.siteId === site.id)?.crew ? 5000 : 0) };
       this.layoutSite(look, station);
       return look;
     });
@@ -478,57 +523,111 @@ export class Renderer2D {
       look.hub = { x: x - 1.9, y: y - 1.6 - 0.9 / 1 };
       bld(x + 2.4, y - 3.9, 1.5, 1.3, { walls: '#e6dcc4', roof: '#5d4a3c', wall: 0.7, door: 0 });
     } else if (site.kind === 'town') {
-      this.layoutTown(look, add, station);
+      this.layoutTown(look, add);
     }
   }
 
-  private layoutTown(look: SiteLook, add: (oy: number, ox0: number, ox1: number, draw: (v: View) => void) => void, station: boolean): void {
+  /** a town's buildings, laid out the first time they are asked for; a town starts with all it has for its size */
+  private townState(site: Site): TownState {
+    let t = this.towns.get(site.id);
+    if (!t) {
+      const items = planTown(this.s, site, this.s.height[site.cy * this.s.w + site.cx] / TERRACE_M);
+      t = { items, shown: this.targetOf(items, site), from: 0, start: null, dusted: 0 };
+      this.towns.set(site.id, t);
+    }
+    return t;
+  }
+
+  /** how many of a town's buildings its size calls for */
+  private targetOf(items: TownItem[], site: Site): number {
+    let n = 0;
+    while (n < items.length && items[n].minSize <= site.size) n++;
+    return n;
+  }
+
+  private layoutTown(look: SiteLook, add: (oy: number, ox0: number, ox1: number, draw: (v: View) => void) => void): void {
+    const t = this.townState(look.site);
+    for (let i = 0; i < t.shown; i++) {
+      const o = t.items[i];
+      if (o.kind !== 'street') add(o.oy, o.ox0, o.ox1, o.draw);
+    }
+  }
+
+  /**
+   * A town that grew builds its new houses over the first seconds of the next year, one after the
+   * other (the ledger holds them back while it is open). A building that has risen joins the
+   * cached chunks; one on its way up is drawn live by drawRising.
+   */
+  private growTowns(): void {
     const s = this.s;
-    const { site, lv } = look;
-    const x = site.cx;
-    const y = site.cy;
-    const r = yard('town');
-    const inYard = (px: number, py: number, w: number, d: number): boolean => {
-      for (let ty = Math.floor(py); ty <= Math.floor(py + d - 0.001); ty++)
-        for (let tx = Math.floor(px); tx <= Math.floor(px + w - 0.001); tx++) {
-          if (tx < x + r.dx0 || tx > x + r.dx1 || ty < y + r.dy0 || ty > y + r.dy1) return false;
-          if (s.cover[ty * s.w + tx] === 3) return false;
-        }
-      return true;
-    };
-    const hit = (a: number[], b: number[]) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
-    // the station building and the platform keep their ground
-    const reserved: number[][] = [[x + 1.1, y - 2.4, 3.0, 2.4], [x - 3.2, y - 1.4, 7.4, 1.4]];
-    // the church has its place whether it stands yet or not, so the houses never move into it
-    let churchAt: number[] | null = null;
-    for (let py = y - 6.9; py < y - 3 && !churchAt; py += 0.5)
-      for (let px = x - 6; px < x + 2; px += 0.5) if (inYard(px, py, 4.2, 2) && !reserved.some((q) => hit([px, py, 4.2, 2.3], q))) { churchAt = [px, py]; break; }
-    if (churchAt) reserved.push([churchAt[0], churchAt[1] - 0.2, 4.2, 2.6]);
-    const wallC = ['#a8352a', '#c98d3a', '#e6dcc4', '#9c3a2c', '#d7a84a'];
-    const roofC = ['#4a3a32', '#5d4a3c', '#7a3a2a', '#3d3a3a'];
-    const spots: { px: number; py: number; w: number; d: number; k: number; dist: number }[] = [];
-    let k = 0;
-    for (let gy = 0; gy < 6; gy++)
-      for (let gx = 0; gx < 7; gx++, k++) {
-        const w = 1.5 + hash(k, 3) * 0.5;
-        const d = 0.8 + hash(k, 4) * 0.3;
-        const px = x + r.dx0 + 0.15 + gx * 2.0 + hash(k, 5) * 0.2;
-        const py = y + r.dy0 + 0.05 + gy * 1.9;
-        if (!inYard(px, py, w, d) || reserved.some((q) => hit([px, py, w, d], q))) continue;
-        spots.push({ px, py, w, d, k, dist: Math.hypot(px - x - 0.5, py - y + 3.8) + hash(k, 9) * 0.7 });
+    for (const site of s.sites) {
+      if (site.kind !== 'town') continue;
+      const t = this.townState(site);
+      const target = this.targetOf(t.items, site);
+      if (t.shown > target) t.shown = target;
+      if (t.shown >= target || s.yearEnd) {
+        if (t.shown >= target) t.start = null;
+        continue;
       }
-    spots.sort((a, b) => a.dist - b.dist);
-    const n = Math.min(spots.length, 4 * site.size);
-    for (let i = 0; i < n; i++) {
-      const p = spots[i];
-      const chim: [number, number] | undefined = hash(p.k, 6) > 0.5 ? [p.px + p.w * 0.7, p.py + p.d * 0.3] : undefined;
-      add(p.py + p.d, p.px, p.px + p.w, (v) => building(v, p.px, p.py, p.w, p.d, { walls: wallC[p.k % 5], roof: roofC[(p.k * 7) % 4], wall: 0.6, door: p.k % 2, chimney: chim, lv }));
+      if (t.start === null) {
+        t.start = this.time + 0.4;
+        t.from = t.shown;
+        t.dusted = t.shown;
+      }
+      const startOf = (k: number): number => t.start! + (k - t.from) * RISE_STEP;
+      for (let k = t.dusted; k < target && this.time >= startOf(k) + 0.1; k++, t.dusted++) {
+        const o = t.items[k];
+        if (o.kind !== 'street') this.dust.push({ x: o.x + o.w / 2, y: o.y + o.d, lv: s.height[site.cy * s.w + site.cx] / TERRACE_M, t0: startOf(k) + 0.1 });
+      }
+      while (t.shown < target && this.time >= startOf(t.shown) + RISE_TIME) t.shown++;
     }
-    if (site.size >= 2 && churchAt) {
-      const [px, py] = churchAt;
-      add(py + 2, px, px + 4.2, (v) => church(v, px, py, lv));
+    this.dust = this.dust.filter((d) => this.time - d.t0 < DUST_TIME);
+  }
+
+  /** the buildings on their way up: scaled from 0.6 with a little rise, and a puff of dust at the foot */
+  private drawRising(): void {
+    const c = this.ctx;
+    const S = this.cam.s;
+    const v = makeView(c, S, this.cam.x - this.ox / S, this.cam.y - this.oy / S);
+    for (const site of this.s.sites) {
+      if (site.kind !== 'town') continue;
+      const t = this.townState(site);
+      if (t.start === null) continue;
+      const lv = this.s.height[site.cy * this.s.w + site.cx] / TERRACE_M;
+      const target = this.targetOf(t.items, site);
+      for (let k = t.shown; k < target; k++) {
+        const o = t.items[k];
+        if (o.kind === 'street') continue;
+        const p = Math.min(1, (this.time - (t.start + (k - t.from) * RISE_STEP)) / RISE_TIME);
+        if (p <= 0) continue;
+        const e = 1 - (1 - p) * (1 - p);
+        const k0 = 0.6 + 0.4 * e;
+        const bx = this.sx(o.x + o.w / 2);
+        const by = this.sy(o.y + o.d, lv);
+        c.save();
+        c.globalAlpha = Math.min(1, p * 2.5);
+        c.translate(bx, by + (1 - e) * S * 0.3);
+        c.scale(k0, k0);
+        c.translate(-bx, -by);
+        o.draw(v);
+        c.restore();
+      }
     }
-    void station;
+    // the dust: grey-tan puffs that drift out from the foot of the house and fade
+    for (const d of this.dust) {
+      const u = (this.time - d.t0) / DUST_TIME;
+      if (u < 0 || u > 1) continue;
+      const bx = this.sx(d.x);
+      const by = this.sy(d.y, d.lv);
+      for (let j = 0; j < 7; j++) {
+        const a = (j / 7) * Math.PI * 2 + 0.6;
+        const dist = S * (0.25 + 0.55 * u) * (0.7 + 0.5 * hash(j, 17));
+        c.fillStyle = `rgba(214,200,168,${(0.55 * (1 - u)).toFixed(3)})`;
+        c.beginPath();
+        c.arc(bx + Math.cos(a) * dist, by - S * 0.12 + Math.sin(a) * dist * 0.4 - u * S * 0.25, S * (0.1 + 0.16 * u), 0, 7);
+        c.fill();
+      }
+    }
   }
 
   /** the piles a site holds now, from its stock: what it makes and, for a refinery, what it has taken in */
@@ -1025,7 +1124,9 @@ export class Renderer2D {
       const ay = this.sy(a.y, a.lv);
       const bx = this.sx(b.x);
       const by = this.sy(b.y, b.lv);
-      out.push({ t, i, px: (ax + bx) / 2, py: (ay + by) / 2, wx: (a.x + b.x) / 2, wy: (a.y + b.y) / 2, ang: Math.atan2(ay - by, ax - bx), len });
+      // the vehicle's centre is the point of the track half its length behind its front, so a bend never carries the middle off the rails; its angle is the chord's
+      const m = this.trainPos(t, line, d - (t.dir * len) / 2);
+      out.push({ t, i, px: this.sx(m.x), py: this.sy(m.y, m.lv), wx: m.x, wy: m.y, ang: Math.atan2(ay - by, ax - bx), len });
       d = back - t.dir * 0.08;
     }
     return out;
@@ -1860,6 +1961,7 @@ export class Renderer2D {
     this.frames++;
     this.frameStamp++;
     this.resize();
+    this.growTowns();
     this.sync();
     // the camera: ease a zoom step, follow a train
     if (this.zoomTo !== null) {
@@ -1901,6 +2003,7 @@ export class Renderer2D {
     else {
       this.drawChunks();
       this.drawPiles();
+      this.drawRising();
     }
     // the route under the finger, and the two on offer after a lift
     if (pending) pending.forEach((r, i) => this.drawRoute(r, OPTION_COLOUR[i] ?? OPTION_COLOUR[0], i > 0, true));
@@ -1983,11 +2086,12 @@ export class Renderer2D {
     if (lod) {
       el.style.display = 'none';
       const raw = !!RAW_RATE[site.kind];
-      const key = `b|${makes}|${takes.join()}|${raw}|${mk.kind}|${mk.cost}`;
+      const floors = takes.filter((g) => demand(site.taken[g]) <= DEMAND_FLOOR + 1e-6);
+      const key = `b|${makes}|${takes.join()}|${raw}|${mk.kind}|${mk.cost}|${floors.join()}`;
       let refs = this.tags.get(`badge:${site.id}`);
       if (!refs || refs.key !== key) {
         const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
-        badge.innerHTML = `<span class="c">${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => this.goodIcon(g)).join('')}</span>` : ''}${cost}`;
+        badge.innerHTML = `<span class="c">${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => `<span class="wg${floors.includes(g) ? ' floor' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}`;
         refs = { key, has: null, wants: [], n: badge.querySelector('.n') };
         this.tags.set(`badge:${site.id}`, refs);
       }
@@ -2013,7 +2117,7 @@ export class Renderer2D {
       refs = {
         key,
         has: has ? { b: has.querySelector('b')!, i: has.querySelector('i')! } : null,
-        wants: takes.map((good, k) => ({ good, chip: chips[k], b: chips[k].querySelector('b')!, i: chips[k].querySelector('i')! })),
+        wants: takes.map((good, k) => ({ good, chip: chips[k], b: chips[k].querySelector('b')!, i: chips[k].querySelector('i')!, taken: site.taken[good], price: price(s, good, site.id, 0), at: -9, change: null, bar: -1 })),
         n: null,
       };
       this.tags.set(`site:${site.id}`, refs);
@@ -2023,10 +2127,31 @@ export class Renderer2D {
       refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / RAW_CAP)}%`;
     }
     for (const w of refs.wants) {
+      const taken = site.taken[w.good];
       const p = price(s, w.good, site.id, 0);
-      this.setText(w.b, String(p));
-      w.i.style.width = `${Math.round(100 * (p / Math.max(1, BASE_PRICE[w.good])))}%`;
-      w.chip.classList.toggle('low', demand(site.taken[w.good]) < 0.55);
+      // a delivery landed: the price steps down, and the chip says from what to what for a moment
+      if (taken > w.taken + 0.5 && p !== w.price) w.change = { from: w.price, to: p, until: this.time + 1.6 };
+      w.taken = taken;
+      const showing = w.change && this.time < w.change.until ? w.change : null;
+      if (!showing) w.change = null;
+      // the number is written a few times a second at most; a delivery is written at once
+      if (showing || p !== w.price) {
+        if (showing || this.time - w.at > 0.25) {
+          w.price = p;
+          w.at = this.time;
+        }
+      }
+      this.setText(w.b, showing ? `${showing.from} → ${showing.to}` : String(w.price));
+      w.chip.classList.toggle('chg', !!showing);
+      // the bar eases down quickly when a load lands and refills slowly as the town eats
+      const bar = Math.round(1000 * demand(taken)) / 10;
+      if (bar !== w.bar) {
+        w.i.style.transitionDuration = w.bar >= 0 && bar < w.bar ? '0.35s' : '2.4s';
+        w.i.style.width = `${bar}%`;
+        w.bar = bar;
+      }
+      w.chip.classList.toggle('low', demand(taken) < 0.55);
+      w.chip.classList.toggle('floor', demand(taken) <= DEMAND_FLOOR + 1e-6);
     }
     el.style.opacity = fade;
     // the tag stands over the yard, which is north of the station; the route look shrinks it
@@ -2058,8 +2183,12 @@ export class Renderer2D {
         const up = hit.y0 - h - 3;
         y = Math.abs(down - (b.y - 19)) <= Math.abs(up - (b.y - 19)) ? down : up;
       }
-      placed.push({ x0: b.x - w / 2, x1: b.x + w / 2, y0: y, y1: y + h });
-      b.el.style.transform = `translate(${b.x.toFixed(1)}px, ${(y + 19).toFixed(1)}px)`;
+      // the whole badge, name and chips, stays on the screen: a site at the map's edge nudges its badge in
+      const a = this.area();
+      const bx = Math.max(a.l + w / 2 + 3, Math.min(a.l + a.w - w / 2 - 3, b.x));
+      y = Math.max(a.t + 2, Math.min(this.h - h - 16, y));
+      placed.push({ x0: bx - w / 2, x1: bx + w / 2, y0: y, y1: y + h });
+      b.el.style.transform = `translate(${bx.toFixed(1)}px, ${(y + 19).toFixed(1)}px)`;
     }
     this.badgeQueue.length = 0;
   }

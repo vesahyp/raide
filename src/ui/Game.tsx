@@ -5,8 +5,7 @@
  * routes, a year end, the result) and on taps: a line, a train, a site.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EngineId, Good, Line, ScenarioDef, SimState, Site, Train, WagonType, YearEndChoice } from '../game/types';
-import { GOODS } from '../game/types';
+import type { EngineId, Good, Line, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
 import { createState, siteById, goodsOnMap, stationAt } from '../game/state';
 import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf, buyers, moveTrain, buyCrew, dwellAt, canMove, lineTrips, tripTimes, gradeFactor, defaultWagons } from '../game/sim';
 import { CREW_PRICE, ENGINES, ENGINE_LEN, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RAW_CAP, STOP_SECONDS, RAW_RATE, RESALE, TAKES, WAGON_GOODS, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
@@ -19,6 +18,7 @@ import { Bot } from '../../tools/bot';
 import { tr, t as tt, num } from '../i18n';
 import { play, unlock, isMuted, setMuted } from '../audio';
 import { track } from '../track';
+import { YearEndCard } from './Ledger';
 
 type Card =
   | { kind: 'line'; lineId: number }
@@ -66,6 +66,8 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     const params = new URLSearchParams(location.search);
     const speed = Math.max(0.25, Number(params.get('speed') ?? 1));
     const bot = params.get('bot') === '1' ? Bot.for(s) : null;
+    // ?ledger=2 with the bot: the year-end card opens at the second year end instead of the bot closing it (the pictures)
+    const holdLedger = Number(params.get('ledger') ?? 0);
     const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer2D; __pace?: number; __plan?: (a: number, b: number) => unknown; __act?: Record<string, unknown> };
     w.__sim = s;
     w.__renderer = renderer;
@@ -120,7 +122,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         acc += real * speed;
         let n = 0;
         while (acc >= DT && n < 30) {
-          if (bot) bot.act(s);
+          if (bot && !(holdLedger > 0 && s.yearEnd && s.history.length >= holdLedger)) bot.act(s);
           step(s);
           acc -= DT;
           n++;
@@ -131,7 +133,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         track('scenario_end', { scenario: scenario.id, won: s.result.won, year: s.result.year, cash: s.result.cash, stars: s.result.stars });
         setCard({ kind: 'result' });
       } else if (s.yearEnd && !s.result && cardRef.current?.kind !== 'yearEnd') {
-        if (bot) bot.act(s);
+        if (bot && !(holdLedger > 0 && s.history.length >= holdLedger)) bot.act(s);
         else setCard({ kind: 'yearEnd' });
       }
       for (const name of s.sounds) play(name);
@@ -201,7 +203,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           </span>
         </div>
         <div className="hud-goal" title={tr('Tavoite', 'Goal')}>
-          <span className="label">{goal.kind === 'deliver' ? tr('Laudat', 'Boards') : tr('Koko 3', 'Size 3')}</span>
+          <span className="label">{goal.kind === 'deliver' ? tr('Laudat', 'Boards') : tr(`Koko ${goal.size}`, `Size ${goal.size}`)}</span>
           <span className="num">{hud.goalText}</span>
           <span className="bar">
             <i style={{ width: `${Math.min(100, 100 * hud.goal)}%` }} />
@@ -346,7 +348,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
 function readHud(s: SimState): Hud {
   const goal = s.scenario.goal;
   const towns = s.sites.filter((x) => x.kind === 'town');
-  const goalText = goal.kind === 'deliver' ? `${s.goalCount}/${goal.count}` : `${towns.filter((x) => x.size >= goal.size).length}/${towns.length}`;
+  const goalText = goal.kind === 'deliver' ? `${s.goalCount}/${goal.count}` : `${Math.min(goal.count, towns.filter((x) => x.size >= goal.size).length)}/${goal.count}`;
   return { year: s.year, month: s.month, cash: Math.floor(s.cash), goal: goalProgress(s), goalText };
 }
 
@@ -807,71 +809,6 @@ function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClos
       <button className="btn primary wide lay" data-act="lay" disabled={!reachable} onClick={onLay}>
         {hasStation ? tr('Vedä rata täältä', 'Lay track from here') : tr('Liitä rautatiehen', 'Join to the railway')}
       </button>
-    </div>
-  );
-}
-
-/** The year-end ledger: the numbers, the towns that grew, and the one choice. */
-function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEndChoice) => void }) {
-  const y = s.yearEnd!;
-  const goods = GOODS.filter((g) => goodsOnMap(s).includes(g));
-  const choices: { id: YearEndChoice; fi: string; en: string; sub: [string, string] }[] = [
-    { id: 'wagon', fi: 'Vaunu lisää', en: 'An extra wagon', sub: ['jokaiseen junaan', 'on every train'] },
-    { id: 'speed', fi: 'Nopeammat veturit', en: 'Faster engines', sub: ['neljänneksen', 'a quarter faster'] },
-    { id: 'forest', fi: 'Tuottoisa maa', en: 'Richer land', sub: ['puolet enemmän tukkia ja viljaa', 'half again the timber and grain'] },
-  ];
-  return (
-    <div className="card ledger overlay" data-ui>
-      <h2>{y.year}</h2>
-      <div className="ledger-body">
-        <table>
-          <tbody>
-            {goods.map((g) => (
-              <tr key={g}>
-                <td>{tt(GOOD_NAME[g])}</td>
-                <td className="num">{num(y.income[g])}</td>
-              </tr>
-            ))}
-            <tr>
-              <td>{tr('Veturien ylläpito', 'Engine upkeep')}</td>
-              <td className="num">-{num(y.upkeep)}</td>
-            </tr>
-            <tr className="total">
-              <td>{tr('Voitto', 'Profit')}</td>
-              <td className="num">{num(y.profit)}</td>
-            </tr>
-            <tr>
-              <td>{tr('Kassa', 'Cash')}</td>
-              <td className="num">{num(y.cash)}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div>
-          {y.grew.length > 0 && (
-            <p className="grew">
-              {y.grew.map((id) => `${tt(siteById(s, id).name)} ${tr('kasvoi kokoon', 'grew to size')} ${siteById(s, id).size}`).join('. ')}.
-            </p>
-          )}
-          {choices.every((c) => s.perks.includes(c.id)) ? (
-            <button className="btn choice continue" onClick={() => onChoose('wagon')} data-track="year-continue">
-              <span>{tr('Jatka', 'Continue')}</span>
-              <small>{tr('kaikki valinnat on otettu', 'every choice is taken')}</small>
-            </button>
-          ) : (
-            <>
-              <p className="small">{tr('Valitse yksi', 'Pick one')}</p>
-              <div className="choices">
-                {choices.map((c) => (
-                  <button key={c.id} className="btn choice" disabled={s.perks.includes(c.id)} onClick={() => onChoose(c.id)}>
-                    <span>{tr(c.fi, c.en)}</span>
-                    <small>{s.perks.includes(c.id) ? tr('otettu', 'taken') : tr(c.sub[0], c.sub[1])}</small>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

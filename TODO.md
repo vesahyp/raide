@@ -17,25 +17,15 @@ Each slice deploys to https://vesahyp.github.io/raide/ and is reported with
 the link and three steps to try on the phone. A slice is judged by looking
 at the screen on phone emulation. Scripted checks stay short.
 
-### Slice 5: a map worth a session
+### Left from slices 1 to 5
 
-Playable: Harju with more sites: a second forest, a second farm and a
-third town, so the first choice is what to connect first. Prices move on
-the screen: a chip's bar falls as a town fills and comes back. Towns grow
-house by house. The year-end ledger shows income by good as bars and cash
-by year as a line.
-
-- Content and balance (Sonnet): the sites, the numbers in `economy.ts`,
-  the bot's plan. `npm run balance` shows the goal falls late in the
-  scenario, not early.
-- Renderer (Sonnet): houses added as a town grows.
-- UI (Sonnet): the ledger with its charts.
-- Check (Opus): one short thumb playthrough on video, watched.
-
-### Left from slices 1 to 4
-
-- `make playthrough` fails on Harju: the hand misses a buy step in
-  portrait and loses with six lines in landscape. The bot wins headless.
+- `make playthrough` loses Harju by thumb: it builds all six lines and
+  trains but Hämeenlinna stays at size 1 while Tampere reaches 5. The bot
+  wins headless (1869). The thumb plays slower, so the balance leans on
+  speed; look at which town the hand's plan starves.
+- A town fits about 7 houses in its yard, not 20: growth past size 3 shows
+  as the market and the hall more than as houses. A bigger town yard would
+  need the map to give it room.
 - The Harju ridge is a flat-topped mesa of uniform width; the mockup's
   ridge was softer. Revisit with slice 5's map work.
 - At Koskensaha the east points of the platform tracks sit on the bridge

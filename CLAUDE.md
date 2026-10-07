@@ -55,7 +55,7 @@ src/
     content/
       economy.ts      every number the balance is made of: prices, demand, the tile in metres
                         (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth
-      scenarios.ts    the hand-made tile maps (Harju 120 by 90, Sawmill 64 by 48): the land as a
+      scenarios.ts    the hand-made tile maps (Harju 120 by 100, Sawmill 64 by 48): the land as a
                         height function in metres (water below zero), the cover (forest, field,
                         street), sites, start, goal, the engines on sale
   render/
@@ -65,6 +65,8 @@ src/
                         piles every frame, the route under the finger coloured by grade, the
                         whole-map look under 9 px per tile, the HTML overlay (names, chips, badges,
                         floats, the hand, the plate)
+    town.ts           a town's buildings laid out for all five sizes (four houses a size, church, second
+                        street, market, town hall); the renderer lets the new ones rise one by one
     draw2d.ts         the sprites: tiles, faces, trees, track, bridges, buildings, piles, engines
                         and wagons with their loads
   input/input.ts      fingers: one from a station builds, one elsewhere pans, two pinch and twist,
@@ -75,6 +77,7 @@ src/
                         that met the lake or the ridge, the line (its trains, buy with wagons and
                         engine), the train (wagon, engine swap, full load, sell), the site (has,
                         wants, pays, growth), the year end, the result
+    Ledger.tsx        the year-end card: income bars, the cash line, the towns that grew, the choice
     Screens.tsx       the title and the scenario list
     Update.tsx        the newer-build banner; ErrorBoundary.tsx the crash screen
   styles.css          the chrome: brass and dark green, large round buttons, a ledger page; the HUD
@@ -89,6 +92,8 @@ tools/
 scripts/
   look.mjs            make look: the bot plays on an emulated iPhone, screenshots in both orientations
                         and one with the camera on a train; the check for a renderer change
+  ledger.mjs          make ledger: the nine sites, the year-end charts, a town at sizes 1 to 5 and rising, the chip
+                        price step and the floor, into shots/ledger/
   spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
                         check that every running train sits on its rails and that a frame at play zoom
                         takes 12 ms or less; the check for a change to trains, track or the camera

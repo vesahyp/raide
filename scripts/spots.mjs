@@ -71,12 +71,13 @@ try {
               best = Math.min(best, Math.hypot(ax + dx * u - v.wx, ay + dy * u - v.wy));
             }
             for (const a of aprons) if (Math.abs(v.wx - a.x - 0.5) < 8) for (let k = 0; k < a.k; k++) best = Math.min(best, Math.abs(v.wy - (a.y + 0.5 + r.platformY(a, k, v.wx))));
-            if (best > maxOff) out.push(`train ${t.id} vehicle ${v.i} is ${best.toFixed(2)} tiles off its rails`);
+            if (best > maxOff) out.push(`train ${t.id} vehicle ${v.i} is ${best.toFixed(2)} tiles off its rails ` + JSON.stringify({ state: t.state, at: t.at, slot: t.slot, slotFrom: t.slotFrom, dir: t.dir, s: t.s, wx: v.wx, wy: v.wy, line: l.stops, apr: aprons.map((a) => [a.x, a.y, a.k]) }));
           }
         }
         return out;
       }, MAX_OFF_TILES);
       for (const b of bad) errors.push(`${orient} ${name}: ${b}`);
+      if (bad.length) await page.screenshot({ path: `${OUT}/FAIL-${name}-${orient}.png` });
     };
     await go('hill', 54, 35, [1]);
     await go('junction', 36, 34, []);

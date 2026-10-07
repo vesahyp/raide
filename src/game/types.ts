@@ -29,7 +29,7 @@ export interface SiteDef {
 
 export type Goal =
   | { kind: 'deliver'; good: Good; site: string; count: number; beforeYear: number }
-  | { kind: 'towns'; size: number; beforeYear: number };
+  | { kind: 'towns'; size: number; /** how many towns must reach it */ count: number; beforeYear: number };
 
 export interface ScenarioDef {
   id: string;
@@ -50,6 +50,8 @@ export interface ScenarioDef {
   sites: SiteDef[];
   /** the station the player starts with, a site id */
   startStation: string;
+  /** more stations the player starts with, site ids: a second place to begin from */
+  startStations?: string[];
   cash: number;
   startYear: number;
   goal: Goal;
