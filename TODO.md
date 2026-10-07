@@ -3,6 +3,13 @@
 Forward-looking only. Shipped items are deleted; git history is the record.
 The design is in `docs/design.md`; its "first hour" table is the order.
 
+## Now: the look is on hold
+
+Vesa, 2026-10-07: the 3D renderer stops here. The look he wants is Höyry's
+flat style, top down and zoomed in like Prison Architect, on a big map that
+scrolls. `docs/mockups/topdown/` has four screens in that style. Nothing is
+built on either renderer until he picks.
+
 ## Next: the build that puts the design on the screen
 
 Vesa played Harju on 2026-10-06: "drag a line, buy a train, wait". He could

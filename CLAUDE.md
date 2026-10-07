@@ -100,6 +100,8 @@ docs/
                         notes; `make mockups` renders mockups.html to png/ with Playwright)
     3d/               the three.js look test: one rendered valley scene, two camera takes
                         (`make scene3d`); three is a dependency for this and for what follows
+    topdown/          the top-down look test: Höyry's flat style on a big scrolling map, four
+                        screens (`make topdown`), waiting for Vesa's pick
   adr/                architecture decisions, one per file
 ```
 
