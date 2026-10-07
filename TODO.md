@@ -17,32 +17,6 @@ Each slice deploys to https://vesahyp.github.io/raide/ and is reported with
 the link and three steps to try on the phone. A slice is judged by looking
 at the screen on phone emulation. Scripted checks stay short.
 
-### Slice 2: the route under the finger
-
-Playable: every drag is a decision. The route under the finger is coloured
-by grade with chevrons uphill, with grey marks for cuttings and sand for
-fills. The plate shows cost, length, worst grade, earthwork and the light
-engine's speed on that grade. The way round is dashed beside it with its
-own cost, and the lift picks one. A Cancel button is under the thumb for
-the first second.
-
-- Sim (Sonnet): the route options with their numbers for each engine.
-- Renderer (Sonnet): the route, the marks and the dashed way round.
-- UI (Sonnet): the plate and the choice after the lift.
-- Checks (Sonnet): `drag-look` over the ridge in both orientations.
-
-### Slice 3: goods you can see
-
-Playable: what each site makes and wants is read from the map. Piles of
-logs, boards and sacks grow and shrink with the stock. The chips show at
-every zoom, and the whole map shows badges. A tap on a site opens its card:
-what it has, what it wants, every buyer of its output with the price now
-and the distance, and a button that starts a drag from there.
-
-- Renderer (Sonnet): the piles from the stock, chips and badges by zoom.
-- UI (Sonnet): the site card and its drag button.
-- Sim (Sonnet): the buyers list with price and distance.
-
 ### Slice 4: trains you run
 
 Playable: buy a train with an engine and wagons, add wagons, move a train
@@ -71,13 +45,19 @@ by year as a line.
 - UI (Sonnet): the ledger with its charts.
 - Check (Opus): one short thumb playthrough on video, watched.
 
-### Left from slice 1
+### Left from slices 1 to 3
 
 - `make playthrough` fails on Harju: the hand misses a buy step in
   portrait and loses with six lines in landscape. The bot wins headless.
 - The Harju ridge is a flat-topped mesa of uniform width; the mockup's
   ridge was softer. Revisit with slice 5's map work.
-- A spur that arrives at a station on a diagonal crosses the platform.
+- A spur that arrives at a station on a diagonal crosses the platform,
+  and at a station where several lines meet two trains can stand on top
+  of each other (seen at Koskensaha). Fix with slice 4's station work.
+- Pick mode (the site card's "Lay track from here") does not zoom out to
+  show every target; some sit off screen or under the zoom buttons.
+- The "Join to the railway" pick mode and the "why it is stuck" line have
+  no screenshot in `make goods` yet.
 
 ### For Vesa to decide
 
