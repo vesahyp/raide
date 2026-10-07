@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 
-const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
+const GPU = {};
 const scenario = process.argv[2] || 'harju';
 const seconds = Number(process.argv[3] || 20);
 const bot = process.env.BOT !== '0';

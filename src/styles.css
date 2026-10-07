@@ -93,6 +93,10 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .chip.wants.low { color: #ff9c8c; border-color: #c0392b; }
 .chip .gi { width: 16px; height: 16px; }
 .chip i { position: absolute; left: 3px; bottom: 1px; height: 2px; border-radius: 1px; background: currentColor; opacity: 0.8; }
+.badge { translate: -50% -50%; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.badge .c { width: 34px; height: 34px; border-radius: 50%; background: #f1e7cc; border: 2px solid #16120e; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgba(22, 18, 14, 0.5); }
+.badge .gi { width: 22px; height: 22px; }
+.badge .nm { font-weight: 900; font-size: 12px; color: #fff; white-space: nowrap; text-shadow: 0 0 3px #16120e, 0 1px 2px #16120e; }
 .float { font-weight: 800; font-size: 16px; translate: -50% -50%; text-shadow: 0 1px 0 #1b1a16, 0 0 3px rgba(20, 20, 15, 0.9); }
 .float.pay { color: var(--gold); }
 .float.cost { color: #ff9c8c; }

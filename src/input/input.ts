@@ -12,7 +12,7 @@ import type { SimState, Line, Site, Train } from '../game/types';
 import { plan, build } from '../game/sim';
 import { idx, inside, route, type Route } from '../game/grid';
 import { stationAt } from '../game/state';
-import type { Renderer3D } from '../render/render3d';
+import type { Renderer2D } from '../render/render2d';
 
 export interface Drag {
   from: number;
@@ -65,7 +65,7 @@ export class Input {
   constructor(
     private canvas: HTMLCanvasElement,
     private s: SimState,
-    private r: Renderer3D,
+    private r: Renderer2D,
     private ev: InputEvents,
   ) {
     canvas.style.touchAction = 'none';

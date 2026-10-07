@@ -11,7 +11,7 @@ import { createState, siteById, goodsOnMap } from '../game/state';
 import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf } from '../game/sim';
 import { ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
-import { Renderer3D, OPTION_COLOUR } from '../render/render3d';
+import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
 import { Input } from '../input/input';
 import { Bot } from '../../tools/bot';
 import { tr, t as tt, num } from '../i18n';
@@ -55,11 +55,11 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
 
   useEffect(() => {
     const canvas = canvasRef.current!;
-    const renderer = new Renderer3D(canvas, overlayRef.current!, s);
+    const renderer = new Renderer2D(canvas, overlayRef.current!, s);
     const params = new URLSearchParams(location.search);
     const speed = Math.max(0.25, Number(params.get('speed') ?? 1));
     const bot = params.get('bot') === '1' ? Bot.for(s) : null;
-    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer3D; __pace?: number; __plan?: (a: number, b: number) => unknown };
+    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer2D; __pace?: number; __plan?: (a: number, b: number) => unknown };
     w.__sim = s;
     w.__renderer = renderer;
     w.__pace = speed;
