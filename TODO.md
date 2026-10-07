@@ -17,31 +17,6 @@ Each slice deploys to https://vesahyp.github.io/raide/ and is reported with
 the link and three steps to try on the phone. A slice is judged by looking
 at the screen on phone emulation. Scripted checks stay short.
 
-### Slice 1: the big map, top down
-
-Playable: Harju as it plays today, on a 120 by 90 tile map in the new look.
-The player scrolls with one finger, pinches through the four zoom levels,
-drags a line, buys a train and watches it haul.
-
-- Sim (Sonnet): a scenario becomes a tile map, with one terrace level per
-  tile (a whole number, 10 m each), water, forest and fields. Harju is
-  redrawn as the mockup valley. Routing, the rail profile, and cut and fill
-  work on the tile grid. The bot's plan follows the new map; `make check`
-  passes and the bot wins.
-- Renderer (Sonnet): `src/render/render2d.ts`, ported from
-  `docs/mockups/topdown/scene.html`. The terrain is drawn once per chunk
-  into cached canvases, the sprites are cached the Höyry way, the trains run
-  on the track, and the whole-map zoom has its own simpler drawing.
-  `render3d.ts` and the three dependency are deleted.
-- Input and camera (Sonnet): one finger scrolls, a pinch zooms between
-  close up and the whole map, a drag from a station builds, the map
-  scrolls when the finger nears the edge during a drag, and a tap on a
-  train follows it.
-- Checks (Sonnet): `make look`, `drag-look`, `touch-check` and
-  `rotate-check` on the new renderer, and a frame-rate check at play zoom
-  on an emulated iPhone.
-- ADR 0003, top-down Canvas 2D in place of ADR 0002 (Opus).
-
 ### Slice 2: the route under the finger
 
 Playable: every drag is a decision. The route under the finger is coloured
@@ -96,11 +71,17 @@ by year as a line.
 - UI (Sonnet): the ledger with its charts.
 - Check (Opus): one short thumb playthrough on video, watched.
 
+### Left from slice 1
+
+- `make playthrough` fails on Harju: the hand misses a buy step in
+  portrait and loses with six lines in landscape. The bot wins headless.
+- The Harju ridge is a flat-topped mesa of uniform width; the mockup's
+  ridge was softer. Revisit with slice 5's map work.
+- A spur that arrives at a station on a diagonal crosses the platform.
+
 ### For Vesa to decide
 
 - How many Sonnet subagents run at once. The default is one at a time.
-  Two at once are possible where the pieces share no file, for example
-  the renderer and the sim in slice 1.
 
 Left in the design for a later build: tunnels, passengers and mail, loans,
 the harbour and the export sink, eras and the coal unlock, industries that
