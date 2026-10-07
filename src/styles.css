@@ -93,7 +93,13 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .chip.wants.low { color: #ff9c8c; border-color: #c0392b; }
 .chip .gi { width: 16px; height: 16px; }
 .chip i { position: absolute; left: 3px; bottom: 1px; height: 2px; border-radius: 1px; background: currentColor; opacity: 0.8; }
-.badge { translate: -50% -50%; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.site-tag, .badge { transition: opacity 0.15s; }
+.site-tag .name { display: flex; align-items: center; justify-content: center; gap: 4px; }
+.site-tag .rail { width: 20px; height: 20px; border-radius: 50%; background: var(--brass); border: 2px solid #16120e; display: inline-flex; align-items: center; justify-content: center; flex: none; box-sizing: border-box; }
+.site-tag .rail svg { width: 14px; height: 14px; }
+.chip.cost { background: rgba(27, 42, 30, 0.94); color: #8be08f; border: 1.5px solid #4fbf5a; padding: 2px 5px 2px 3px; }
+.chip.cost.dear { color: #ff9c8c; border-color: #f0a020; }
+.badge { translate: -50% -19px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .badge .c { width: 34px; height: 34px; border-radius: 50%; background: #f1e7cc; border: 2px solid #16120e; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgba(22, 18, 14, 0.5); }
 .badge .gi { width: 22px; height: 22px; }
 .badge .nm { font-weight: 900; font-size: 12px; color: #fff; white-space: nowrap; text-shadow: 0 0 3px #16120e, 0 1px 2px #16120e; }

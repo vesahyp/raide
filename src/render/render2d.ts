@@ -15,8 +15,8 @@
  */
 import type { Good, Line, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
-import { DIRS, cx, cy, gradeOf, stepLen } from '../game/grid';
-import { along, lineOf, railAlong, trainLength, price, demand } from '../game/sim';
+import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
+import { plan, along, lineOf, railAlong, trainLength, price, demand } from '../game/sim';
 import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, BASE_PRICE, TERRACE_M, CELL_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
 import {
@@ -40,6 +40,8 @@ export interface DragView {
   sy: number;
   ok: boolean;
   loose: boolean;
+  /** the cell the finger is on or snapped to */
+  to: number | null;
 }
 
 /** tiles in a chunk's side */
@@ -66,6 +68,8 @@ const CHUNK_PIXELS = 42e6;
 /** px a tile in the whole-map canvas */
 const OV = 10;
 const SMOKE_LIFE = 2.2;
+/** the round brass badge beside a station's name: two rails and sleepers, track starts here */
+const RAIL_BADGE = '<span class="rail"><svg viewBox="0 0 24 24"><g stroke="#2a2010" stroke-linecap="round"><path d="M8.5 3 V21 M15.5 3 V21" stroke-width="2.4"/><path d="M5.5 6.5 H18.5 M5.5 11 H18.5 M5.5 15.5 H18.5 M5.5 20 H18.5" stroke-width="2"/></g></svg></span>';
 
 
 interface Chunk {
@@ -172,6 +176,8 @@ export class Renderer2D {
 
   // the overlay
   private labels = new Map<string, HTMLElement>();
+  /** what a drag from one station can reach: the cheapest cost by site cell, null when no route; worked out once per drag */
+  private targets: { from: number; cost: Map<number, number | null> } | null = null;
   private floatEls = new Map<object, HTMLElement>();
   private hintEl: HTMLElement | null = null;
   private plateEl: HTMLElement | null = null;
@@ -1434,6 +1440,70 @@ export class Renderer2D {
       if (look.hub) sails(c, S, this.sx(look.hub.x), this.sy(look.hub.y, look.lv), lw);
   }
 
+  // ------------------------------------------------------------------ where a track can start and end
+
+  /** the marks for a drag: planned once when the drag starts, dropped when it ends */
+  private syncTargets(drag: DragView | null): void {
+    if (!drag) {
+      this.targets = null;
+      return;
+    }
+    if (this.targets && this.targets.from === drag.from) return;
+    const cost = new Map<number, number | null>();
+    for (const site of this.s.sites) {
+      const cell = idx(this.s, site.cx, site.cy);
+      if (cell === drag.from) continue;
+      const opts = plan(this.s, drag.from, cell);
+      cost.set(cell, opts.length ? Math.min(...opts.map((r) => r.cost)) : null);
+    }
+    this.targets = { from: drag.from, cost };
+  }
+
+  /** how a site is marked now: start (idle station), plain, ok (reachable and paid for), dear (reachable, cash short), none */
+  private markOf(site: Site): { kind: 'start' | 'plain' | 'ok' | 'dear' | 'none'; cost: number } {
+    const cell = idx(this.s, site.cx, site.cy);
+    const t = this.targets;
+    if (!t) return { kind: this.s.stations.some((o) => o.cell === cell) ? 'start' : 'plain', cost: 0 };
+    const c = t.cost.get(cell);
+    if (c === undefined || c === null) return { kind: 'none', cost: 0 };
+    return { kind: c <= this.s.cash ? 'ok' : 'dear', cost: c };
+  }
+
+  /** the rings on the map: brass where a track starts, green or amber where the drag can end */
+  private drawMarks(drag: DragView | null, lod: boolean): void {
+    const c = this.ctx;
+    const S = this.cam.s;
+    const pulse = (Math.sin((this.time * Math.PI * 2) / 1.6) + 1) / 2;
+    for (const site of this.s.sites) {
+      const m = this.markOf(site);
+      if (m.kind === 'plain' || m.kind === 'none') continue;
+      const p = this.project(site.cx + 0.5, site.cy + 0.5, 0);
+      if (p.x < -60 || p.x > this.w + 60 || p.y < -60 || p.y > this.h + 60) continue;
+      const here = !!drag && drag.to === idx(this.s, site.cx, site.cy);
+      const rgb = m.kind === 'start' ? '216,166,58' : m.kind === 'ok' ? '79,191,90' : '240,160,32';
+      // at play zoom the ring is big and steady and the fill pulses; on the whole map it is the old thin pulsing ring
+      let r = lod ? 27 * (1 + 0.07 * pulse) : Math.max(1.3 * S, 22);
+      const sw = lod ? 4 : Math.max(0.22 * S, 4);
+      if (here) r *= lod ? 1.3 : 1.2;
+      c.save();
+      c.globalAlpha = lod ? 0.72 + 0.28 * pulse : 1;
+      c.beginPath();
+      c.ellipse(p.x, p.y, r, r * 0.86, 0, 0, Math.PI * 2);
+      if (!lod || here) {
+        c.fillStyle = here ? `rgba(${rgb},0.4)` : `rgba(${rgb},${0.1 + 0.16 * pulse})`;
+        c.fill();
+      }
+      c.lineJoin = 'round';
+      c.strokeStyle = '#16120e';
+      c.lineWidth = sw + 4;
+      c.stroke();
+      c.strokeStyle = `rgb(${rgb})`;
+      c.lineWidth = sw;
+      c.stroke();
+      c.restore();
+    }
+  }
+
   draw(dt: number, drag: DragView | null, hint: Hint | null, pending: Route[] | null = null): void {
     const t0 = performance.now();
     const s = this.s;
@@ -1488,6 +1558,8 @@ export class Renderer2D {
     if (pending) pending.forEach((r, i) => this.drawRoute(r, OPTION_COLOUR[i] ?? OPTION_COLOUR[0], i > 0, true));
     else if (drag?.route) this.drawRoute(drag.route, drag.loose ? 'rgba(255,255,255,.85)' : null, !drag.ok, false);
     this.drawTrains(dt);
+    this.syncTargets(drag);
+    this.drawMarks(drag, lod);
     this.overlayFrame(drag, hint, pending, lod);
     if (this.logFps) this.fpsTick(t0);
   }
@@ -1532,15 +1604,20 @@ export class Renderer2D {
   }
 
   /** a site's name and its chips: what it has (count and stock bar), what it pays (price and demand bar) */
-  private siteLabel(site: Site, lod: boolean): void {
+  private siteLabel(site: Site, lod: boolean, drag: DragView | null): void {
     const s = this.s;
+    const mk = this.markOf(site);
+    const fade = mk.kind === 'none' ? '0.35' : '';
+    const cost = mk.kind === 'ok' || mk.kind === 'dear' ? `<span class="chip cost${mk.kind === 'dear' ? ' dear' : ''}"><svg class="gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#d8a63a" stroke="#16120e" stroke-width="2"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="#8a6414" stroke-width="2"/></svg><b>${mk.cost}</b></span>` : '';
+    void drag;
     const el = this.label(`site:${site.id}`, 'tag site-tag');
     const badge = this.label(`badge:${site.id}`, 'badge');
     if (lod) {
       el.style.display = 'none';
       const makes = MAKES[site.kind];
       const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
-      const html = `<span class="c">${icon}</span><span class="nm">${tt(site.name)}</span>`;
+      const html = `<span class="c">${icon}</span><span class="nm">${tt(site.name)}</span>${cost}`;
+      badge.style.opacity = fade;
       if (badge.innerHTML !== html) badge.innerHTML = html;
       this.place(badge, this.project(site.cx + 0.5, site.cy + 0.5, 0));
       return;
@@ -1548,7 +1625,8 @@ export class Renderer2D {
     badge.style.display = 'none';
     const makes = MAKES[site.kind];
     const takes = TAKES[site.kind].filter((g) => s.sites.some((o) => MAKES[o.kind] === g));
-    let html = `<div class="name">${tt(site.name)}${site.kind === 'town' ? ` <small>${site.size}</small>` : ''}</div><div class="chips">`;
+    const rail = mk.kind === 'start' ? RAIL_BADGE : '';
+    let html = `<div class="name">${rail}${tt(site.name)}${site.kind === 'town' ? ` <small>${site.size}</small>` : ''}${cost}</div><div class="chips">`;
     if (makes) {
       const n = Math.floor(site.stock);
       html += `<span class="chip has">${this.goodIcon(makes)}<b>${n}</b><i style="width:${Math.min(100, (100 * site.stock) / RAW_CAP)}%"></i></span>`;
@@ -1560,6 +1638,7 @@ export class Renderer2D {
     }
     html += '</div>';
     if (el.innerHTML !== html) el.innerHTML = html;
+    el.style.opacity = fade;
     el.style.translate = '-50% -100%';
     // the tag stands over the yard, which is north of the station
     const top = site.cy + yard(site.kind).dy0;
@@ -1588,7 +1667,7 @@ export class Renderer2D {
 
   private overlayFrame(drag: DragView | null, hint: Hint | null, pending: Route[] | null, lod: boolean): void {
     const s = this.s;
-    for (const site of s.sites) this.siteLabel(site, lod);
+    for (const site of s.sites) this.siteLabel(site, lod, drag);
     const seen = new Set<object>();
     for (const f of s.floats) {
       seen.add(f);

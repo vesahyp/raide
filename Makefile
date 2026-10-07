@@ -11,7 +11,7 @@
 #   make shots          # phone screenshots into shots/
 #   make look           # the quick look: the bot plays on an emulated iPhone, screenshots into shots/look/
 #   make spots          # the bot plays Harju, six views in both orientations into shots/spots/; fails on a train off its rails or a frame over 12 ms
-#   make drag-look      # a drag held under the finger, the lift and the route choice, into shots/look/drag-*.png
+#   make drag-look      # the start rings and the drag targets, portrait and landscape, into shots/look/targets-*.png
 #   make icon           # render public/icon.svg to the PNG icons
 #   make touch-check    # lays track and buys a train by touch on an emulated phone
 #   make rotate-check   # turning the phone mid-game must keep the state and the layout

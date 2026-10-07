@@ -1,13 +1,12 @@
-// The drag as the thumb sees it: a finger from the forest station toward a site, held mid-way
-// and at the site, screenshots of the route under it; then the lift and the choice card when
-// the lake or the ridge offers two routes. `node scripts/drag-look.mjs [scenario]` into
-// shots/look/drag-*.png. The check for a change to the route plate or the ghost route.
+// Where a track can start and end, as the thumb sees it, on Harju in portrait and landscape:
+// the idle start rings, a drag held toward Koskensaha with the green and amber targets, the
+// same drag on the whole-map zoom, and the view after the first line is built.
+// `node scripts/drag-look.mjs` into shots/look/targets-*.png.
 import { chromium, devices } from 'playwright';
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 
-const scenario = process.argv[2] || 'harju';
 const freePort = () => new Promise((resolve) => { const srv = createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });
 const port = await freePort();
 const server = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore' });
@@ -20,56 +19,59 @@ for (let i = 0; ; i++) {
 mkdirSync('shots/look', { recursive: true });
 const browser = await chromium.launch();
 const errors = [];
-const ctx = await browser.newContext({ ...devices['iPhone 15'], hasTouch: true });
-const page = await ctx.newPage();
-page.on('pageerror', (e) => errors.push(String(e)));
-const cdp = await ctx.newCDPSession(page);
-const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
-const at = (id) => page.evaluate((id) => { const s = window.__sim; const o = s.sites.find((x) => x.id === id); return window.__renderer.project(o.cx + 0.5, o.cy + 0.5, 1); }, id);
-try {
-  await page.goto(`http://localhost:${port}/raide/?lang=en&speed=1`);
-  await page.locator(`[data-scenario="${scenario}"]`).tap();
-  await page.waitForFunction(() => window.__sim, null, { timeout: 10000 });
-  await page.waitForTimeout(800);
-  await page.screenshot({ path: `shots/look/drag-0-start.png` });
-  const from = await at('forest');
-  const to = await at(scenario === 'harju' ? 'sawmill' : 'sawmill');
-  await touch('touchStart', [{ x: from.x, y: from.y, id: 1 }]);
-  for (let i = 1; i <= 8; i++) {
-    await touch('touchMove', [{ x: from.x + ((to.x - from.x) * i) / 16, y: from.y + ((to.y - from.y) * i) / 16, id: 1 }]);
-    await page.waitForTimeout(40);
-  }
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `shots/look/drag-1-midway.png` });
-  for (let i = 9; i <= 16; i++) {
-    await touch('touchMove', [{ x: from.x + ((to.x - from.x) * i) / 16, y: from.y + ((to.y - from.y) * i) / 16, id: 1 }]);
-    await page.waitForTimeout(40);
-  }
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `shots/look/drag-2-at-site.png` });
-  await touch('touchEnd', []);
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: `shots/look/drag-3-built.png` });
-  if (scenario === 'harju') {
-    // close the card, then the ridge: sawmill to farm offers two routes
-    await page.locator('.round.close').tap();
-    await page.waitForTimeout(300);
-    const a = await at('sawmill');
-    const b = await at('farm');
-    await touch('touchStart', [{ x: a.x, y: a.y, id: 1 }]);
-    for (let i = 1; i <= 16; i++) {
-      await touch('touchMove', [{ x: a.x + ((b.x - a.x) * i) / 16, y: a.y + ((b.y - a.y) * i) / 16, id: 1 }]);
-      await page.waitForTimeout(40);
-    }
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: `shots/look/drag-4-ridge.png` });
+for (const [orient, device] of [['portrait', 'iPhone 15'], ['landscape', 'iPhone 15 landscape']]) {
+  const ctx = await browser.newContext({ ...devices[device], hasTouch: true });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => errors.push(String(e)));
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  const at = (id) => page.evaluate((id) => { const s = window.__sim; const o = s.sites.find((x) => x.id === id); return window.__renderer.project(o.cx + 0.5, o.cy + 0.5, 1); }, id);
+  const shot = (name) => page.screenshot({ path: `shots/look/targets-${name}-${orient}.png` });
+  try {
+    const start = async () => {
+      await page.goto('http://localhost:' + port + '/raide/?lang=en&speed=1');
+      await page.locator('[data-scenario="harju"]').tap();
+      await page.waitForFunction(() => window.__sim, null, { timeout: 10000 });
+      await page.waitForTimeout(1200);
+    };
+    const wholeView = async () => {
+      for (let i = 0; i < 6; i++) await page.evaluate(() => window.__renderer.zoomStep(-1));
+      await page.waitForTimeout(1800);
+    };
+    const hold = async (n) => {
+      const a = await at('forest');
+      const b = await at('sawmill');
+      await touch('touchStart', [{ x: a.x, y: a.y, id: 1 }]);
+      for (let i = 1; i <= n; i++) {
+        await touch('touchMove', [{ x: a.x + ((b.x - a.x) * i) / 16, y: a.y + ((b.y - a.y) * i) / 16, id: 1 }]);
+        await page.waitForTimeout(40);
+      }
+      await page.waitForTimeout(500);
+    };
+    await start();
+    await shot('idle-play');
+    await wholeView();
+    await shot('idle-whole');
+    // a drag from Kuusikko held part way toward Koskensaha, then the same drag on the whole map
+    await start();
+    await hold(12);
+    await shot('drag-play');
+    await wholeView();
+    await shot('drag-whole');
+    await touch('touchCancel', []);
+    // build Kuusikko to Koskensaha and lift
+    await start();
+    await hold(16);
     await touch('touchEnd', []);
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: `shots/look/drag-5-choice.png` });
+    await page.waitForTimeout(800);
+    if (await page.locator('.round.close').count()) await page.locator('.round.close').first().tap();
+    await page.waitForTimeout(600);
+    await shot('idle-two');
+  } finally {
+    await ctx.close();
   }
-} finally {
-  await browser.close();
-  server.kill();
 }
+await browser.close();
+server.kill();
 if (errors.length) { console.error(errors.join('\n')); process.exit(1); }
-console.log('shots/look/drag-*.png');
+console.log('shots/look/targets-*.png');
