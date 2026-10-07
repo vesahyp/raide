@@ -33,15 +33,26 @@ button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
 /* --- screens --- */
 .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; padding: calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px); text-align: center; background: radial-gradient(ellipse at 50% 0%, var(--pine-3) 0%, var(--pine) 70%); overflow-y: auto; }
-.title h1 { margin: 6px 0 2px; font-size: 64px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brass); line-height: 1; text-shadow: 0 3px 0 #5a3f10; }
-.title .tagline { margin: 0 0 20px; color: var(--bone-dim); font-size: 16px; }
-.title-art { width: min(320px, 80vw); }
-.title-train { width: 100%; height: auto; display: block; }
-.scenarios { display: flex; flex-direction: column; gap: 10px; width: min(360px, 100%); }
-.btn.scenario { flex-direction: column; gap: 2px; }
-.btn.scenario small { font-size: 13px; font-weight: 500; text-transform: none; letter-spacing: 0; opacity: 0.85; }
-.btn.lang { min-width: 0; margin-top: 18px; padding: 10px 18px; font-size: 15px; }
-.build { position: absolute; bottom: calc(var(--sab) + 6px); left: 0; right: 0; text-align: center; color: rgba(239, 230, 207, 0.3); font: 600 12px var(--f-body); letter-spacing: 0.08em; pointer-events: none; }
+/* --- the start screen: the game's own map moving behind, a title, one card a scenario --- */
+.home { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; padding: calc(var(--sat) + 20px) calc(var(--sar) + 16px) calc(var(--sab) + 28px) calc(var(--sal) + 16px); background: var(--pine); overflow: hidden; text-align: center; }
+.home-map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.home-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(14, 24, 16, 0.88) 0%, rgba(14, 24, 16, 0.5) 26%, rgba(14, 24, 16, 0.12) 50%, rgba(14, 24, 16, 0.55) 72%, rgba(14, 24, 16, 0.92) 100%); }
+.home-head, .home-cards, .home-lang { position: relative; }
+.home-head { margin-top: 4vh; }
+.home h1 { margin: 0; font-size: 76px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brass); line-height: 1; text-shadow: 0 4px 0 #5a3f10, 0 6px 18px rgba(0, 0, 0, 0.55); }
+.home .tagline { margin: 10px 0 0; color: var(--bone); font-size: 16px; font-weight: 600; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); }
+.home-cards { margin-top: auto; width: min(420px, 100%); display: flex; flex-direction: column; gap: 12px; }
+.home-card { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 88px; padding: 8px; border-radius: 14px; border: 2px solid var(--brass-dim); background: rgba(27, 42, 30, 0.94); color: var(--bone); text-align: left; cursor: pointer; box-shadow: 0 3px 0 #0e1710, 0 8px 22px rgba(0, 0, 0, 0.45); transition: transform 0.05s; }
+.home-card:active { transform: translateY(3px); box-shadow: none; border-color: var(--brass); }
+.card-map { flex: none; width: 96px; height: 72px; border-radius: 8px; overflow: hidden; background: #3f88b4; border: 2px solid #0e1710; }
+.card-map canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.card-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 26px; font-weight: 900; letter-spacing: 0.02em; color: var(--gold); line-height: 1.1; }
+.card-stars { font-size: 16px; letter-spacing: 1px; color: var(--gold); }
+.card-text small { font-size: 13px; font-weight: 500; line-height: 1.25; color: var(--bone-dim); }
+.home-lang { position: absolute; top: calc(var(--sat) + 10px); right: calc(var(--sar) + 12px); width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--brass-dim); background: rgba(27, 42, 30, 0.92); color: var(--brass); font-weight: 900; font-size: 14px; letter-spacing: 0.04em; cursor: pointer; box-shadow: 0 2px 0 #0e1710; z-index: 2; }
+.home-lang:active { transform: translateY(2px); box-shadow: none; }
+.build { position: absolute; bottom: calc(var(--sab) + 6px); left: 0; right: 0; text-align: center; color: rgba(239, 230, 207, 0.5); font: 600 12px var(--f-body); letter-spacing: 0.08em; pointer-events: none; }
 h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em; color: var(--bone); line-height: 1.1; }
 .small { color: var(--bone-dim); font-size: 14px; margin: 8px 0; line-height: 1.4; }
 
@@ -190,6 +201,16 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
   .card.sheet { left: auto; right: calc(var(--sar) + 8px); bottom: 0; width: min(420px, 50%); margin: 0; }
 }
 
+/* the start screen in landscape: the title on the left third, the cards in a column on the right */
+@media (orientation: landscape) {
+  .home { flex-direction: row; align-items: center; justify-content: space-between; gap: 24px; padding-bottom: calc(var(--sab) + 22px); }
+  .home-shade { background: linear-gradient(to right, rgba(14, 24, 16, 0.9) 0%, rgba(14, 24, 16, 0.55) 34%, rgba(14, 24, 16, 0.2) 55%, rgba(14, 24, 16, 0.45) 100%), linear-gradient(to bottom, rgba(14, 24, 16, 0.5) 0%, rgba(14, 24, 16, 0) 30%, rgba(14, 24, 16, 0) 70%, rgba(14, 24, 16, 0.6) 100%); }
+  .home-head { margin: 0; width: 33%; flex: none; }
+  .home h1 { font-size: 56px; }
+  .home-cards { margin: 0; width: auto; flex: 1; max-width: 460px; }
+  .home-card { min-height: 80px; }
+}
+
 /* landscape: the HUD is a column on the left and the map takes the full height */
 @media (orientation: landscape) and (max-height: 520px) {
   .hud { flex-direction: column; align-items: stretch; width: 150px; right: auto; height: auto; top: calc(var(--sat) + 8px); bottom: calc(var(--sab) + 8px); left: calc(var(--sal) + 8px); }
@@ -198,12 +219,6 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
   .hud-goal .bar { flex: 1 0 100%; }
   .hud-goal .until { display: none; }
   .hud .pause { align-self: center; margin-top: auto; }
-  .title-art { width: 180px; }
-  .title h1 { font-size: 40px; margin-top: 0; }
-  .title .tagline { margin-bottom: 8px; font-size: 14px; }
-  .btn.scenario { padding: 10px 20px; font-size: 20px; }
-  .btn.lang { margin-top: 8px; }
-  .build { display: none; }
   .card.ledger { width: min(700px, calc(100% - 32px)); max-height: calc(100% - 16px); }
   .card.ledger h2 { font-size: 22px; margin-bottom: 2px; }
   .ledger-body { flex-direction: row; gap: 16px; }

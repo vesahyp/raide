@@ -13,11 +13,12 @@
  * Text and chips are HTML in the overlay div, placed each frame by projecting tile points, so
  * they stay crisp at any zoom.
  */
-import type { Good, Line, SimState, Site, Train } from '../game/types';
+import type { Good, Line, ScenarioDef, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, demand, SLOTS_MAX, workingWagon } from '../game/sim';
+import { createState } from '../game/state';
 import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
 import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, DEMAND_FLOOR, TERRACE_M, yard } from '../game/content/economy';
@@ -234,6 +235,10 @@ export class Renderer2D {
   /** the camera: the tile at the middle of the free area of the screen, and px a tile */
   private cam = { x: 0, y: 0, s: PLAY_S };
   private zoomTo: number | null = null;
+  /** the start screen's view: the whole screen is the map, with no labels, pillars or marks */
+  backdrop = false;
+  /** a canvas size to use instead of the element's, for a map drawn off screen */
+  fixed: { w: number; h: number } | null = null;
   /** a tile point the view eases to, with the zoom */
   private glide: { x: number; y: number } | null = null;
   private followId: number | null = null;
@@ -324,6 +329,7 @@ export class Renderer2D {
 
   dispose(): void {
     this.overlay.innerHTML = '';
+    if (this.backdrop && !this.fixed) this.canvas.width = this.canvas.height = 0;
     this.chunks.clear();
     this.piles.clear();
     this.overview = null;
@@ -1428,8 +1434,8 @@ export class Renderer2D {
   /** the screen's free area: under the HUD bar in portrait, right of the HUD column in landscape */
   area(): { l: number; t: number; w: number; h: number } {
     // the landscape HUD column is 150 px wide at an 8 px margin
-    const l = this.landscape ? 160 : 0;
-    const t = this.landscape ? 0 : 68;
+    const l = this.landscape && !this.backdrop ? 160 : 0;
+    const t = this.landscape || this.backdrop ? 0 : 68;
     return { l, t, w: this.w - l, h: this.h - t };
   }
 
@@ -1458,8 +1464,8 @@ export class Renderer2D {
   }
 
   resize(): void {
-    const w = this.canvas.clientWidth || window.innerWidth;
-    const h = this.canvas.clientHeight || window.innerHeight;
+    const w = this.fixed?.w ?? (this.canvas.clientWidth || window.innerWidth);
+    const h = this.fixed?.h ?? (this.canvas.clientHeight || window.innerHeight);
     if (w === this.w && h === this.h) return;
     const first = this.w === 1;
     this.w = w;
@@ -1467,6 +1473,14 @@ export class Renderer2D {
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
     if (!first) this.fit();
+  }
+
+  /** the camera on a tile point at px a tile, for the start screen's slow pan */
+  setView(x: number, y: number, scale: number): void {
+    this.cam.x = x;
+    this.cam.y = y;
+    this.cam.s = scale;
+    this.clampCam();
   }
 
   /** the start station and the nearest other site in view, at play zoom or a little wider */
@@ -2018,15 +2032,17 @@ export class Renderer2D {
     }
     this.drawTrains(dt);
     // clouds and their shadows over land, track and trains, under the pillars and the HTML overlay
-    this.clouds.draw(c, this.dpr, this.time, dt, this.cam.s, this.wholeScale(), !!drag || this.picking || !!this.laying,
+    if (!this.fixed) this.clouds.draw(c, this.dpr, this.time, dt, this.cam.s, this.wholeScale(), !!drag || this.picking || !!this.laying,
       (x) => this.sx(x), (y) => this.sy(y), { w: this.w, h: this.h });
     this.syncTargets(drag);
     if (this.pickFitDue && this.targets) {
       this.pickFitDue = false;
       this.fitPick();
     }
-    this.drawMarks(drag, lod);
-    this.overlayFrame(drag, hint, pending, lod);
+    if (!this.backdrop) {
+      this.drawMarks(drag, lod);
+      this.overlayFrame(drag, hint, pending, lod);
+    }
     if (this.logFps) this.fpsTick(t0);
   }
 
@@ -2361,4 +2377,37 @@ export class Renderer2D {
     }
     for (const [key, el] of this.labels) if (key.startsWith('load:') && !seen.has(key)) el.style.display = 'none';
   }
+}
+
+/** the colour of a site's dot on a map preview */
+const DOT: Record<string, string> = { town: '#b5382c', forest: '#2f5f30', farm: '#d9bd5a', sawmill: '#8a6a44', mill: '#efe6cf' };
+
+/**
+ * A scenario's whole map in the game's whole-map look, drawn once on an offscreen canvas of w by h
+ * CSS pixels: the terrace bands, water and forest from the renderer, a dot for each site. Land is
+ * all it shows, so the map fills the canvas with a little margin.
+ */
+export function mapPreview(sc: ScenarioDef, w: number, h: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  const st = createState(sc);
+  const r = new Renderer2D(canvas, document.createElement('div'), st);
+  r.backdrop = true;
+  r.fixed = { w, h };
+  r.resize();
+  r.setView(st.w / 2, st.h / 2, 0);
+  r.draw(0, null, null);
+  const c = canvas.getContext('2d')!;
+  for (const site of st.sites) {
+    const p = r.project(site.cx + 0.5, site.cy + 0.5, 0);
+    c.fillStyle = '#16120e';
+    c.beginPath();
+    c.arc(p.x, p.y, 3.4, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = DOT[site.kind] ?? '#d8a63a';
+    c.beginPath();
+    c.arc(p.x, p.y, 2.3, 0, Math.PI * 2);
+    c.fill();
+  }
+  r.dispose();
+  return canvas;
 }

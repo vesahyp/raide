@@ -71,10 +71,12 @@ const judge = (st, label) => {
   if (st.sheet) check(st.sheet.l >= -1 && st.sheet.r <= st.iw + 1 && st.sheet.b <= st.ih + 1, `${label}: the open card is on screen`);
   check(st.scrollW <= st.iw, `${label}: nothing overflows sideways (${st.scrollW} of ${st.iw})`);
 };
-const menuState = () => page.evaluate(() => ({ iw: window.innerWidth, scrollW: document.scrollingElement.scrollWidth, btn: document.querySelector('[data-track="title-play"]').getBoundingClientRect() }));
+const menuState = () => page.evaluate(() => ({ iw: window.innerWidth, scrollW: document.scrollingElement.scrollWidth, ih: window.innerHeight, btn: document.querySelector('[data-track="title-play"]').getBoundingClientRect(), last: [...document.querySelectorAll('[data-track="title-play"]')].pop().getBoundingClientRect(), canvas: document.querySelector('.home-map').getBoundingClientRect().width }));
 const judgeMenu = (st, label) => {
   check(st.scrollW <= st.iw, `${label}: the title does not overflow sideways (${st.scrollW} of ${st.iw})`);
   check(st.btn.right <= st.iw + 1 && st.btn.left >= -1, `${label}: the Play button is inside the screen`);
+  check(st.btn.top >= 0 && st.last.bottom <= st.ih + 1, `${label}: every scenario card is on screen without scrolling`);
+  check(Math.abs(st.canvas - st.iw) <= 1, `${label}: the map behind fills the screen`);
 };
 try {
   await page.goto(`http://localhost:${port}/?lang=en&bot=1&speed=3`);

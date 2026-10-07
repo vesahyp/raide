@@ -18,6 +18,7 @@ import { Bot } from '../../tools/bot';
 import { tr, t as tt, num } from '../i18n';
 import { play, unlock, isMuted, setMuted } from '../audio';
 import { track } from '../track';
+import { saveStars } from '../results';
 import { YearEndCard } from './Ledger';
 
 type Card =
@@ -130,6 +131,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       }
       // the sim's own stops open their cards
       if (s.result && cardRef.current?.kind !== 'result') {
+        saveStars(scenario.id, s.result.stars);
         track('scenario_end', { scenario: scenario.id, won: s.result.won, year: s.result.year, cash: s.result.cash, stars: s.result.stars });
         setCard({ kind: 'result' });
       } else if (s.yearEnd && !s.result && cardRef.current?.kind !== 'yearEnd') {

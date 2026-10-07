@@ -1,50 +1,150 @@
-import type { ScenarioDef } from '../game/types';
-import { SCENARIOS } from '../game/content/scenarios';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ScenarioDef, SimState } from '../game/types';
+import { HARJU, SCENARIOS } from '../game/content/scenarios';
+import { createState, siteById } from '../game/state';
+import { DT, step, plan, build, buyTrain, closeYearEnd } from '../game/sim';
+import { idx } from '../game/grid';
+import { Renderer2D, mapPreview } from '../render/render2d';
 import { tr, t, lang, setLang } from '../i18n';
+import { bestStars } from '../results';
 import { BUILD_NAME } from '../version';
-import { useState } from 'react';
+
+/** a live Harju for the start screen: a few lines and six trains, so the map is running */
+function backdropState(): SimState {
+  const s = createState(HARJU);
+  s.cash = 1e6;
+  const line = (a: string, b: string, mode: 'cheap' | 'short') => {
+    const from = siteById(s, a);
+    const to = siteById(s, b);
+    const options = plan(s, idx(s, from.cx, from.cy), idx(s, to.cx, to.cy));
+    const r = options.find((o) => o.mode === mode) ?? options[0];
+    return r ? build(s, r) : null;
+  };
+  const run = (l: ReturnType<typeof line>, wagons: 'flat' | 'box' | 'hopper', engine: 'hilma' | 'jyry' = 'hilma') => l && buyTrain(s, l.id, wagons, engine, 3);
+  run(line('forest', 'sawmill', 'cheap'), 'flat');
+  run(line('sawmill', 'hameenlinna', 'cheap'), 'box');
+  run(line('sawmill', 'tampere', 'cheap'), 'box');
+  run(line('tampere', 'mill', 'short'), 'box');
+  run(line('mill', 'farm', 'short'), 'hopper', 'jyry');
+  run(line('mill', 'hameenlinna', 'short'), 'box');
+  for (let i = 0; i < 900; i++) step(s);
+  return s;
+}
+
+/** the slow tour of the valley: tile points the camera goes between and back, and tiles a second */
+const TOUR: [number, number][] = [[26, 36], [48, 58], [76, 42]];
+const TOUR_SPEED = 3;
+const TOUR_SCALE = 15;
+
+/** The map behind the start screen: Harju drawn by the game's own renderer, panning, with no input. */
+function Backdrop() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current!;
+    const s = backdropState();
+    const r = new Renderer2D(canvas, document.createElement('div'), s);
+    r.backdrop = true;
+    const legs = TOUR.slice(1).map((p, i) => Math.hypot(p[0] - TOUR[i][0], p[1] - TOUR[i][1]));
+    const total = legs.reduce((a, b) => a + b, 0);
+    // the camera on the tour at a distance from its start
+    const at = (d: number): [number, number] => {
+      for (let i = 0; i < legs.length; i++) {
+        if (d <= legs[i] || i === legs.length - 1) {
+          const k = Math.min(1, d / legs[i]);
+          return [TOUR[i][0] + (TOUR[i + 1][0] - TOUR[i][0]) * k, TOUR[i][1] + (TOUR[i + 1][1] - TOUR[i][1]) * k];
+        }
+        d -= legs[i];
+      }
+      return TOUR[0];
+    };
+    const period = (2 * total) / TOUR_SPEED;
+    let clock = 0;
+    let last = performance.now();
+    let acc = 0;
+    let raf = 0;
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      const real = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      clock += real;
+      acc += real;
+      for (let n = 0; acc >= DT && n < 8; n++, acc -= DT) {
+        s.cash = 1e6;
+        if (s.yearEnd) closeYearEnd(s, 'forest');
+        s.result = null;
+        step(s);
+      }
+      // a cosine ease at each end of the tour
+      const p = at(total * (0.5 - 0.5 * Math.cos((2 * Math.PI * clock) / period)));
+      r.setView(p[0], p[1], TOUR_SCALE);
+      r.draw(real, null, null);
+    };
+    raf = requestAnimationFrame(tick);
+    const onResize = () => r.resize();
+    window.addEventListener('resize', onResize);
+    const w = window as unknown as { __backdrop?: Renderer2D };
+    w.__backdrop = r;
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+      r.dispose();
+      delete w.__backdrop;
+    };
+  }, []);
+  return <canvas ref={ref} className="home-map" aria-hidden />;
+}
+
+/** a scenario's whole map on a small canvas, drawn once and kept */
+const previews = new Map<string, HTMLCanvasElement>();
+const PREVIEW_PX = 2;
+
+function Preview({ sc }: { sc: ScenarioDef }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let c = previews.get(sc.id);
+    if (!c) {
+      c = mapPreview(sc, sc.w * PREVIEW_PX + 16, sc.h * PREVIEW_PX + 16);
+      previews.set(sc.id, c);
+    }
+    box.current!.replaceChildren(c);
+  }, [sc]);
+  return <div className="card-map" ref={box} aria-hidden />;
+}
 
 export function Title({ onPlay }: { onPlay: (sc: ScenarioDef) => void }) {
   const [, bump] = useState(0);
+  const stars = useMemo(() => Object.fromEntries(SCENARIOS.map((sc) => [sc.id, bestStars(sc.id)])), []);
   return (
-    <div className="screen title">
-      <div className="title-art" aria-hidden>
-        <svg viewBox="0 0 320 120" className="title-train">
-          <rect x="0" y="92" width="320" height="4" fill="#2b2620" />
-          {Array.from({ length: 16 }, (_, i) => (
-            <rect key={i} x={i * 20 + 4} y="88" width="6" height="12" fill="#6b4f2e" />
-          ))}
-          <rect x="24" y="52" width="60" height="36" rx="4" fill="#8f3b2e" />
-          <rect x="96" y="52" width="60" height="36" rx="4" fill="#8f3b2e" />
-          <rect x="168" y="58" width="70" height="30" rx="3" fill="#7b5a3a" />
-          <rect x="174" y="48" width="58" height="8" fill="#c69a62" />
-          <rect x="250" y="40" width="60" height="48" rx="6" fill="#1f1d1a" />
-          <rect x="296" y="24" width="10" height="20" fill="#1f1d1a" />
-          <circle cx="282" cy="56" r="6" fill="#d8a63a" />
-          <circle cx="262" cy="90" r="6" fill="#444" />
-          <circle cx="298" cy="90" r="6" fill="#444" />
-          <circle cx="300" cy="14" r="8" fill="rgba(240,240,235,0.8)" />
-          <circle cx="288" cy="4" r="6" fill="rgba(240,240,235,0.6)" />
-        </svg>
+    <div className="home title">
+      <Backdrop />
+      <div className="home-shade" />
+      <div className="home-head">
+        <h1>Raide</h1>
+        <p className="tagline">{tr('Vedä rata. Osta juna. Kuljeta tukit.', 'Drag track. Buy a train. Haul the timber.')}</p>
       </div>
-      <h1>Raide</h1>
-      <p className="tagline">{tr('Vedä rata. Osta juna. Kuljeta tukit.', 'Drag track. Buy a train. Haul the timber.')}</p>
-      <div className="scenarios">
+      <div className="home-cards">
         {SCENARIOS.map((sc) => (
-          <button key={sc.id} className="btn primary big scenario" onClick={() => onPlay(sc)} data-track="title-play" data-scenario={sc.id}>
-            <span>{t(sc.name)}</span>
-            <small>{t(sc.blurb)}</small>
+          <button key={sc.id} className="home-card" onClick={() => onPlay(sc)} data-track="title-play" data-scenario={sc.id}>
+            <Preview sc={sc} />
+            <span className="card-text">
+              <span className="card-name">
+                {t(sc.name)}
+                {stars[sc.id] > 0 && <span className="card-stars" aria-label={`${stars[sc.id]} / 3`}>{'★'.repeat(stars[sc.id])}{'☆'.repeat(3 - stars[sc.id])}</span>}
+              </span>
+              <small>{t(sc.blurb)}</small>
+            </span>
           </button>
         ))}
       </div>
       <button
-        className="btn lang"
+        className="home-lang"
+        aria-label={lang() === 'fi' ? 'In English' : 'Suomeksi'}
         onClick={() => {
           setLang(lang() === 'fi' ? 'en' : 'fi');
           bump((x) => x + 1);
         }}
       >
-        {lang() === 'fi' ? 'In English' : 'Suomeksi'}
+        {lang() === 'fi' ? 'EN' : 'FI'}
       </button>
       <div className="build">{BUILD_NAME}</div>
     </div>
