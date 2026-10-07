@@ -10,6 +10,7 @@
 #   make shots-setup    # once: install Playwright
 #   make shots          # phone screenshots into shots/
 #   make look           # the quick look: the bot plays on an emulated iPhone, screenshots into shots/look/
+#   make spots          # the bot plays Harju, six views in both orientations into shots/spots/; fails on a train off its rails or a frame over 12 ms
 #   make drag-look      # a drag held under the finger, the lift and the route choice, into shots/look/drag-*.png
 #   make icon           # render public/icon.svg to the PNG icons
 #   make touch-check    # lays track and buys a train by touch on an emulated phone
@@ -31,7 +32,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots look drag-look icon touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots look spots drag-look icon touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -61,6 +62,9 @@ SCENARIO ?= harju
 SECONDS ?= 30
 look: build
 	node scripts/look.mjs $(SCENARIO) $(SECONDS)
+
+spots: build
+	node scripts/spots.mjs
 
 # the route under the finger mid-drag and at the site, then the choice card after the lift
 drag-look: build

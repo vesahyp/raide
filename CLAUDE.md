@@ -89,6 +89,9 @@ tools/
 scripts/
   look.mjs            make look: the bot plays on an emulated iPhone, screenshots in both orientations
                         and one with the camera on a train; the check for a renderer change
+  spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
+                        check that every running train sits on its rails and that a frame at play zoom
+                        takes 12 ms or less; the check for a change to trains, track or the camera
   drag-look.mjs       make drag-look: a drag held mid-way and at the site, the lift and the route
                         choice card; the check for a change to the route plate or the ghost route
   shots.mjs           phone screenshots with Playwright, the bot playing

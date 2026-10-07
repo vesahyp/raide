@@ -177,6 +177,7 @@ export class Renderer2D {
   private plateEl: HTMLElement | null = null;
 
   // the frame timer for ?fps=1
+  private sideOf = new Map<number, number>();
   private logFps = new URLSearchParams(location.search).get('fps') === '1';
   private lastDraw = 0;
   private frameMs = 0;
@@ -826,10 +827,37 @@ export class Renderer2D {
     return { x, y, lv: railAlong(line, d) / TERRACE_M, dx: p.dx, dy: p.dy };
   }
 
+  /**
+   * The sideways offset the train wants: its slot at a platform, so trains waiting at one station
+   * stand side by side, but zero on the open line, where it must sit on its rails. Running, the
+   * offset fades in over the last cells before the station it runs to.
+   */
+  private sideTarget(t: Train): number {
+    const full = t.slot * 0.62;
+    if (t.state !== 'run') return full;
+    const line = lineOf(this.s, t);
+    const end = line.dist[line.dist.length - 1];
+    const left = t.dir === 1 ? end - t.s : t.s;
+    return full * Math.max(0, Math.min(1, 1 - (left - 0.5) / 2));
+  }
+
+  /** each train's drawn offset eases to its target, so a train pulling out of a platform slides onto the line */
+  private easeSides(dt: number): void {
+    const k = 1 - Math.exp(-dt * 5);
+    const live = new Set<number>();
+    for (const t of this.s.trains) {
+      live.add(t.id);
+      const want = this.sideTarget(t);
+      const now = this.sideOf.get(t.id);
+      this.sideOf.set(t.id, now === undefined ? want : now + (want - now) * k);
+    }
+    for (const id of this.sideOf.keys()) if (!live.has(id)) this.sideOf.delete(id);
+  }
+
   private vehicles(t: Train): Veh[] {
     const line = lineOf(this.s, t);
     const out: Veh[] = [];
-    const side = t.slot * 0.62;
+    const side = this.sideOf.get(t.id) ?? this.sideTarget(t);
     let d = t.s;
     for (let i = 0; i <= t.nWagons; i++) {
       const len = i === 0 ? ENGINE_LEN : WAGON_LEN;
@@ -866,6 +894,7 @@ export class Renderer2D {
   }
 
   private drawTrains(dt: number): void {
+    this.easeSides(dt);
     const c = this.ctx;
     const S = this.cam.s;
     const s = this.s;
