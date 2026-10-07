@@ -17,23 +17,6 @@ Each slice deploys to https://vesahyp.github.io/raide/ and is reported with
 the link and three steps to try on the phone. A slice is judged by looking
 at the screen on phone emulation. Scripted checks stay short.
 
-### Slice 4: trains you run
-
-Playable: buy a train with an engine and wagons, add wagons, move a train
-to another line. At close up the station loads the train wagon by wagon.
-The train card shows the consist, the load, the trip time full and empty,
-this year's earnings, and the speed on the line's worst grade for each
-engine.
-
-- Sim (Sonnet): moving a train to another line; the trip times and the
-  earnings per train.
-- UI (Sonnet): the buy card and the train card.
-- Renderer (Sonnet): loading at the platform, the load tag on the train.
-- Sim, renderer, UI (Sonnet): the dwell (design: "Loading takes time"):
-  a train stops fully on its platform track, each wagon unloads and loads
-  in turn with the goods seen moving, the train leaves when done. The
-  first station upgrade, the loading crew, bought on the station's card.
-
 ### Slice 5: a map worth a session
 
 Playable: Harju with more sites: a second forest, a second farm and a
@@ -49,17 +32,15 @@ by year as a line.
 - UI (Sonnet): the ledger with its charts.
 - Check (Opus): one short thumb playthrough on video, watched.
 
-### Left from slices 1 to 3
+### Left from slices 1 to 4
 
 - `make playthrough` fails on Harju: the hand misses a buy step in
   portrait and loses with six lines in landscape. The bot wins headless.
 - The Harju ridge is a flat-topped mesa of uniform width; the mockup's
   ridge was softer. Revisit with slice 5's map work.
-- A spur that arrives at a station on a diagonal crosses the platform,
-  and at a station where several lines meet two trains can stand on top
-  of each other (seen at Koskensaha). Fix with slice 4's station work.
-- Pick mode (the site card's "Lay track from here") does not zoom out to
-  show every target; some sit off screen or under the zoom buttons.
+- At Koskensaha the east points of the platform tracks sit on the bridge
+  deck. At a terminus the train turns in one frame; an engine that runs
+  round its train would read better.
 - The "Join to the railway" pick mode and the "why it is stuck" line have
   no screenshot in `make goods` yet.
 
