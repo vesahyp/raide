@@ -7,7 +7,6 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 
-const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 const scenario = process.argv[2] || 'harju';
 const freePort = () => new Promise((resolve) => { const srv = createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });
 const port = await freePort();
@@ -19,7 +18,7 @@ for (let i = 0; ; i++) {
   await new Promise((r) => setTimeout(r, 500));
 }
 mkdirSync('shots/look', { recursive: true });
-const browser = await chromium.launch(GPU);
+const browser = await chromium.launch();
 const errors = [];
 const ctx = await browser.newContext({ ...devices['iPhone 15'], hasTouch: true });
 const page = await ctx.newPage();

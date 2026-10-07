@@ -3,10 +3,14 @@
  * site or station it ends on; the route and its cost follow the finger,
  * and when the lake or a hill offers two routes the lift hands them to the
  * UI to choose from. A drag that starts anywhere else pans the view. Two
- * fingers pinch to zoom and twist to turn. A tap on a train opens its card
- * and the camera follows it; a tap on a site opens the site's; a tap on a
- * station or a track cell the line's. Pointer events, so a mouse works the
- * same way (one finger only).
+ * fingers pinch to zoom and move the view, also while a drag from a station
+ * goes on (the drag stays, the finger that holds it keeps aiming). Near an
+ * edge of the screen a drag scrolls the view, faster the closer it gets
+ * (`update`, called each frame). On the whole-map zoom a drag only pans, a
+ * tap on a train follows it and a tap anywhere else zooms in there. A tap on
+ * a train opens its card and the camera follows it; a tap on a site opens the
+ * site's; a tap on a station or a track cell the line's. Pointer events, so a
+ * mouse works the same way (one finger only).
  */
 import type { SimState, Line, Site, Train } from '../game/types';
 import { plan, build } from '../game/sim';
@@ -47,6 +51,10 @@ export interface InputEvents {
 const GRAB = 1.1;
 /** how close to a site's centre the finger must be for the route to snap to it */
 const SNAP = 1.4;
+/** a dragging finger this close to the edge of the free area scrolls the view, in px */
+const EDGE = 48;
+/** the scroll speed at the edge, px a second */
+const EDGE_SPEED = 600;
 
 interface Finger {
   id: number;
@@ -59,8 +67,10 @@ interface Finger {
 export class Input {
   drag: Drag | null = null;
   private fingers: Finger[] = [];
-  private mode: 'none' | 'build' | 'pan' | 'pinch' = 'none';
-  private pinch: { dist: number; ang: number } | null = null;
+  private mode: 'none' | 'build' | 'pan' = 'none';
+  private pinch: { dist: number; ang: number; mx: number; my: number } | null = null;
+  /** the finger that holds the drag */
+  private dragId = -1;
   private moved = 0;
   constructor(
     private canvas: HTMLCanvasElement,
@@ -126,18 +136,37 @@ export class Input {
       this.moved = 0;
       const at = this.cellAt(e.clientX, e.clientY);
       const from = at ? this.stationNear(at.x, at.y, GRAB) : null;
-      if (from !== null) {
+      if (from !== null && !this.r.whole) {
         this.mode = 'build';
+        this.dragId = e.pointerId;
         this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
       } else this.mode = 'pan';
     } else if (this.fingers.length === 2) {
-      // a second finger: whatever the first was doing, this is a pinch now
-      this.mode = 'pinch';
-      this.drag = null;
-      const [a, b] = this.fingers;
-      this.pinch = { dist: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) };
+      // a second finger: the view pinches; a drag from a station goes on under its own finger
+      if (this.mode === 'none') this.mode = 'pan';
+      this.startPinch();
     }
   };
+
+  private startPinch(): void {
+    const [a, b] = this.fingers;
+    this.pinch = { dist: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  }
+
+  /** each frame: a drag near the edge scrolls the view, and the route follows the map moving under the finger */
+  update(dt: number): void {
+    const d = this.drag;
+    if (!d || this.mode !== 'build') return;
+    const a = this.r.area();
+    // 1 at the edge or beyond it, 0 at EDGE away
+    const near = (dist: number) => Math.min(1, Math.max(0, (EDGE - dist) / EDGE));
+    const vx = near(a.l + a.w - d.sx) - near(d.sx - a.l);
+    const vy = near(a.t + a.h - d.sy) - near(d.sy - a.t);
+    if (vx === 0 && vy === 0) return;
+    // the view moves toward the edge, so the map moves the other way under the finger
+    this.r.pan(-vx * EDGE_SPEED * dt, -vy * EDGE_SPEED * dt);
+    this.aim(d);
+  }
 
   private onMove = (e: PointerEvent): void => {
     const f = this.fingers.find((o) => o.id === e.pointerId);
@@ -147,15 +176,21 @@ export class Input {
     f.x = e.clientX;
     f.y = e.clientY;
     this.moved = Math.max(this.moved, Math.hypot(f.x - f.x0, f.y - f.y0));
-    if (this.mode === 'pinch' && this.fingers.length >= 2 && this.pinch) {
+    if (this.pinch && this.fingers.length >= 2) {
       const [a, b] = this.fingers;
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
-      let da = ang - this.pinch.ang;
-      if (da > Math.PI) da -= 2 * Math.PI;
-      if (da < -Math.PI) da += 2 * Math.PI;
-      this.r.pinch(dist / Math.max(1, this.pinch.dist), da, (a.x + b.x) / 2, (a.y + b.y) / 2);
-      this.pinch = { dist, ang };
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      this.r.pinch(dist / Math.max(1, this.pinch.dist), 0, mx, my, this.pinch.mx, this.pinch.my);
+      this.pinch = { dist, ang, mx, my };
+      // the drag's finger may not have moved, but the map did
+      const held = this.fingers.find((o) => o.id === this.dragId);
+      if (this.drag && held) {
+        this.drag.sx = held.x;
+        this.drag.sy = held.y;
+        this.aim(this.drag);
+      }
       return;
     }
     if (this.mode === 'pan') {
@@ -163,10 +198,16 @@ export class Input {
       return;
     }
     if (this.mode !== 'build' || !this.drag) return;
+    if (e.pointerId !== this.dragId) return;
     const d = this.drag;
     d.sx = e.clientX;
     d.sy = e.clientY;
-    const at = this.cellAt(e.clientX, e.clientY);
+    this.aim(d);
+  };
+
+  /** plan the route to what is under the drag's finger now */
+  private aim(d: Drag): void {
+    const at = this.cellAt(d.sx, d.sy);
     if (!at) {
       d.to = null;
       d.route = null;
@@ -191,20 +232,26 @@ export class Input {
       d.route = route(this.s, d.from, to);
     }
     d.ok = !d.loose && !!d.route && d.route.cost <= this.s.cash;
-  };
+  }
 
   private onUp = (e: PointerEvent): void => {
     const k = this.fingers.findIndex((o) => o.id === e.pointerId);
     if (k < 0) return;
     this.fingers.splice(k, 1);
-    if (this.mode === 'pinch') {
-      // the last finger up ends the gesture; one finger left pans
-      if (this.fingers.length === 0) this.mode = 'none';
-      else {
+    if (this.pinch) {
+      this.pinch = null;
+      if (this.fingers.length >= 2) this.startPinch();
+      else if (this.mode === 'build' && this.drag && e.pointerId !== this.dragId) {
+        // the drag's finger stays and goes on aiming
+        this.drag.sx = this.fingers[0].x;
+        this.drag.sy = this.fingers[0].y;
+        this.aim(this.drag);
+      } else {
+        // the pinch ended, or the drag's own finger left: one finger left pans
+        this.drag = null;
         this.mode = 'pan';
         this.moved = 99;
       }
-      this.pinch = null;
       return;
     }
     const mode = this.mode;
@@ -229,6 +276,12 @@ export class Input {
     if (moved > 12) return;
     // a tap: a train, a station, a track cell, or a site
     const train = this.r.trainAt(e.clientX, e.clientY);
+    if (this.r.whole) {
+      // the whole map is a map: a train is followed, anything else zooms in there
+      if (train) return this.ev.onTrain(train);
+      this.r.zoomAt(e.clientX, e.clientY);
+      return this.ev.onGround();
+    }
     const at = this.cellAt(e.clientX, e.clientY);
     if (!at) {
       if (train) return this.ev.onTrain(train);

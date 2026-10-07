@@ -428,7 +428,16 @@ export function trackCell(v: View, x: number, y: number, links: Spoke[], las: nu
   else for (let i = 0; i < links.length; i++) trackPiece(c, S, end(links[i], las[i]), [cxp, cyp], [cxp, cyp], false, bridge);
 }
 
-function trackPiece(c: Ctx, S: number, a: [number, number], b: [number, number], mid: [number, number], curve: boolean, bridge: boolean): void {
+function trackPiece(c: Ctx, S: number, a0: [number, number], b0: [number, number], mid: [number, number], curve: boolean, bridge: boolean): void {
+  // each end runs a little past the cell's edge so neighbours at different heights overlap, no notch
+  const past = (p: [number, number], from: [number, number]): [number, number] => {
+    const dx = p[0] - from[0];
+    const dy = p[1] - from[1];
+    const l = Math.hypot(dx, dy) || 1;
+    return [p[0] + (dx / l) * S * 0.08, p[1] + (dy / l) * S * 0.08];
+  };
+  const a = past(a0, mid);
+  const b = curve ? past(b0, mid) : b0;
   const N = curve ? 10 : 4;
   const pts: [number, number][] = [];
   for (let i = 0; i <= N; i++) {
@@ -605,12 +614,13 @@ export function drawEngine(c: Ctx, L: number, s: number, id: EngineId): void {
   c.fill();
 }
 
-/** a wagon, drawn with its centre at the origin; `fill` is 0 or 1, the share of the load aboard */
+/** a wagon, drawn with its centre at the origin; `fill` is the share of the load aboard, in thirds from 0 to 1 */
 export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: Good | null, fill: number): void {
   const h = L / 2;
   c.lineWidth = Math.max(1, s * 0.05);
   c.strokeStyle = OUT;
   const hasLoad = fill > 0.05;
+  const thirds = Math.round(fill * 3);
   if (type === 'flat') {
     c.fillStyle = '#4a3624';
     c.fillRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
@@ -627,8 +637,7 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
     c.strokeStyle = OUT;
     c.fillStyle = '#2a2018';
     for (const a of [-1, 1]) for (const b of [-1, 1]) c.fillRect(a * (h - s * 0.12) - s * 0.04, b * s * 0.29 - s * 0.04, s * 0.08, s * 0.08);
-    const n = Math.round(fill * 3);
-    for (let k = 0; k < n; k++) {
+    for (let k = 0; k < thirds; k++) {
       const yy = -s * 0.2 + k * s * 0.135;
       c.fillStyle = k % 2 ? '#8a5a2b' : '#7a4f26';
       c.beginPath();
@@ -651,8 +660,10 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
     c.fillRect(-h + s * 0.12, -s * 0.22, L - s * 0.24, s * 0.44);
     if (hasLoad && good === 'flour') {
       const cols = 4;
+      const shown = Math.ceil(fill * 2 * cols);
       for (let i = 0; i < cols; i++)
-        for (const r of [-1, 1]) {
+        for (const [j, r] of [-1, 1].entries()) {
+          if (i * 2 + j >= shown) continue;
           const X = -h + s * 0.3 + ((L - s * 0.6) * (i + 0.5)) / cols;
           c.fillStyle = '#f4f0e4';
           c.beginPath();
@@ -661,7 +672,7 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
           c.stroke();
         }
     } else if (hasLoad) {
-      for (let k = 0; k < 3; k++) {
+      for (let k = 0; k < thirds; k++) {
         c.fillStyle = k % 2 ? '#e6cf98' : '#d9bd84';
         const w = L - s * 0.3 - k * s * 0.08;
         c.fillRect(-w / 2, -s * 0.2 + k * s * 0.03, w, s * 0.4 - k * s * 0.06);
@@ -688,7 +699,8 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
   if (hasLoad) {
     c.fillStyle = '#e2c04a';
     c.beginPath();
-    c.ellipse(0, 0, (L - s * 0.34) / 2, s * 0.21, 0, 0, 7);
+    const m = 0.4 + 0.6 * fill;
+    c.ellipse(0, 0, ((L - s * 0.34) / 2) * m, s * 0.21 * m, 0, 0, 7);
     c.fill();
     c.stroke();
     c.fillStyle = 'rgba(255,245,200,.45)';
@@ -697,4 +709,9 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
     c.fill();
   }
   c.strokeRect(-h + s * 0.14, -s * 0.22, L - s * 0.28, s * 0.44);
+}
+
+/** a straight length of track between two pixel points: the spur from a dead end to its buffer stop */
+export function trackSpur(c: Ctx, S: number, a: [number, number], b: [number, number]): void {
+  trackPiece(c, S, a, b, a, false, false);
 }

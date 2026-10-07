@@ -110,6 +110,10 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .plate .bridge { color: #8ac0ea; }
 .plate .cut, .plate .fill { color: #d9b27a; }
 
+/* the zoom buttons, bottom right, out of the way of the cards (hidden while one is open) */
+.zoom { position: absolute; right: calc(var(--sar) + 12px); bottom: calc(var(--sab) + 16px); display: flex; flex-direction: column; gap: 10px; z-index: 3; }
+.zoom .round { width: 52px; height: 52px; font-size: 30px; font-weight: 700; line-height: 1; touch-action: manipulation; background: rgba(27, 42, 30, 0.92); }
+
 /* the cancel under the thumb */
 .btn.cancel { position: absolute; transform: translate(-50%, -50%); min-width: 0; padding: 10px 18px; background: var(--red); border-color: var(--red-dark); color: #fff; box-shadow: 0 3px 0 var(--red-dark); z-index: 5; }
 

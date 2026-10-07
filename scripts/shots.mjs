@@ -3,8 +3,6 @@
 // Starts its own dev server on port 5199. `node scripts/shots.mjs en` takes the English set
 // into shots/en/; `ORIENT=landscape` turns the phone.
 import { chromium, devices } from 'playwright';
-// headless Chromium draws WebGL in software unless told otherwise
-const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 
@@ -17,7 +15,7 @@ const scenario = process.env.SCENARIO || 'sawmill';
 const dir = `shots/${scenario}${lang === 'en' ? '/en' : ''}${landscape ? '/landscape' : ''}`;
 mkdirSync(dir, { recursive: true });
 
-const browser = await chromium.launch(GPU);
+const browser = await chromium.launch();
 const ctx = await browser.newContext({ ...devices[landscape ? 'iPhone 15 landscape' : 'iPhone 15'], hasTouch: true });
 const page = await ctx.newPage();
 const errors = [];

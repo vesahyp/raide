@@ -41,6 +41,29 @@ export type HandAction =
   | { kind: 'wait' }
   | { kind: 'done' };
 
+export interface Pt {
+  x: number;
+  y: number;
+}
+
+/** the part of the glass the thumb works in: the map's free area, and the px a tile is drawn at */
+export interface Glass {
+  l: number;
+  t: number;
+  w: number;
+  h: number;
+  scale: number;
+}
+
+/** one move to bring points into view, made by a real touch */
+export type Framing = { kind: 'ok' } | { kind: 'zoom' } | { kind: 'pan'; dx: number; dy: number };
+
+/** a margin the thumb keeps from the edges of the glass, in px: more than the edge scroll's reach, so a drag that ends here stands still; the bottom one clears the zoom buttons */
+const MARGIN = 72;
+const BOTTOM = 90;
+/** at or under this many px a tile the thumb cannot zoom out further without the whole-map look */
+const ROUTE_SCALE = 16;
+
 const same = (a: [string, string], b: [string, string]) => (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]);
 
 export class Hand {
@@ -115,6 +138,37 @@ export class Hand {
       return { kind: 'openTrain', train: id };
     }
     return { kind: 'wait' };
+  }
+
+  /**
+   * What a thumb does to see these points: nothing when they are all on the glass, a tap on the
+   * zoom-out button when they would fit one level wider, or a one-finger pan that centres them (the
+   * first point alone when they cannot fit, so the drag can scroll on from there).
+   */
+  frame(pts: Pt[], g: Glass): Framing {
+    const x0 = g.l + MARGIN;
+    const x1 = g.l + g.w - MARGIN;
+    const y0 = g.t + MARGIN;
+    const y1 = g.t + g.h - BOTTOM;
+    if (pts.every((p) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)) return { kind: 'ok' };
+    const minX = Math.min(...pts.map((p) => p.x));
+    const maxX = Math.max(...pts.map((p) => p.x));
+    const minY = Math.min(...pts.map((p) => p.y));
+    const maxY = Math.max(...pts.map((p) => p.y));
+    // one level out is about 1.5 times smaller: would the spread fit then?
+    const fits = (k: number) => (maxX - minX) * k <= x1 - x0 && (maxY - minY) * k <= y1 - y0;
+    if (!fits(1) && g.scale > ROUTE_SCALE && fits(g.scale > 30 ? 0.42 : 0.65)) return { kind: 'zoom' };
+    const c = fits(1) ? { x: (minX + maxX) / 2, y: (minY + maxY) / 2 } : pts[0];
+    const dx = (x0 + x1) / 2 - c.x;
+    const dy = (y0 + y1) / 2 - c.y;
+    // a nudge of a few px is not worth a stroke: the drag scrolls the rest by itself
+    if (!fits(1) && Math.hypot(dx, dy) < 40) return { kind: 'ok' };
+    return { kind: 'pan', dx, dy };
+  }
+
+  /** whether a point is inside the part of the glass the thumb works in */
+  seen(p: Pt, g: Glass): boolean {
+    return p.x >= g.l + MARGIN && p.x <= g.l + g.w - MARGIN && p.y >= g.t + MARGIN && p.y <= g.t + g.h - BOTTOM;
   }
 
   /** the points of a drag from a to b, as the thumb would make them: eased, with wobble, in ms */

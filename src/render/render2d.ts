@@ -17,11 +17,11 @@ import type { Good, Line, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, stepLen } from '../game/grid';
 import { along, lineOf, railAlong, trainLength, price, demand } from '../game/sim';
-import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, BASE_PRICE, TERRACE_M, yard } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, BASE_PRICE, TERRACE_M, CELL_M, yard } from '../game/content/economy';
 import { t as tt } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, church, drawEngine, drawWagon, hash, logPile, makeView, pine,
-  platform, sacks, sails, shade, trackCell, windmillBody, type Ctx, type Spoke, type View,
+  platform, sacks, sails, shade, trackCell, trackSpur, windmillBody, type Ctx, type Spoke, type View,
 } from './draw2d';
 
 export const OPTION_COLOUR = ['rgba(239,230,207,0.95)', 'rgba(70,150,230,0.95)'];
@@ -57,6 +57,10 @@ const PLAY_S = 23;
 /** the four zoom levels, close up, play, route and the whole map (the last is worked out) */
 const ZOOMS = [56, PLAY_S, 15];
 const CHUNK_KEEP = 80;
+/** px kept free beside the two stations when the first view is framed */
+const FIT_PAD = 78;
+/** tiles from a dead end's cell centre to its buffer stop */
+const SPUR = 1.5;
 /** the chunk canvases may hold this many pixels in all, so a phone keeps its memory */
 const CHUNK_PIXELS = 42e6;
 /** px a tile in the whole-map canvas */
@@ -123,6 +127,13 @@ interface Veh {
   len: number;
 }
 
+/** the share of each wagon that is full: the load spread over the wagons, in whole thirds, never zero while there is cargo */
+function loadShare(t: Train): number {
+  if (t.cargo <= 0 || !t.good) return 0;
+  const thirds = Math.round((3 * t.cargo) / Math.max(1, t.nWagons));
+  return Math.min(3, Math.max(1, thirds)) / 3;
+}
+
 const qIndex = (dev: number): number => Math.round(Math.log(dev / 4) / Math.log(1.25));
 
 export class Renderer2D {
@@ -133,6 +144,8 @@ export class Renderer2D {
   /** the camera: the tile at the middle of the free area of the screen, and px a tile */
   private cam = { x: 0, y: 0, s: PLAY_S };
   private zoomTo: number | null = null;
+  /** a tile point the view eases to, with the zoom */
+  private glide: { x: number; y: number } | null = null;
   private followId: number | null = null;
   private time = 0;
   private frames = 0;
@@ -321,17 +334,17 @@ export class Renderer2D {
     const add = (oy: number, ox0: number, ox1: number, draw: (v: View) => void) => look.statics.push({ oy, ox0, ox1, draw });
     const bld = (bx: number, by: number, w: number, d: number, o: Omit<Parameters<typeof building>[5], 'lv'>) => add(by + d, bx, bx + w, (v) => building(v, bx, by, w, d, { ...o, lv }));
     if (station) {
-      const bx = site.kind === 'mill' ? x + 0.5 : site.kind === 'town' ? x - 3.6 : x - 3;
+      // the station building stands at the platform's east end, inside the yard so no track can cross it
       add(y - 0.1, x - 3, x + 4, (v) => platform(v, x - 3, y - 0.58, 7, lv));
-      bld(bx, y - 1.8, 3.3, 1.1, { walls: '#d9a441', roof: '#7a3a2a', wall: 0.7, door: 1 });
+      bld(x + 1.3, y - 1.5, 2.6, 0.9, { walls: '#d9a441', roof: '#7a3a2a', wall: 0.6, door: 1 });
     }
     if (site.kind === 'forest') {
-      bld(x + 0.9, y - 2.3, 1.7, 1.2, { walls: '#9c3a2c', roof: '#4a3a32', wall: 0.6, door: 0 });
+      bld(x - 2.9, y - 2.1, 1.7, 1.2, { walls: '#9c3a2c', roof: '#4a3a32', wall: 0.6, door: 0 });
     } else if (site.kind === 'sawmill') {
       bld(x - 3, y - 3.9, 4.4, 1.3, { walls: '#9b3226', roof: '#6d6a66', wall: 1.0, door: 2, chimney: [x - 2.2, y - 3.6] });
     } else if (site.kind === 'farm') {
       bld(x - 2.8, y - 3.9, 3.2, 1.9, { walls: '#9c3a2c', roof: '#4e4a44', wall: 1.0, door: 1 });
-      bld(x + 1.2, y - 3.3, 1.8, 1.4, { walls: '#e6dcc4', roof: '#7a3a2a', wall: 0.7, door: 0 });
+      bld(x + 1.2, y - 3.9, 1.8, 1.4, { walls: '#e6dcc4', roof: '#7a3a2a', wall: 0.7, door: 0 });
     } else if (site.kind === 'mill') {
       add(y - 1.1, x - 3, x, (v) => windmillBody(v, x - 1.9, y - 1.6, lv));
       look.hub = { x: x - 1.9, y: y - 1.6 - 0.9 / 1 };
@@ -356,7 +369,8 @@ export class Renderer2D {
       return true;
     };
     const hit = (a: number[], b: number[]) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];
-    const reserved: number[][] = [[x - 3.8, y - 2.6, 3.9, 2.6]];
+    // the station building and the platform keep their ground
+    const reserved: number[][] = [[x + 1.1, y - 2.4, 3.0, 2.4], [x - 3.2, y - 1.4, 7.4, 1.4]];
     // the church has its place whether it stands yet or not, so the houses never move into it
     let churchAt: number[] | null = null;
     for (let py = y - 6.9; py < y - 3 && !churchAt; py += 0.5)
@@ -409,14 +423,14 @@ export class Renderer2D {
         key: `${logs}:${stacks.join(',')}`,
         draw: (v) => {
           logPile(v, x + 1.8, y - 3.9, logs, lv);
-          boardStack(v, x + 0.7, y - 2.0, stacks[0], lv);
-          boardStack(v, x + 2.4, y - 2.0, stacks[1], lv);
+          boardStack(v, x - 3.0, y - 2.0, stacks[0], lv);
+          boardStack(v, x - 1.3, y - 2.0, stacks[1], lv);
         },
       };
     }
     if (site.kind === 'farm') {
       const n = Math.min(12, Math.floor(site.stock * 2));
-      return { key: String(n), draw: (v) => sacks(v, x + 1.4, y - 2.0, n, '#e9c547', lv) };
+      return { key: String(n), draw: (v) => sacks(v, x - 2.8, y - 1.5, n, '#e9c547', lv, 6) };
     }
     if (site.kind === 'mill') {
       const flour = Math.min(9, Math.floor(site.stock * 1.5));
@@ -467,7 +481,6 @@ export class Renderer2D {
     for (const list of rows) list.sort((a, b) => a.oy - b.oy);
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) this.drawTile(v, x, y);
-      for (let x = x0; x < x1; x++) this.drawTrack(v, x, y);
       for (let x = x0; x < x1; x++) this.drawEdges(v, x, y);
       for (let x = x0; x < x1; x++) this.drawFace(v, x, y);
       for (let x = x0; x < x1; x++) this.drawBridge(v, x, y);
@@ -476,6 +489,8 @@ export class Renderer2D {
         else (o.birch ? birch : pine)(c, rs, v.x(o.x), v.y(o.y, o.lv) - rs * 0.15, o.r * rs);
       }
     }
+    // the track after all the land, so a cell's ballast that runs past its edge is not covered by the next row's tiles
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) this.drawTrack(v, x, y);
     return canvas;
   }
 
@@ -709,9 +724,33 @@ export class Renderer2D {
       return (lm + ln) / 2;
     });
     trackCell(v, x, y, links, las, lm, bridge);
-    if (links.length === 1) {
+  }
+
+  /** past each dead end, track runs on to a buffer stop, so a train at the platform stands wholly on the rails */
+  private drawSpurs(): void {
+    const c = this.ctx;
+    const S = this.cam.s;
+    const ends = new Set<number>();
+    for (const l of this.s.lines) {
+      ends.add(l.path[0]);
+      ends.add(l.path[l.path.length - 1]);
+    }
+    for (const cell of ends) {
+      const links = this.linksOf(cell);
+      if (links.length !== 1 || this.s.water[cell]) continue;
+      const x = cx(this.s, cell);
+      const y = cy(this.s, cell);
+      const lm = this.railA[cell];
+      if (Number.isNaN(lm)) continue;
       const d = links[0];
-      bufferStop(v.c, v.S, v.x(x + 0.5), v.y(y + 0.5, lm), Math.atan2(d[1], d[0]) + Math.PI);
+      const n = Math.hypot(d[0], d[1]);
+      const ux = -d[0] / n;
+      const uy = -d[1] / n;
+      const a: [number, number] = [this.sx(x + 0.5), this.sy(y + 0.5, lm)];
+      const b: [number, number] = [this.sx(x + 0.5 + ux * SPUR), this.sy(y + 0.5 + uy * SPUR, lm)];
+      if (Math.max(a[0], b[0]) < -S || Math.min(a[0], b[0]) > this.w + S || Math.max(a[1], b[1]) < -S || Math.min(a[1], b[1]) > this.h + S) continue;
+      trackSpur(c, S, a, b);
+      bufferStop(c, S, b[0], b[1], Math.atan2(b[1] - a[1], b[0] - a[0]));
     }
   }
 
@@ -864,7 +903,7 @@ export class Renderer2D {
         c.translate(veh.px, veh.py);
         c.rotate(veh.ang);
         if (veh.i === 0) drawEngine(c, veh.len * S, S, t.engine);
-        else drawWagon(c, veh.len * S, S, t.wagons, t.good, veh.i - 1 < t.cargo ? 1 : 0);
+        else drawWagon(c, veh.len * S, S, t.wagons, t.good, loadShare(t));
         c.restore();
       }
     for (const t of s.trains) {
@@ -998,8 +1037,9 @@ export class Renderer2D {
   }
 
   /** the screen's free area: under the HUD bar in portrait, right of the HUD column in landscape */
-  private area(): { l: number; t: number; w: number; h: number } {
-    const l = this.landscape ? 112 : 0;
+  area(): { l: number; t: number; w: number; h: number } {
+    // the landscape HUD column is 150 px wide at an 8 px margin
+    const l = this.landscape ? 160 : 0;
     const t = this.landscape ? 0 : 68;
     return { l, t, w: this.w - l, h: this.h - t };
   }
@@ -1054,19 +1094,19 @@ export class Renderer2D {
       }
     }
     const top = (o: Site) => o.cy + yard(o.kind).dy0;
-    const x0 = Math.min(start.cx, other.cx) - 3;
-    const x1 = Math.max(start.cx, other.cx) + 4;
+    // both stations, at least FIT_PAD px from the sides so a drag between them is clear of the edge scroll
+    const x0 = Math.min(start.cx, other.cx);
+    const x1 = Math.max(start.cx, other.cx) + 1;
     const y0 = Math.min(top(start), top(other)) - 1.5;
     const y1 = Math.max(start.cy, other.cy) + 2;
     const a = this.area();
-    const fitS = Math.min((a.w - 24) / (x1 - x0), (a.h - 24) / (y1 - y0));
-    this.cam.s = Math.max(Math.max(15, this.wholeScale()), Math.min(PLAY_S, fitS));
+    const fitS = Math.min((a.w - 2 * FIT_PAD) / (x1 - x0), (a.h - 24) / (y1 - y0));
+    // as wide as the whole-map look allows, never the whole map itself
+    this.cam.s = Math.max(Math.max(LOD_S + 0.5, this.wholeScale()), Math.min(PLAY_S, fitS));
     this.zoomTo = null;
-    // when both do not fit, the start station's side stays in view
-    const half = a.w / 2 / this.cam.s;
-    const halfY = a.h / 2 / this.cam.s;
-    this.cam.x = (x1 - x0) > 2 * half ? (start.cx <= other.cx ? x0 + half : x1 - half) : (x0 + x1) / 2;
-    this.cam.y = (y1 - y0) > 2 * halfY ? (start.cy <= other.cy ? y0 + halfY : y1 - halfY) : (y0 + y1) / 2 + 0.3;
+    this.glide = null;
+    this.cam.x = (x0 + x1) / 2;
+    this.cam.y = (y0 + y1) / 2 + 0.3;
     this.clampCam();
   }
 
@@ -1075,22 +1115,31 @@ export class Renderer2D {
     const a = this.area();
     const c = this.cam;
     c.s = Math.max(this.wholeScale(), Math.min(MAX_S, c.s));
-    c.x = s.w * c.s <= a.w ? s.w / 2 : Math.max(0, Math.min(s.w, c.x));
-    c.y = s.h * c.s <= a.h ? s.h / 2 : Math.max(0, Math.min(s.h, c.y));
+    // the view stays on the map, with a little ground beyond its edge (and the lift of the northern terraces)
+    const hx = a.w / 2 / c.s;
+    const hy = a.h / 2 / c.s;
+    c.x = s.w <= 2 * hx - 2 ? s.w / 2 : Math.max(hx - 1, Math.min(s.w - hx + 1, c.x));
+    c.y = s.h <= 2 * hy - 2 ? s.h / 2 : Math.max(hy - 2, Math.min(s.h - hy + 1, c.y));
   }
 
   /** move the view by a screen delta in CSS pixels */
   pan(dx: number, dy: number): void {
     this.followId = null;
+    this.glide = null;
     this.cam.x -= dx / this.cam.s;
     this.cam.y -= dy / this.cam.s;
     this.clampCam();
   }
 
-  /** zoom by a factor about a screen point; the map never turns, so `rotate` is ignored */
-  pinch(scale: number, _rotate: number, sx: number, sy: number): void {
-    const before = this.pick(sx, sy);
+  /**
+   * Zoom by a factor and move with the fingers: the map point that was under (fromX, fromY) ends up
+   * under (sx, sy). The map never turns, so `rotate` is ignored.
+   */
+  pinch(scale: number, _rotate: number, sx: number, sy: number, fromX = sx, fromY = sy): void {
+    const before = this.pick(fromX, fromY);
     this.zoomTo = null;
+    this.glide = null;
+    this.followId = null;
     this.setScale(this.cam.s * scale);
     if (before) {
       const lv = this.levelAt(before.x, before.y);
@@ -1118,10 +1167,26 @@ export class Renderer2D {
     return this.cam.s;
   }
 
+  /** whether the whole-map look is drawn: a route is too small to read, so the input only pans and taps */
+  get whole(): boolean {
+    return this.cam.s < LOD_S;
+  }
+
+  /** ease to play zoom with the tile under a screen point at the middle of the free area */
+  zoomAt(sx: number, sy: number): void {
+    const p = this.pick(sx, sy);
+    this.followId = null;
+    this.glide = { x: p.x, y: p.y - this.levelAt(p.x, p.y) * LIFT };
+    this.zoomTo = PLAY_S;
+  }
+
   /** keep the view on a train, eased in to play zoom; null lets go */
   follow(train: Train | null): void {
     this.followId = train ? train.id : null;
-    if (train) this.zoomTo = null;
+    if (train) {
+      this.zoomTo = null;
+      this.glide = null;
+    }
   }
 
   get following(): number | null {
@@ -1356,6 +1421,15 @@ export class Renderer2D {
         this.setScale(this.zoomTo);
         this.zoomTo = null;
       }
+      if (this.glide) {
+        this.cam.x += (this.glide.x - this.cam.x) * k;
+        this.cam.y += (this.glide.y - this.cam.y) * k;
+        if (this.zoomTo === null) {
+          this.cam.x = this.glide.x;
+          this.cam.y = this.glide.y;
+          this.glide = null;
+        }
+      }
       this.clampCam();
     }
     if (this.followId !== null) {
@@ -1378,6 +1452,7 @@ export class Renderer2D {
     if (lod) this.drawOverview();
     else {
       this.drawChunks();
+      this.drawSpurs();
       this.drawPiles();
     }
     // the route under the finger, and the two on offer after a lift
@@ -1474,7 +1549,7 @@ export class Renderer2D {
       this.plateEl.className = 'tag plate';
       this.overlay.appendChild(this.plateEl);
     }
-    const km = (r.length * 0.1).toFixed(1);
+    const km = ((r.length * CELL_M) / 1000).toFixed(1);
     const earth = r.bridge.length ? `<span class="bridge">${r.bridge.length} bridge</span>` : r.cutting.length ? '<span class="cut">cutting</span>' : r.fill.length ? '<span class="fill">embankment</span>' : '';
     const html = `<b class="${drag!.ok ? '' : 'red'}">${r.cost}</b><span>${km} km</span><span class="g" style="color:${GRADE_COL(r.worst)}">${r.worst < 1 ? 'flat' : `${r.worst.toFixed(0)} %`}</span>${earth}`;
     if (this.plateEl.innerHTML !== html) this.plateEl.innerHTML = html;

@@ -5,13 +5,11 @@
 // and the sim is the same object with the same trains. `make rotate-check` (PORT=5187 when
 // another repo's dev server holds the default).
 import { chromium, devices } from 'playwright';
-// headless Chromium draws WebGL in software unless told otherwise
-const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn } from 'node:child_process';
 const port = Number(process.env.PORT) || 5197;
 const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 2500));
-const browser = await chromium.launch(GPU);
+const browser = await chromium.launch();
 const phone = devices['iPhone 15'];
 const portrait = { width: phone.viewport.width, height: phone.viewport.height };
 const landscape = { width: phone.viewport.height, height: phone.viewport.width };
@@ -47,19 +45,18 @@ const state = () =>
     const c = document.querySelector('.game canvas');
     const r = c.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    // the map's corners on the screen, from the renderer's projection
+    // the start station on the screen, from the renderer's projection: a turn re-frames the view
     const sim = window.__sim;
-    const pts = [[0, 0], [sim.w, 0], [0, sim.h], [sim.w, sim.h]].map(([x, y]) => window.__renderer.project(x, y, 0));
-    const cam = { left: Math.min(...pts.map((p) => p.x)), top: Math.min(...pts.map((p) => p.y)), width: 0, height: 0, turned: window.innerWidth > window.innerHeight, scale: 0 };
-    cam.width = Math.max(...pts.map((p) => p.x)) - cam.left;
-    cam.height = Math.max(...pts.map((p) => p.y)) - cam.top;
-    cam.scale = cam.width / sim.w;
+    const start = sim.sites.find((o) => o.id === sim.scenario.startStation);
+    const at = window.__renderer.project(start.cx + 0.5, start.cy + 0.5, 0);
+    const area = window.__renderer.area();
+    const map = { x: at.x, y: at.y, scale: window.__renderer.scale, landscape: window.innerWidth > window.innerHeight, left: area.l, top: area.t };
     const hud = document.querySelector('.hud').getBoundingClientRect();
     const pause = document.querySelector('.round.pause').getBoundingClientRect();
     const sheet = document.querySelector('.card.sheet, .card.overlay')?.getBoundingClientRect();
     return {
       iw: window.innerWidth, ih: window.innerHeight, cw: Math.round(r.width), ch: Math.round(r.height), bw: c.width, bh: c.height, dpr,
-      map: { left: cam.left, top: cam.top, right: cam.left + cam.width, bottom: cam.top + cam.height, turned: cam.turned, scale: cam.scale },
+      map,
       hud: { r: hud.right, b: hud.bottom }, pause: { r: pause.right, b: pause.bottom },
       sheet: sheet && { l: sheet.left, r: sheet.right, b: sheet.bottom },
       scrollW: document.scrollingElement.scrollWidth, sim: window.__sim, trains: window.__sim.trains.length, time: window.__sim.time,
@@ -68,8 +65,8 @@ const state = () =>
 const judge = (st, label) => {
   check(st.cw === st.iw && st.ch === st.ih, `${label}: the canvas fills the screen (${st.cw}x${st.ch} of ${st.iw}x${st.ih})`);
   check(st.bw === Math.round(st.cw * st.dpr) && st.bh === Math.round(st.ch * st.dpr), `${label}: the canvas has the screen's device pixels (${st.bw}x${st.bh} at ${st.dpr}x)`);
-  check(st.map.left >= 0 && st.map.top >= 0 && st.map.right <= st.iw + 1 && st.map.bottom <= st.ih + 1, `${label}: the whole map is on screen (${st.map.left.toFixed(0)},${st.map.top.toFixed(0)} to ${st.map.right.toFixed(0)},${st.map.bottom.toFixed(0)}, ${st.map.scale.toFixed(1)} px a cell${st.map.turned ? ', turned' : ''})`);
-  check(st.map.turned === st.iw > st.ih, `${label}: the map is turned exactly in landscape`);
+  check(st.map.x >= st.map.left && st.map.x <= st.iw && st.map.y >= st.map.top && st.map.y <= st.ih, `${label}: the start station is in the free area of the screen (${st.map.x.toFixed(0)},${st.map.y.toFixed(0)}, ${st.map.scale.toFixed(1)} px a tile)`);
+  check(st.map.landscape === st.iw > st.ih, `${label}: the layout follows the orientation`);
   check(st.hud.r <= st.iw + 1 && st.hud.b <= st.ih + 1 && st.pause.r <= st.iw + 1 && st.pause.b <= st.ih + 1, `${label}: the HUD and the pause button are on screen`);
   if (st.sheet) check(st.sheet.l >= -1 && st.sheet.r <= st.iw + 1 && st.sheet.b <= st.ih + 1, `${label}: the open card is on screen`);
   check(st.scrollW <= st.iw, `${label}: nothing overflows sideways (${st.scrollW} of ${st.iw})`);

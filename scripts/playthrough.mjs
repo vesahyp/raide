@@ -10,8 +10,6 @@
 // summary.json. Exits non-zero when the slice is not fun by its rules: a run not won, the first
 // paid delivery later than 90 s, a page error.
 import { chromium, devices } from 'playwright';
-// headless Chromium draws WebGL in software unless told otherwise
-const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -39,7 +37,7 @@ for (let i = 0; ; i++) {
   if (i > 120) throw new Error(`no preview server on port ${port} after 60 s`);
   await new Promise((r) => setTimeout(r, 500));
 }
-const browser = await chromium.launch(GPU);
+const browser = await chromium.launch();
 let failed = false;
 const check = (ok, what) => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
@@ -75,6 +73,7 @@ const look = (page) =>
       const ax = (a % s.w) + 0.5, ay = Math.floor(a / s.w) + 0.5, bx = (b % s.w) + 0.5, by = Math.floor(b / s.w) + 0.5;
       return { id: t.id, line: pair(l), at: toS(ax + (bx - ax) * f, ay + (by - ay) * f), stopped: t.state === 'stop' };
     });
+    const glass = { ...r.area(), scale: r.scale };
     const el = (q) => document.querySelector(q);
     const card = el('.card.result') ? 'result' : el('.card.ledger') ? 'yearEnd' : el('.choice-card') ? 'choice' : el('[data-act="wagon"]') ? 'train' : el('[data-track="card-buy-train"]') ? 'line' : el('.want, .card.sheet') ? 'site' : 'none';
     const head = el('.card.sheet h2')?.textContent ?? '';
@@ -98,8 +97,8 @@ const look = (page) =>
     // the middle of each line on the glass, two points to try, to tap the track
     const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
     return {
-      cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, nextCost, trainPrice: { hilma: 70, jyry: 110 }, lineTaps,
-      time: s.time, year: s.year, firstPayAt: s.firstPayAt, towns: s.sites.filter((x) => x.kind === 'town').map((x) => x.size), bridges: s.lines.reduce((a, l) => a + l.path.filter((c) => s.water[c]).length, 0), cuttings: s.lines.reduce((a, l) => a + l.path.filter((c) => s.ridge[c]).length, 0),
+      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, nextCost, trainPrice: (() => { const n = Math.min(4, 2 + (s.perks.includes('wagon') ? 1 : 0)); return { hilma: 50 + 10 * n, jyry: 90 + 10 * n }; })(), lineTaps,
+      time: s.time, year: s.year, firstPayAt: s.firstPayAt, towns: s.sites.filter((x) => x.kind === 'town').map((x) => x.size), bridges: s.lines.reduce((a, l) => a + l.path.filter((c) => s.water[c]).length, 0), cuttings: s.lines.reduce((a, l) => a + l.path.filter((c, k) => l.rail[k] < s.height[c] - 1 && !s.water[c]).length, 0),
     };
   });
 
@@ -129,6 +128,53 @@ async function run(orient) {
     if (!b) return false;
     await tap(b.x + b.width / 2, b.y + b.height / 2);
     return true;
+  };
+  // bring points into view the way a player does: the zoom button, and one-finger pans that start
+  // on bare ground (away from every site and train, or the finger would build or tap instead)
+  const frameOn = async (pointsOf) => {
+    for (let n = 0; n < 8; n++) {
+      const v = await look(page);
+      const pts = pointsOf(v);
+      const m = await page.evaluate(({ pts, g }) => window.__hand.frame(pts, g), { pts, g: v.glass });
+      if (m.kind === 'ok') return true;
+      if (m.kind === 'zoom') {
+        await tapButton(page.locator('[data-zoom="out"]'));
+        // the zoom eases: look again only when the picture has stopped changing
+        let last = -1;
+        for (let k = 0; k < 40; k++) {
+          await page.waitForTimeout(200);
+          const now = (await look(page)).glass.scale;
+          if (Math.abs(now - last) < 0.01) break;
+          last = now;
+        }
+        continue;
+      }
+      const busy = [...Object.values(v.sites), ...v.trains.map((t) => t.at)];
+      const g = v.glass;
+      let best = null;
+      // the middle of the glass, so the stroke stays clear of the HUD and the zoom buttons
+      for (let i = 2; i < 6; i++)
+        for (let j = 2; j < 6; j++) {
+          const p = { x: g.l + (g.w * i) / 8, y: g.t + (g.h * j) / 8 };
+          const d = Math.min(...busy.map((b) => Math.hypot(b.x - p.x, b.y - p.y)));
+          if (!best || d > best.d) best = { p, d };
+        }
+      // the finger keeps to the glass: a long pan is made in several strokes
+      const dx = Math.max(-g.w / 3, Math.min(g.w / 3, m.dx));
+      const dy = Math.max(-g.h / 3, Math.min(g.h / 3, m.dy));
+      const a = { x: best.p.x - dx / 2, y: best.p.y - dy / 2 };
+      const path = await page.evaluate(({ a, b }) => window.__hand.path(a, b), { a, b: { x: a.x + dx, y: a.y + dy } });
+      await touch('touchStart', [{ x: a.x, y: a.y, id: 1 }]);
+      let at = 0;
+      for (const q of path) {
+        await page.waitForTimeout(Math.max(0, q.at - at));
+        at = q.at;
+        await touch('touchMove', [{ x: q.x, y: q.y, id: 1 }]);
+      }
+      await touch('touchEnd', []);
+      await page.waitForTimeout(300);
+    }
+    return false;
   };
   const stats = { drags: 0, buys: 0, choices: 0, taps: 0, routes: { cheap: 0, short: 0 }, acts: 0, error: null, won: false, year: 0, cash: 0, stars: 0, firstPayAt: null, seconds: 0 };
   const t0 = Date.now();
@@ -164,15 +210,45 @@ async function run(orient) {
       idle = 0;
       await react();
       if (act.kind === 'drag') {
-        const a = v.sites[act.from];
-        const b = v.sites[act.to];
-        const pts = await page.evaluate(({ a, b }) => window.__hand.path(a, b), { a, b });
+        await frameOn((w) => [w.sites[act.from], w.sites[act.to]]);
+        let w = await look(page);
+        const a = w.sites[act.from];
+        let b = w.sites[act.to];
+        const stroke = async (from, to) => {
+          const pts = await page.evaluate(({ a, b }) => window.__hand.path(a, b), { a: from, b: to });
+          let at = 0;
+          for (const p of pts) {
+            await page.waitForTimeout(Math.max(0, p.at - at));
+            at = p.at;
+            await touch('touchMove', [{ x: p.x, y: p.y, id: 1 }]);
+          }
+        };
         await touch('touchStart', [{ x: a.x, y: a.y, id: 1 }]);
-        let at = 0;
-        for (const p of pts) {
-          await page.waitForTimeout(Math.max(0, p.at - at));
-          at = p.at;
-          await touch('touchMove', [{ x: p.x, y: p.y, id: 1 }]);
+        let at = a;
+        if (!(await page.evaluate(({ b, g }) => window.__hand.seen(b, g), { b, g: w.glass }))) {
+          // the target is off the glass: hold the finger near the edge it lies past until it scrolls in
+          const g = w.glass;
+          at = { x: Math.max(g.l + 8, Math.min(g.l + g.w - 8, b.x)), y: Math.max(g.t + 8, Math.min(g.t + g.h - 8, b.y)) };
+          await stroke(a, at);
+          for (let n = 0; n < 200; n++) {
+            await page.waitForTimeout(100);
+            w = await look(page);
+            b = w.sites[act.to];
+            if (await page.evaluate(({ b, g }) => window.__hand.seen(b, g), { b, g: w.glass })) break;
+          }
+        }
+        // the map may still be scrolling under the finger while it leaves the edge: aim at the site as it is now
+        let fx = at.x;
+        let fy = at.y;
+        for (let n = 0; n < 120; n++) {
+          b = (await look(page)).sites[act.to];
+          const d = Math.hypot(b.x - fx, b.y - fy);
+          if (d < 3) break;
+          const k = Math.min(1, 22 / d);
+          fx += (b.x - fx) * k;
+          fy += (b.y - fy) * k;
+          await touch('touchMove', [{ x: fx, y: fy, id: 1 }]);
+          await page.waitForTimeout(25);
         }
         await page.waitForTimeout(150);
         await touch('touchEnd', []);
@@ -181,6 +257,7 @@ async function run(orient) {
         const after = await look(page);
         if (!(after.lines.length > v.lines.length || after.card === 'choice')) {
           stats.error = `drag ${act.from} -> ${act.to} built nothing and offered nothing`;
+          await page.screenshot({ path: join(OUT, `${name}-drag.png`) });
           break;
         }
       } else if (act.kind === 'route') {
@@ -191,7 +268,8 @@ async function run(orient) {
         await page.waitForTimeout(300);
       } else if (act.kind === 'openLine') {
         const idx = v.lines.findIndex((l) => same(l, act.line));
-        const [p1, p2] = v.lineTaps[idx];
+        await frameOn((w) => [w.lineTaps[idx][0]]);
+        const [p1, p2] = (await look(page)).lineTaps[idx];
         await tap(p1.x, p1.y);
         stats.taps++;
         await page.waitForTimeout(300);
@@ -216,9 +294,14 @@ async function run(orient) {
         stats.buys++;
         await page.waitForTimeout(300);
         const after = await look(page);
-        if (after.trains.length <= v.trains.length) { stats.error = `buy ${act.wagons} ${act.engine} bought nothing`; break; }
+        if (after.trains.length <= v.trains.length) {
+          stats.error = `buy ${act.wagons} ${act.engine} bought nothing`;
+          await page.screenshot({ path: join(OUT, `${name}-buy.png`) });
+          break;
+        }
       } else if (act.kind === 'openTrain') {
-        const t = v.trains.find((o) => o.id === act.train);
+        await frameOn((w) => [w.trains.find((o) => o.id === act.train).at]);
+        const t = (await look(page)).trains.find((o) => o.id === act.train);
         await tap(t.at.x, t.at.y);
         stats.taps++;
         await page.waitForTimeout(300);
@@ -280,7 +363,7 @@ const ffmpegDir = existsSync(cache) && readdirSync(cache).find((d) => d.startsWi
 const ffmpeg = ffmpegDir && join(cache, ffmpegDir, 'ffmpeg-mac');
 if (ffmpeg && existsSync(ffmpeg)) {
   mkdirSync(join(OUT, 'sheets'), { recursive: true });
-  const sheets = await chromium.launch(GPU);
+  const sheets = await chromium.launch();
   for (const r of summary) {
     const frames = join(OUT, 'tmp-frames');
     rmSync(frames, { recursive: true, force: true });

@@ -9,7 +9,7 @@ import type { EngineId, Good, Line, ScenarioDef, SimState, Site, Train, WagonTyp
 import { GOODS } from '../game/types';
 import { createState, siteById, goodsOnMap } from '../game/state';
 import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf } from '../game/sim';
-import { ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { CELL_M, ENGINES, GOOD_NAME, GROW_NEED, MAKES, MONTHS, RESALE, TAKES, WAGON_GOODS, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
 import { Input } from '../input/input';
@@ -39,6 +39,7 @@ interface Hud {
 export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQuit: () => void; onAgain: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const rendRef = useRef<Renderer2D | null>(null);
   const simRef = useRef<SimState | null>(null);
   if (!simRef.current) simRef.current = createState(scenario);
   const s = simRef.current;
@@ -56,6 +57,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   useEffect(() => {
     const canvas = canvasRef.current!;
     const renderer = new Renderer2D(canvas, overlayRef.current!, s);
+    rendRef.current = renderer;
     const params = new URLSearchParams(location.search);
     const speed = Math.max(0.25, Number(params.get('speed') ?? 1));
     const bot = params.get('bot') === '1' ? Bot.for(s) : null;
@@ -124,6 +126,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       s.sounds.length = 0;
       if (!s.lastBuild) setCancel((c) => (c ? null : c));
       const c = cardRef.current;
+      input.update(real);
       renderer.draw(real * speed, input.drag, hint, c?.kind === 'choice' ? c.options : null);
       if (++frame % 6 === 0) {
         setHud(readHud(s));
@@ -180,6 +183,16 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           <svg viewBox="0 0 24 24" className="glyph"><rect x="6" y="5" width="4" height="14" fill="currentColor" /><rect x="14" y="5" width="4" height="14" fill="currentColor" /></svg>
         </button>
       </div>
+      {card === null && !paused && (
+        <div className="zoom" data-ui>
+          <button className="round" aria-label={tr('Lähemmäs', 'Zoom in')} data-zoom="in" onClick={() => rendRef.current?.zoomStep(1)}>
+            +
+          </button>
+          <button className="round" aria-label={tr('Kauemmas', 'Zoom out')} data-zoom="out" onClick={() => rendRef.current?.zoomStep(-1)}>
+            −
+          </button>
+        </div>
+      )}
       {cancel && s.lastBuild && (
         <button
           className="btn cancel"
@@ -302,7 +315,7 @@ function CardHead({ title, onClose }: { title: React.ReactNode; onClose: () => v
 function ChoiceCard({ s, options, onPick, onClose }: { s: SimState; options: Route[]; onPick: (r: Route) => void; onClose: () => void }) {
   const [a, b] = options;
   const name = (r: Route) => (r.bridge.length ? tr('Silta', 'Bridge') : r.cutting.length ? tr('Leikkaus', 'Cutting') : r.mode === 'cheap' ? tr('Kierto', 'Around') : tr('Suora', 'Direct'));
-  const sub = (r: Route) => `${(r.length * 0.2).toFixed(1)} km, ${r.worst < 1 ? tr('tasainen', 'flat') : `${tr('nousu', 'climb')} ${r.worst.toFixed(0)} %`}${r.bridge.length ? `, ${tr('silta', 'bridge')}` : ''}${r.fill.length ? `, ${tr('penger', 'embankment')}` : ''}`;
+  const sub = (r: Route) => `${((r.length * CELL_M) / 1000).toFixed(1)} km, ${r.worst < 1 ? tr('tasainen', 'flat') : `${tr('nousu', 'climb')} ${r.worst.toFixed(0)} %`}${r.bridge.length ? `, ${tr('silta', 'bridge')}` : ''}${r.fill.length ? `, ${tr('penger', 'embankment')}` : ''}`;
   return (
     <div className="card sheet choice-card" data-ui>
       <CardHead title={tr('Kumpaa kautta?', 'Which way?')} onClose={onClose} />
@@ -330,7 +343,8 @@ function LineCard({ s, line, onBuy, onTrain, onClose }: { s: SimState; line: Lin
   const kinds = useful.length ? useful : (Object.keys(WAGON_GOODS) as WagonType[]);
   const [wagons, setWagons] = useState<WagonType>(kinds[0]);
   const [engine, setEngineId] = useState<EngineId>(s.scenario.engines[0]);
-  const cost = trainPrice(engine);
+  // the year-end wagon is on every new train, and in its price
+  const cost = trainPrice(engine, Math.min(WAGONS_MAX, WAGONS_DEFAULT + (s.perks.includes('wagon') ? 1 : 0)));
   const trains = s.trains.filter((t) => t.lineId === line.id);
   const full = s.trains.length >= s.scenario.trainsMax;
   const can = !full && cost <= s.cash;

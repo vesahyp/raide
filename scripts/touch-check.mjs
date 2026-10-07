@@ -4,14 +4,12 @@
 // the card again, a drag from a site with no station builds nothing, and the pause menu opens
 // and closes. `make touch-check` (PORT=5187 when another repo's dev server holds the default).
 import { chromium, devices } from 'playwright';
-// headless Chromium draws WebGL in software unless told otherwise
-const GPU = { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] };
 import { spawn } from 'node:child_process';
 
 const port = Number(process.env.PORT) || 5197;
 const server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 2500));
-const browser = await chromium.launch(GPU);
+const browser = await chromium.launch();
 const context = await browser.newContext({ ...devices['iPhone 15'], hasTouch: true });
 const page = await context.newPage();
 const cdp = await context.newCDPSession(page);
@@ -59,10 +57,15 @@ try {
   let w = await where();
   const cash0 = w.cash;
   // a drag from a site with no station builds nothing
-  await drag(w.sawmill, w.town);
+  // it pans the view instead: a short drag there and back leaves the map where it was
+  const before = w.forest.x;
+  await drag(w.sawmill, { x: w.sawmill.x - 60, y: w.sawmill.y + 40 });
+  let moved = await where();
+  check(moved.lines === 0 && moved.cash === cash0 && Math.abs(moved.forest.x - (before - 60)) < 8, 'a drag from a site with no station builds nothing and pans the view');
+  await drag({ x: moved.sawmill.x, y: moved.sawmill.y }, { x: moved.sawmill.x + 60, y: moved.sawmill.y - 40 });
   await page.waitForTimeout(200);
   w = await where();
-  check(w.lines === 0 && w.cash === cash0, 'a drag from a site with no station builds nothing');
+  check(w.lines === 0 && w.cash === cash0 && Math.abs(w.forest.x - before) < 8, 'and back');
   // a drag that lifts in the forest between the sites builds nothing, though the track showed under the finger
   const between = { x: w.forest.x + 120, y: w.forest.y + 40 };
   await touch('touchStart', [{ x: w.forest.x, y: w.forest.y, id: 1 }]);
@@ -81,7 +84,8 @@ try {
     await page.waitForTimeout(25);
     await touch('touchMove', [{ x: w.forest.x + ((w.sawmill.x - w.forest.x) * i) / 12, y: w.forest.y + ((w.sawmill.y - w.forest.y) * i) / 12, id: 1 }]);
   }
-  const live = await page.evaluate(() => window.__input.drag && window.__input.drag.route && { cost: window.__input.drag.route.cost, cells: window.__input.drag.route.cells.length, ok: window.__input.drag.ok });
+  await page.waitForTimeout(100);
+  const live = await page.evaluate(() => window.__input.drag && window.__input.drag.route && { cost: window.__input.drag.route.cost, cells: window.__input.drag.route.cells.length, ok: window.__input.drag.ok, loose: window.__input.drag.loose, sx: window.__input.drag.sx, sy: window.__input.drag.sy });
   check(!!live && live.cost > 0 && live.ok, `the route and its cost follow the finger (${JSON.stringify(live)})`);
   await page.waitForTimeout(120);
   await touch('touchEnd', []);
