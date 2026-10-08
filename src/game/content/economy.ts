@@ -9,15 +9,15 @@ export const YEAR_SECONDS = 90;
 export const MONTHS = 12;
 
 /** what a delivery pays before demand and distance */
-export const BASE_PRICE: Record<Good, number> = { timber: 8, boards: 19, grain: 7, flour: 18 };
+export const BASE_PRICE: Record<Good, number> = { timber: 6.8, boards: 5.6, grain: 5.6, flour: 5 };
 
 /** demand falls towards this as a site fills with recent deliveries of a good */
 export const DEMAND_FLOOR = 0.4;
 /** recent deliveries that take demand to the floor */
-export const DEMAND_FILL = 10;
+export const DEMAND_FILL = 4;
 /** the distance factor runs from 1 at zero to DIST_BONUS at DIST_CAP cells, capped */
-export const DIST_BONUS = 1.5;
-export const DIST_CAP = 80;
+export const DIST_BONUS = 11;
+export const DIST_CAP = 100;
 
 /** what each site makes and takes */
 export const MAKES: Record<SiteKind, Good | null> = { forest: 'timber', sawmill: 'boards', farm: 'grain', mill: 'flour', town: null };
@@ -33,7 +33,7 @@ export const SERVED_RATE = 1.6;
 export const SERVED_MEMORY = 2;
 
 /** a town eats this much of each good a month per size: its demand recovers that fast */
-export const TOWN_EATS = 1.5;
+export const TOWN_EATS = 0.4;
 /** a refinery's input stock decays this much a month: its demand recovers */
 export const MILL_EATS = 1.5;
 /** loads of each good on the map a town must take in a year to grow one size */
@@ -52,7 +52,10 @@ export interface EngineDef {
   id: EngineId;
   name: Text;
   price: number;
+  /** a year of upkeep, charged monthly whether the engine runs or stands */
   upkeep: number;
+  /** what the engine costs for every tile it runs, loaded or empty (fuel and crew) */
+  runCost: number;
   /** cells per second on the flat */
   speed: number;
   /** the share of its speed an engine keeps on a ridge with an empty train; a load cuts it further */
@@ -61,8 +64,8 @@ export interface EngineDef {
 }
 /** the engines of the wood era: a light wood burner, and a slow strong one for grades */
 export const ENGINES: Record<EngineId, EngineDef> = {
-  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 50, upkeep: 15, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
-  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 90, upkeep: 22, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
+  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 100, upkeep: 5, runCost: 0.052, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
+  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 180, upkeep: 8, runCost: 0.18, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
 };
 /** a cell's side in metres: grades and the distance factor are read in these */
 export const CELL_M = 100;
@@ -79,7 +82,10 @@ export const GRADE_MAX = 4;
 /** on the grade limit an engine keeps its climb share of its speed; less grade, less loss */
 /** a loaded wagon takes this share off a train's speed on the grade limit */
 export const GRADE_LOAD = 0.07;
-export const WAGON_PRICE = 10;
+/** a wagon's price; twice the first prices, so money is tight (docs/economy.md) */
+export const WAGON_PRICE = 20;
+/** every wagon on a train adds this to the cost of a tile run: a longer train burns more */
+export const WAGON_RUN = 0.104;
 export const WAGONS_DEFAULT = 2;
 export const WAGONS_MAX = 4;
 /** what a sold train or engine returns */
@@ -89,11 +95,36 @@ export const STOP_SECONDS = 1;
 /** seconds one wagon takes to unload, and again to load: each wagon in turn, then the stop lasts STOP_SECONDS more */
 export const WAGON_DWELL = 0.6;
 /** the loading crew a station can buy: its price, and the share of the dwell it takes off */
-export const CREW_PRICE = 30;
+export const CREW_PRICE = 60;
 export const CREW_CUT = 1 / 3;
 /** lengths in tiles, for the renderer and the station slots */
 export const ENGINE_LEN = 2.2;
 export const WAGON_LEN = 1.4;
+
+/** a station's platforms at the start: a train that finds them all taken waits on the line */
+export const PLATFORMS_START = 1;
+/** what the second and the third platform of a station cost */
+export const PLATFORM_PRICE = [80, 160];
+/** tiles of clear track between a waiting train and the train on the platform */
+export const QUEUE_GAP = 0.4;
+
+/** seconds a train waits for a platform before it takes a siding track instead, so a ring of busy stations never freezes */
+export const PATIENCE_SECONDS = 12;
+
+/** the yearly upkeep of one built tile of track; a bridge tile costs BRIDGE_UPKEEP times that. Charged monthly */
+export const TRACK_UPKEEP = 0.15;
+export const BRIDGE_UPKEEP = 4;
+/** the share of the build price that comes back when a line is lifted, and that counts in net worth */
+export const LIFT_BACK = 0.5;
+
+/** the loan: the ceiling is LOAN_BASE plus LOAN_SHARE of net worth, the interest is paid at the year end */
+export const LOAN_BASE = 150;
+export const LOAN_SHARE = 0.5;
+export const LOAN_RATE = 0.08;
+/** one tap on Borrow or Repay */
+export const LOAN_STEP = 100;
+/** year ends in a row with cash below zero and the loan at its ceiling that end the scenario */
+export const BANKRUPT_YEARS = 2;
 
 /** the year-end choices, once each */
 export const PERK_SPEED = 1.25;

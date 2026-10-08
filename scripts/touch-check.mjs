@@ -107,6 +107,24 @@ try {
   await page.locator('.card.sheet').waitFor({ timeout: 3000 });
   const flatOn = await page.locator('.wagon').first().evaluate((el) => el.classList.contains('on'));
   check(flatOn, 'the card offers flat wagons for a line from the forest');
+  // the train costs more than the cash left: the cash chip opens the money card, Borrow takes a hundred
+  check(await page.locator('[data-track="card-buy-train"]').isDisabled(), 'the Buy button waits while the cash is short');
+  await tapButton(page.locator('[data-act="money"]'));
+  await page.locator('.money-card').waitFor({ timeout: 2000 });
+  const cashShort = (await where()).cash;
+  await tapButton(page.locator('[data-act="borrow"]'));
+  await page.waitForTimeout(200);
+  w = await where();
+  check(w.cash === cashShort + 100 && (await page.evaluate(() => window.__sim.loan)) === 100, `Borrow 100 on the money card puts the cash up (${cashShort} -> ${w.cash})`);
+  await tapButton(page.locator('.money-card .round.close'));
+  await page.waitForTimeout(200);
+  const onTrack = await page.evaluate(() => {
+    const s = window.__sim;
+    const c = s.lines[0].path[3];
+    return window.__renderer.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
+  });
+  await tap(onTrack.x, onTrack.y);
+  await page.locator('[data-track="card-buy-train"]').waitFor({ timeout: 3000 });
   await tapButton(page.locator('[data-track="card-buy-train"]'));
   await page.waitForTimeout(250);
   w = await where();
@@ -139,6 +157,7 @@ try {
   await page.screenshot({ path: 'shots/touch-check.png' });
 } catch (e) {
   check(false, String(e).split('\n')[0]);
+  await page.screenshot({ path: 'shots/touch-check-fail.png' }).catch(() => undefined);
 } finally {
   await browser.close();
   server.kill();

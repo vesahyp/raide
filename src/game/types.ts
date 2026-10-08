@@ -55,9 +55,7 @@ export interface ScenarioDef {
   cash: number;
   startYear: number;
   goal: Goal;
-  /** how many trains the player may run */
-  trainsMax: number;
-  /** cash at the end for two and for three stars */
+  /** net worth at the end for two and for three stars */
   stars: [number, number];
   /** the engines on sale */
   engines: EngineId[];
@@ -89,6 +87,8 @@ export interface Station {
   siteId: string;
   /** the loading crew is bought: every wagon takes a third less time here */
   crew: boolean;
+  /** the platform tracks: trains at the station at once; more arrive and wait on their line */
+  platforms: number;
 }
 
 export interface Line {
@@ -105,6 +105,9 @@ export interface Line {
   worst: number;
   /** the block: the cells between the two stations. One running train at a time on any of them */
   block: Set<number>;
+  /** pay earned and running cost paid by this line's trains this year, for the line card */
+  earnedYear: number;
+  runYear: number;
 }
 
 export type TrainState = 'run' | 'stop';
@@ -130,6 +133,16 @@ export interface Train {
   good: Good | null;
   /** the station cell the train stands at, while it stops */
   at: number | null;
+  /** the train waits on its line before a station whose platforms are all taken; it moves on when one is free */
+  queued: boolean;
+  /** a train the line has no platform for: it stands on a siding beside the station and runs when one is free */
+  parked: boolean;
+  /** the train may take a siding track at the station it runs to when every platform is taken: the dispatcher's way out of a standstill */
+  siding: boolean;
+  /** seconds the train has waited for a platform ahead of it */
+  waited: number;
+  /** the train has been given the platform it runs to; before that it may have to wait */
+  claimed: boolean;
   /** the platform track the train stands on at the station it is at or runs to: 0 is nearest the platform */
   slot: number;
   /** the platform track it stood on at the station it left, so it pulls out along the same one */
@@ -143,6 +156,9 @@ export interface Train {
   /** pay earned this year and last year, for the train card */
   earnedYear: number;
   earnedLast: number;
+  /** running cost paid this year and last year */
+  runYear: number;
+  runLast: number;
   /** what the train is doing at the platform: a load or an unload in hand, or neither */
   dock: 'load' | 'unload' | null;
   /** seconds until the load now being moved is on board (or off it) */
@@ -168,9 +184,17 @@ export type YearEndChoice = 'wagon' | 'speed' | 'forest';
 export interface YearEnd {
   year: number;
   income: Record<Good, number>;
+  /** the year's costs: per tile run, engine upkeep, track upkeep, interest */
+  running: number;
+  engine: number;
+  track: number;
+  interest: number;
+  /** running plus engine upkeep, the running costs the balance checks measure */
   upkeep: number;
   profit: number;
   cash: number;
+  loan: number;
+  worth: number;
   choice: YearEndChoice | null;
   /** towns that grew this year end */
   grew: string[];
@@ -211,19 +235,31 @@ export interface SimState {
   /** 0..1 through the year */
   yearFrac: number;
   month: number;
-  /** income this year by good, and the upkeep paid so far this year */
+  /** income this year by good, and the costs paid so far this year */
   income: Record<Good, number>;
+  /** running costs this year: tiles run plus engine upkeep (the split is in `running` and `engineUp`) */
   upkeep: number;
+  running: number;
+  engineUp: number;
+  trackUp: number;
+  /** what is owed, paid 8 % a year at the year end */
+  loan: number;
+  /** the build price of all track and stations standing; half of it counts in net worth */
+  assets: number;
+  /** what each cell of track cost to lay, for the refund when a line is lifted */
+  paid: Float32Array;
+  /** year ends in a row with cash below zero and the loan at its ceiling */
+  broke: number;
   /** a year end waiting for the player's choice; the sim holds while it is set */
   yearEnd: YearEnd | null;
   /** every closed year: the cash at its end and its profit, for the ledger's chart */
-  history: { year: number; cash: number; profit: number }[];
+  history: { year: number; cash: number; profit: number; worth: number; loan: number }[];
   /** choices taken, each once */
   perks: YearEndChoice[];
   /** loads of the goal good delivered at the goal site, for a deliver goal */
   goalCount: number;
   /** the scenario's end, set once */
-  result: { won: boolean; year: number; cash: number; stars: number } | null;
+  result: { won: boolean; year: number; cash: number; worth: number; stars: number; reason: 'goal' | 'time' | 'bankrupt' } | null;
   floats: Float[];
   sounds: string[];
   lastBuild: LastBuild | null;

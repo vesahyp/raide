@@ -15,6 +15,7 @@
 #   make trains         # the station with three trains, the buy card, the train card, loading, the crew, into shots/trains/
 #   make goods          # piles, chips, badges, the site card and pick mode, portrait and landscape, into shots/goods/
 #   make ledger         # the slice 5 pictures: the nine sites, the year-end charts, towns growing, price steps, into shots/ledger/
+#   make money-look     # the money card and the line card with its net, portrait and landscape, into shots/money/
 #   make drag-look      # the start rings and the drag targets, portrait and landscape, into shots/look/targets-*.png
 #   make icon           # render public/icon.svg to the PNG icons
 #   make touch-check    # lays track and buys a train by touch on an emulated phone
@@ -36,7 +37,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots look spots home trains goods ledger drag-look icon touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots look spots home trains goods ledger drag-look icon money-look touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -84,6 +85,10 @@ goods: build
 # the year-end charts, towns growing house by house, the chip price step
 ledger: build
 	node scripts/ledger.mjs
+
+# the money card and the line card with its earnings and net
+money-look: build
+	node scripts/money-look.mjs
 
 # the route under the finger mid-drag and at the site, then the choice card after the lift
 drag-look: build

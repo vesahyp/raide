@@ -38,12 +38,37 @@ veturi ryömii, ja kuorma hidastaa sitä lisää.
 
 **Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan.
 Osta-napista valitset veturin, vaunujen lajin ja määrän; kortti kertoo,
-montako kierrosta kumpikin veturi ajaa vuodessa juuri tällä radalla.
+montako kierrosta kumpikin veturi ajaa vuodessa juuri tällä radalla,
+paljonko tämä juna lisäisi linjan kierroksiin ja mitä se maksaisi ajaa
+vuodessa. Jos asema tai rataosuus on jo täynnä, luku näyttää sen: toinen
+juna samalla linjalla ei lisää kierroksia, vaan odottaa sivuraiteella.
 Lavavaunut kuljettavat tukkeja, umpivaunut lautoja ja jauhoja, viljavaunut
 viljaa. Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva: se vetää mäen
 yli. Juna lähtee heti ja ajaa linjaansa edestakaisin itsekseen.
 
-**Asemalla kestää.** Juna ajaa kokonaan laiturille ja pysähtyy. Vaunut
+**Raha on tiukalla.** Juna maksaa jokaisesta ajamastaan ruudusta, täynnä tai
+tyhjänä, ja veturilla on lisäksi vuosiylläpito. Jokainen ratakappale
+maksaa ylläpitoa vuodessa, silta nelinkertaisesti. Kassa tikittää alaspäin,
+kun junat liikkuvat, ja tuotto tulee toimituksista. Hyvä linja maksaa
+itsensä takaisin parissa vuodessa; linja, jolla ei ole tarvetta, syö rahaa
+joka vuosi. Linjakortista näet linjan tuoton, kulut ja tuloksen tältä
+vuodelta. Kun linjalla ei ole junia, **Nosta rata** -napilla rata
+puretaan ja puolet rakennushinnasta tulee takaisin.
+Junamäärälle ei ole kattoa: rajana ovat raha ja laiturit.
+
+**Laina.** Napauta kassaa ruudun yläreunassa: rahakortti näyttää kassan,
+lainan ja sen katon, koron (8 % vuodessa, maksetaan vuoden lopussa) ja
+nettovarallisuuden. **Lainaa 100** ja **Maksa takaisin 100** -napeilla
+rahaa saa nyt ja maksaa myöhemmin. Katto nousee nettovarallisuuden mukana.
+Kassa voi painua miinukselle vain ajokuluista; rakentamiseen ja ostoon
+tarvitaan rahaa. Jos kassa on miinuksella kahdessa vuodenvaihteessa
+peräkkäin ja laina on täynnä, peli päättyy konkurssiin.
+
+**Asemalla kestää.** Juna ajaa kokonaan laiturille ja pysähtyy. Asemalla on
+aluksi yksi laituri. Jos toinen juna on jo laiturilla, tuleva juna pysähtyy
+omalle radalleen ennen asemaa, kokonaan radan päälle, ja odottaa kärsivällisesti
+savuten, kunnes laituri vapautuu; koskaan juna ei aja toisen päälle. Jos jono
+venyy pitkäksi, juna siirtyy sivuraiteelle. Vaunut
 puretaan ja lastataan yksi kerrallaan, ja tavara siirtyy näkyvästi
 vaunun ja pinon välillä. Pitkä juna tienaa enemmän, mutta seisoo kauemmin.
 Aseman kortista voi ostaa **lastausporukan**, jolloin jokainen vaunu
@@ -52,7 +77,8 @@ lastautuu kolmanneksen nopeammin.
 **Napauta junaa**, niin sen kortti aukeaa: kuorma, matka-aika täynnä ja
 tyhjänä, tämän ja viime vuoden tulot, vaunu lisää, veturin vaihto,
 **odota täysi kuorma**, **siirrä toiselle linjalle** (kun juna seisoo
-sen linjan asemalla) tai myynti puoleen hintaan.
+sen linjan asemalla) tai myynti puoleen hintaan. Kortti kertoo myös, mitä juna on tuottanut ja
+maksanut tänä vuonna.
 
 **Tavara liikkuu.** Metsä kasvattaa tukkeja, saha tekee tukeista lautoja;
 maatila kasvattaa viljaa, mylly jauhaa siitä jauhoja. Kaupungit ostavat
@@ -70,20 +96,23 @@ kartalla tehdään: kolme kuormaa lautoja ja kolme jauhoja. Talot
 lisääntyvät, ja kirkko nousee koossa kaksi.
 
 **Vuosi on puolitoista minuuttia.** Vuoden lopussa tilikirja näyttää
-tulot, kulut ja voiton, kertoo mitkä kaupungit kasvoivat, ja annat yhden
-valinnan: vaunu lisää jokaiseen junaan, nopeammat veturit tai tuottoisampi
-maa. Jokaisen voi ottaa kerran.
+tulot, kulut jaettuna ajoon, veturien ylläpitoon, radan ylläpitoon ja korkoon,
+voiton, kassan, lainan ja nettovarallisuuden, kertoo mitkä kaupungit
+kasvoivat, ja annat yhden valinnan: vaunu lisää jokaiseen junaan,
+nopeammat veturit tai tuottoisampi maa. Jokaisen voi ottaa kerran.
 
 ## Kentät
 
 - **Saha:** metsä, saha ja kaupunki joen takana. Opettaa vedon, sillan ja
-  junan. Tavoite: 20 lautakuormaa Hämeenlinnaan ennen vuotta 1866.
+  junan. Tavoite: 20 lautakuormaa kaupunkiin ennen vuotta 1866.
 - **Harju:** kaksi metsää ja saha, kaksi maatilaa ja mylly, kolme kaupunkia,
   harju ja järvi kaiken keskellä. Alussa sinulla on asema kummassakin
   metsässä, joten ensimmäinen valinta on kummasta aloitat, ja sen jälkeen
   mitkä kaupungit palvelet. Tavoite: kaksi kaupunkia kokoon 3 ennen vuotta
   1872. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
-  tulot tavaroittain ja kassan vuosi vuodelta.
+  tulot tavaroittain ja nettovarallisuuden vuosi vuodelta.
 
-Kassa lopussa antaa yhdestä kolmeen tähteä. Puhelimen voi kääntää kesken
+Nettovarallisuus lopussa antaa yhdestä kolmeen tähteä: kassa, junat ja
+asemat sekä radat puoleen hintaan, miinus laina. Taukovalikko näyttää
+nettovarallisuuden kesken pelin. Puhelimen voi kääntää kesken
 pelin: näkymä sovittuu uuteen asentoon ja peli jatkuu.

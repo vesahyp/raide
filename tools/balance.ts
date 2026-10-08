@@ -1,23 +1,39 @@
 /**
- * npm run balance: the bot plays a scenario (SCENARIO=harju, sawmill by default) and prints
- * the year by year numbers, the builds and when the goal fell. Read it after touching
- * content/economy.ts.
+ * npm run balance: the bot plays a scenario (SCENARIO=harju, sawmill by default; GREEDY=1 plays
+ * the greedy plan) and prints the builds, then a table of the money year by year. Read it after
+ * touching content/economy.ts.
  */
 import { createState } from '../src/game/state';
 import { SCENARIO_BY_ID } from '../src/game/content/scenarios';
-import { step, DT } from '../src/game/sim';
+import { step, DT, netWorth } from '../src/game/sim';
 import { Bot } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
+import { GOODS } from '../src/game/types';
 
 declare const process: { env: Record<string, string | undefined> };
 const sc = SCENARIO_BY_ID[process.env.SCENARIO ?? 'sawmill'];
 const s = createState(sc);
-const bot = Bot.for(s);
+const bot = Bot.for(s, process.env.GREEDY === '1');
 const limit = (sc.goal.beforeYear - sc.startYear) * YEAR_SECONDS + 10;
 for (let t = 0; t < limit && !s.result; t += DT) {
   bot.act(s);
   step(s);
 }
-for (const l of bot.log) console.log(l);
-console.log(`first pay ${s.firstPayAt?.toFixed(0)} s; result ${s.result ? `${s.result.won ? 'won' : 'lost'} ${s.result.year} cash ${s.result.cash} stars ${s.result.stars}` : 'none'} at ${s.time.toFixed(0)} s`);
-console.log(`sites: ${s.sites.map((x) => `${x.id} stock ${x.stock.toFixed(1)} delivered ${x.delivered} size ${x.size}`).join('; ')}`);
+if (process.env.QUIET !== '1') for (const l of bot.log) console.log(l);
+console.log(`first pay ${s.firstPayAt?.toFixed(0)} s; result ${s.result ? `${s.result.won ? 'won' : 'lost'} ${s.result.year} (${s.result.reason}) cash ${s.result.cash} worth ${s.result.worth} stars ${s.result.stars}` : 'none'} at ${s.time.toFixed(0)} s`);
+console.log(`sites: ${s.sites.map((x) => `${x.id} delivered ${x.delivered} size ${x.size}`).join('; ')}`);
+const pad = (x: number | string, n = 7) => String(x).padStart(n);
+console.log(['year', 'gross', 'running', 'engine', 'track', 'interest', 'cash', 'loan', 'worth', 'trains', 'run%'].map((h) => pad(h)).join(''));
+for (const y of bot.years) {
+  const gross = GOODS.reduce((a, g) => a + y.income[g], 0);
+  console.log([y.year, gross, y.running, y.engine, y.track, y.interest, y.cash, y.loan, y.worth, y.trains, `${Math.round((100 * y.upkeep) / Math.max(1, gross))}`].map((x) => pad(x)).join(''));
+}
+console.log(`(end: cash ${Math.round(s.cash)} loan ${s.loan} worth ${Math.round(netWorth(s))} trains ${s.trains.length}, parked ${s.trains.filter((t) => t.parked).length})`);
+if (process.env.TRAINS === '1')
+  for (const t of s.trains) console.log(`train ${t.id} line ${t.lineId} ${t.state} at ${t.at} s ${t.s.toFixed(1)} dir ${t.dir} queued ${t.queued} claimed ${t.claimed} parked ${t.parked} slot ${t.slot} cargo ${t.cargo}`);
+if (process.env.TRAINS === '1') for (const t of s.trains) console.log(`train ${t.id} earned ${Math.round(t.earned)} line ${t.lineId} odometer ${Math.round(t.odometer)}`);
+if (process.env.LINES === '1') {
+  const name = (id: number) => { const st = s.stations.find((x) => x.id === id)!; return st.siteId; };
+  for (const a of s.lines) for (const b of s.lines) if (a.id < b.id) { let n = 0; for (const c of a.block) if (b.block.has(c)) n++; if (n) console.log(`share ${name(a.stops[0])}-${name(a.stops[1])} with ${name(b.stops[0])}-${name(b.stops[1])}: ${n} cells`); }
+  for (const l of s.lines) console.log(`line ${name(l.stops[0])}-${name(l.stops[1])} ${l.path.length} cells`);
+}

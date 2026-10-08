@@ -1,6 +1,6 @@
 # The economy and the loop
 
-Status: Vesa said yes on 2026-10-08; being built in the order below. When
+Status: Vesa said yes on 2026-10-08; being built in the order below. Step 1 is built (money, loan, net worth stars, running costs, upkeep, lifting, one platform per station with a queue on the line); its numbers are in `economy.ts`. Where it differs from the plan: a second train on a line with one platform per end is parked on a siding and adds no trips, because two trains on one single track cannot swap ends; a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones. When
 it is built, the numbers move into `src/game/content/economy.ts` and the
 rules into `docs/design.md`, and this file keeps only what is still ahead.
 

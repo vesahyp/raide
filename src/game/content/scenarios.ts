@@ -117,8 +117,7 @@ export const SAWMILL: ScenarioDef = {
   cash: 150,
   startYear: 1862,
   goal: { kind: 'deliver', good: 'boards', site: 'town', count: 20, beforeYear: 1866 },
-  trainsMax: 3,
-  stars: [250, 450],
+  stars: [250, 420],
   engines: ['hilma'],
 };
 
@@ -194,11 +193,10 @@ export const HARJU: ScenarioDef = {
   sites: HARJU_SITES,
   startStation: 'forest',
   startStations: ['korpela'],
-  cash: 200,
+  cash: 220,
   startYear: 1862,
   goal: { kind: 'towns', size: 3, count: 2, beforeYear: 1872 },
-  trainsMax: 6,
-  stars: [1200, 2600],
+  stars: [900, 1800],
   engines: ['hilma', 'jyry'],
 };
 

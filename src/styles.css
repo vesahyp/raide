@@ -84,6 +84,8 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .hud-goal .until { font-size: 12px; font-weight: 600; color: var(--bone-dim); white-space: nowrap; }
 .hud-cash { color: var(--gold); }
 .hud-cash.red { color: #ff8a7a; }
+button.hud-cash { font-family: inherit; cursor: pointer; }
+button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .hud .pause { flex: none; }
 @media (max-width: 420px) {
   .hud-goal .until { display: none; }
@@ -177,17 +179,17 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .ledger-charts .grown { display: inline-flex; align-items: center; gap: 4px; }
 .ledger-charts .house { width: 18px; height: 18px; }
 .ledger-nums { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.ledger-table { flex: 1 1 0; min-height: 76px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ledger-table { flex: 1 1 0; min-height: 190px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .ledger-pick { flex: none; text-align: center; }
 .ledger-pick .small { margin: 2px 0 4px; }
 .card.ledger h2 { color: var(--ink); font-size: 26px; text-align: center; }
 .card.ledger table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 0; }
-.card.ledger td { padding: 3px 4px; border-bottom: 1px dashed rgba(42, 36, 24, 0.3); text-align: left; }
+.card.ledger td { padding: 2px 4px; border-bottom: 1px dashed rgba(42, 36, 24, 0.3); text-align: left; }
 .card.ledger td.num { text-align: right; font-weight: 700; }
 .card.ledger tr.total td { font-weight: 800; border-bottom: 2px solid var(--ink); }
 .card.ledger .small { color: rgba(42, 36, 24, 0.7); }
-.choices { display: flex; flex-direction: column; gap: 6px; }
-.btn.choice { flex-direction: column; gap: 0; width: 100%; margin: 0; background: #e3d6b4; border-color: #b9a06a; color: var(--ink); box-shadow: 0 3px 0 #b9a06a; }
+.choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.btn.choice { flex-direction: column; gap: 0; width: 100%; min-width: 0; min-height: 52px; padding: 6px 4px; font-size: 14px; margin: 0; background: #e3d6b4; border-color: #b9a06a; color: var(--ink); box-shadow: 0 3px 0 #b9a06a; }
 .btn.choice small { font-weight: 500; font-size: 13px; opacity: 0.8; }
 .btn.choice:disabled { opacity: 0.45; box-shadow: none; }
 .card.result .stars { font-size: 44px; color: var(--gold); letter-spacing: 6px; margin: 2px 0 6px; }
@@ -199,6 +201,7 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 
 @media (orientation: landscape) {
   .card.sheet { left: auto; right: calc(var(--sar) + 8px); bottom: 0; width: min(420px, 50%); margin: 0; }
+  .card.sheet.buy-card, .card.sheet.train-card, .card.sheet.money-card, .card.sheet.site-card { max-height: calc(100% - 8px); }
 }
 
 /* the start screen in landscape: the title on the left third, the cards in a column on the right */
@@ -226,7 +229,11 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
   .ledger-nums { width: 52%; }
   .ledger-body .small { margin-top: 0; }
   .card.ledger table { font-size: 14px; }
-  .btn.choice { min-height: 44px; padding: 6px 12px; font-size: 16px; }
+  .btn.choice { min-height: 40px; padding: 4px 8px; font-size: 15px; }
+  .ledger-table { min-height: 60px; }
+  .btn.choice small, .ledger-pick .small { display: none; }
+  .btn.choice { min-height: 34px; }
+  .card.ledger td { padding: 2px 4px; }
 }
 
 /* --- the choice of routes --- */
@@ -265,7 +272,7 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .btn.act:disabled { opacity: 0.45; box-shadow: none; }
 
 /* --- the site card: has, wants, why it is stuck, buyers, and the button that lays track --- */
-.card.sheet.site-card { max-height: calc(100% - 8px); overflow-y: auto; }
+.card.sheet.site-card { max-height: calc(100% - var(--sat) - 64px); overflow-y: auto; }
 .site-card .card-head { margin-bottom: 4px; }
 .srow { display: grid; grid-template-columns: 62px 1fr; align-items: start; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hair); }
 .srow .sl { font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.04em; padding-top: 7px; }
@@ -300,7 +307,7 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .btn.route .trips .pic { transform: scale(0.75); margin: 0 -3px; }
 
 /* --- the buy card and the train card --- */
-.card.sheet.buy-card, .card.sheet.train-card { max-height: calc(100% - 8px); overflow-y: auto; }
+.card.sheet.buy-card, .card.sheet.train-card { max-height: calc(100% - var(--sat) - 64px); overflow-y: auto; }
 .buy-label { margin: 8px 0 -4px; font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 .wagon .gold, .gold { color: var(--gold); }
 .wagon .goods { display: flex; gap: 3px; }
@@ -335,3 +342,20 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .crew-row .btn.act { flex: none; min-width: 72px; margin: 0; }
 .crew-row .bought { color: #8be08f; }
 .card canvas.consist { position: static; inset: auto; }
+
+/* --- money: the cash chip's card, the line's money, lifting a line --- */
+.red { color: #ff8a7a; }
+.card.sheet.money-card { max-height: calc(100% - var(--sat) - 64px); overflow-y: auto; }
+.money-card .acts { margin-top: 8px; }
+.facts.line-money { margin: 2px 0 6px; }
+.fact .why { flex-basis: 100%; color: #ffb3a6; font-weight: 700; font-size: 13px; }
+.btn.act.lift { width: calc(100% - 10px); margin: 4px 5px 2px; flex-direction: row; justify-content: space-between; gap: 10px; }
+.worth-line { text-align: center; margin: 0 0 8px; }
+.card.ledger tr.worth-row td { border-bottom: none; }
+.money-row { display: grid; grid-template-columns: 1fr 1.3fr 0.8fr; gap: 6px; margin: 2px 0 6px; padding: 6px 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.money-row > div { display: flex; flex-direction: column; min-width: 0; }
+.money-row small { font-size: 11px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.03em; line-height: 1.2; }
+.money-row b { font-size: 18px; font-weight: 900; line-height: 1.15; }
+.btn.act.lift { min-height: 40px; padding: 6px 10px; font-size: 14px; }
+.money-row small.sub { font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.buy-card > .btn.primary.wide { position: sticky; bottom: 0; z-index: 1; }

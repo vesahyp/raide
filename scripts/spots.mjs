@@ -1,7 +1,7 @@
 // The spots check: the bot plays Harju at ?speed=4 on an emulated iPhone, and the script takes the
 // views where a drawing error shows: the hill, the junction at Koskensaha, the bridge, the ridge, the
 // whole map and a close up at Kuusikko, in portrait and landscape, into shots/spots/. It also
-// checks that every running train sits on its rails (a vehicle further than 0.45 tile from the
+// checks that no two standing trains share a platform track and no two trains' vehicles overlap, that every running train sits on its rails (a vehicle further than 0.45 tile from the
 // line's centre line is an error) and that the mean draw time per frame at play zoom, from
 // ?fps=1, is at most 12 ms. Run `make spots` (builds first), then look at the pictures.
 import { chromium, devices } from 'playwright';
@@ -42,7 +42,24 @@ try {
     // drawMs is the time spent drawing a frame; frameMs is the gap between frames, which headless
     // Chromium holds near 22 ms whatever the draw costs, so the limit applies to drawMs
     if (fps.drawMs > MAX_FRAME_MS) errors.push(`${orient}: mean draw time ${fps.drawMs} ms is over ${MAX_FRAME_MS} ms`);
+    // no train stands on another: every 100 ms no two standing trains share a platform track, and no two vehicles of
+    // different trains lie closer than 0.6 tile (the tracks of a station are 0.8 apart, a wagon is 1.4 long)
+    await page.evaluate(() => {
+      window.__clash = { shared: 0, near: 0, sample: null, seen: 0 };
+      setInterval(() => {
+        const s = window.__sim; const r = window.__renderer;
+        const keys = new Set();
+        for (const t of s.trains) if (t.state === 'stop' && t.at !== null) { const k = `${t.at}:${t.slot}`; if (keys.has(k)) window.__clash.shared++; keys.add(k); }
+        const veh = s.trains.flatMap((t) => r.vehicles(t).map((v) => ({ t: t.id, x: v.wx, y: v.wy })));
+        for (let i = 0; i < veh.length; i++) for (let j = i + 1; j < veh.length; j++) if (veh[i].t !== veh[j].t && Math.hypot(veh[i].x - veh[j].x, veh[i].y - veh[j].y) < 0.6) { window.__clash.near++; window.__clash.sample = [veh[i], veh[j]]; }
+        window.__clash.seen += s.trains.length;
+      }, 100);
+    });
     await page.waitForTimeout(25000);
+    const clash = await page.evaluate(() => window.__clash);
+    console.log(orient, 'platform check', JSON.stringify(clash));
+    if (clash.shared) errors.push(`${orient}: ${clash.shared} samples with two standing trains on one platform track`);
+    if (clash.near) errors.push(`${orient}: ${clash.near} samples with two trains' vehicles closer than 0.6 tile ${JSON.stringify(clash.sample)}`);
     await page.evaluate(() => document.querySelectorAll('.round.close').forEach((b) => b.click()));
     // a view: zoom steps, wait for the zoom to settle, centre on a tile, wait for the pan, shoot,
     // then check that each running train sits on its rails

@@ -1,5 +1,5 @@
 // The slice 5 pictures, portrait and landscape, into shots/ledger/: the whole Harju map at the start
-// with all nine sites, the year-end card after the bot's second year (both charts) and a tap on a
+// with all nine sites, the year-end card after the bot's second year (both charts: income by good and net worth) and a tap on a
 // bar and on a dot, a town at size 1, one house on its way up, at size 3 and at size 5, and a wants
 // chip right after a delivery and at the floor. It fails when a chart is cut off by the card,
 // when a tap on a bar or a dot shows no tip, when the chip does not show the price step, when the
@@ -78,7 +78,7 @@ try {
     // 3. a chip right after a delivery, and at the floor
     const hp = await site('hameenlinna');
     await view(hp.x, hp.y - 3.2, 26);
-    await page.evaluate(() => { const o = window.__sim.sites.find((x) => x.id === 'hameenlinna'); o.taken.boards = 3; o.taken.flour = 3; });
+    await page.evaluate(() => { const o = window.__sim.sites.find((x) => x.id === 'hameenlinna'); o.taken.boards = 1; o.taken.flour = 1; });
     await page.waitForTimeout(2500);
     const text = (sel) => page.evaluate((sel) => document.querySelector(`.site-tag[data-key="site:hameenlinna"] ${sel}`)?.textContent ?? '', sel);
     // at rest the chip's number is written a few times a second at most
@@ -117,11 +117,11 @@ try {
     await shot('year-end');
     const geo = await page.evaluate(() => {
       const r = (sel) => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right }; };
-      return { card: r('.card.ledger'), income: r('.chart.income'), cash: r('.chart.cash'), nums: r('.ledger-nums'), pick: r('.ledger-pick'), vh: innerHeight, vw: innerWidth,
+      return { card: r('.card.ledger'), income: r('.chart.income'), worth: r('.chart.worth'), nums: r('.ledger-nums'), pick: r('.ledger-pick'), vh: innerHeight, vw: innerWidth,
         scroll: (() => { const t = document.querySelector('.ledger-table'); return t.scrollHeight - t.clientHeight; })(), cardScroll: (() => { const c = document.querySelector('.card.ledger'); return c.scrollHeight - c.clientHeight; })() };
     });
     console.log(orient, 'ledger geometry', JSON.stringify(geo));
-    for (const k of ['income', 'cash']) {
+    for (const k of ['income', 'worth']) {
       const g = geo[k];
       if (!g || g.top < geo.card.top - 1 || g.bottom > geo.card.bottom + 1 || g.bottom > geo.vh) errors.push(`${orient}: the ${k} chart is cut off by the card`);
       if (g && (g.right > geo.vw || g.left < 0)) errors.push(`${orient}: the ${k} chart is wider than the screen`);
@@ -133,9 +133,9 @@ try {
     await page.waitForTimeout(200);
     if (!(await page.locator('.chart.income text', { hasText: /: \d/ }).count())) errors.push(`${orient}: no tip after a tap on a bar`);
     await shot('year-end-tip-bar');
-    await page.locator('.chart.cash g').nth(1).tap();
+    await page.locator('.chart.worth g').nth(1).tap();
     await page.waitForTimeout(200);
-    if (!(await page.locator('.chart.cash text', { hasText: /: -?\d/ }).count())) errors.push(`${orient}: no tip after a tap on a dot`);
+    if (!(await page.locator('.chart.worth text', { hasText: /: -?\d/ }).count())) errors.push(`${orient}: no tip after a tap on a dot`);
     await shot('year-end-tip-dot');
     await ctx.close();
   }

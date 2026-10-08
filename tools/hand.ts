@@ -9,6 +9,7 @@
  * coordinates, so the same hand plays portrait and landscape.
  */
 import { PLANS, type Step } from './bot';
+import { PLATFORM_PRICE, CREW_PRICE, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
 
 export { PLANS };
 
@@ -20,16 +21,25 @@ export interface HandView {
   trains: { id: number; line: [string, string]; stopped?: boolean }[];
   yearEnd: boolean;
   result: boolean;
-  card: 'line' | 'train' | 'site' | 'choice' | 'yearEnd' | 'result' | 'none';
+  card: 'line' | 'train' | 'site' | 'choice' | 'yearEnd' | 'result' | 'money' | 'none';
   /** which line's card, or which train's, is open */
   cardLine: [string, string] | null;
   cardTrain: number | null;
   /** which site's card is open, and the sites whose station has the loading crew */
   cardSite: string | null;
   crews: string[];
+  /** the platforms each site's station has */
+  platforms: Record<string, number>;
   /** the next line's cost by mode, when the next step is a line: what the thumb would read off the glass */
   nextCost: { cheap: number; short: number | null } | null;
   trainPrice: { hilma: number; jyry: number };
+  /** what is owed, and the most the bank lends now */
+  loan: number;
+  ceiling: number;
+  /** loads each site has taken, for the steps that wait for the timber to come */
+  delivered: Record<string, number>;
+  /** whether a train bought now for the next train step's line would stand on a platform (and not park) */
+  spotFree: boolean;
 }
 
 export type HandAction =
@@ -40,8 +50,12 @@ export type HandAction =
   | { kind: 'openTrain'; train: number }
   | { kind: 'openSite'; site: string }
   | { kind: 'crew' }
+  | { kind: 'platform' }
   | { kind: 'act'; what: string }
   | { kind: 'close' }
+  | { kind: 'openMoney' }
+  | { kind: 'borrow' }
+  | { kind: 'repay' }
   | { kind: 'choose' }
   | { kind: 'wait' }
   | { kind: 'done' };
@@ -91,11 +105,46 @@ export class Hand {
     this.jitter = 12 - 10 * skill;
   }
 
+  /** the price of the next step, the way the thumb reads it off the glass; the bot's reserve is a quarter of it */
+  private priceOf(step: Step, v: HandView): number {
+    if (step.kind === 'line') {
+      const next = this.steps[this.done + 1];
+      const reserve = next?.kind === 'train' ? v.trainPrice[next.engine ?? 'hilma'] : 0;
+      return (v.nextCost ? (step.mode === 'short' && v.nextCost.short !== null ? v.nextCost.short : v.nextCost.cheap) : Infinity) + reserve;
+    }
+    if (step.kind === 'train') return v.trainPrice[step.engine ?? 'hilma'];
+    if (step.kind === 'crew') return CREW_PRICE;
+    if (step.kind === 'platform') return PLATFORM_PRICE[0];
+    if (step.kind === 'wagon') return WAGON_PRICE;
+    if (step.kind === 'engine') return ENGINES[step.engine].price - Math.round(ENGINES.hilma.price * RESALE);
+    return 0;
+  }
+
+  /**
+   * The loan, as the thumb handles it: when the next buy is out of reach and the bank lends, open the
+   * money card and borrow a hundred at a time; when the cash runs a hundred past the next buy and its
+   * reserve, pay a hundred back. Null when there is nothing to do with money now.
+   */
+  private money(step: Step | undefined, v: HandView): HandAction | null {
+    const need = step ? this.priceOf(step, v) : 0;
+    const reserve = Math.max(10, Math.round(need / 4));
+    const open = v.card === 'money';
+    const buyable = !!step && Number.isFinite(need) && need > 0 && (step.kind !== 'train' || v.spotFree) && !((step as { after?: { site: string; delivered: number } }).after && v.delivered[(step as { after: { site: string } }).after.site] < (step as { after: { delivered: number } }).after.delivered);
+    if (buyable && v.cash < need + reserve && v.loan + 100 <= v.ceiling * 0.85) return open ? { kind: 'borrow' } : v.card !== 'none' ? { kind: 'close' } : { kind: 'openMoney' };
+    if (v.loan >= 100 && v.cash > need + reserve + 100 + (open ? 0 : 100)) return open ? { kind: 'repay' } : v.card !== 'none' ? { kind: 'close' } : { kind: 'openMoney' };
+    if (open) return { kind: 'close' };
+    return null;
+  }
+
   /** what to do next, given what the thumb sees on the screen */
   next(v: HandView): HandAction {
     if (v.result) return { kind: 'done' };
     if (v.yearEnd || v.card === 'yearEnd') return { kind: 'choose' };
     const step = this.steps[this.done];
+    const m = this.money(step, v);
+    if (m) return m;
+    const gate = step && (step as { after?: { site: string; delivered: number } }).after;
+    if (gate && v.delivered[gate.site] < gate.delivered) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
     if (!step) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
     if (step.kind === 'line') {
       if (v.lines.some((l) => same(l, [step.from, step.to]))) {
@@ -121,7 +170,7 @@ export class Hand {
         }
         return { kind: 'wait' };
       }
-      if (v.cash < v.trainPrice[step.engine ?? 'hilma']) return v.card === 'line' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.cash < v.trainPrice[step.engine ?? 'hilma'] || !v.spotFree) return v.card === 'line' ? { kind: 'close' } : { kind: 'wait' };
       if (v.card === 'line' && v.cardLine && same(v.cardLine, step.line)) return { kind: 'buy', wagons: step.wagons, engine: step.engine ?? 'hilma' };
       if (v.card !== 'none') return { kind: 'close' };
       return { kind: 'openLine', line: step.line };
@@ -131,8 +180,18 @@ export class Hand {
         this.done++;
         return { kind: 'wait' };
       }
-      if (v.cash < 30) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.cash < CREW_PRICE) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
       if (v.card === 'site' && v.cardSite === step.site) return { kind: 'crew' };
+      if (v.card !== 'none') return { kind: 'close' };
+      return { kind: 'openSite', site: step.site };
+    }
+    if (step.kind === 'platform') {
+      if ((v.platforms[step.site] ?? 1) >= 2) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      if (v.cash < PLATFORM_PRICE[0]) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.card === 'site' && v.cardSite === step.site) return { kind: 'platform' };
       if (v.card !== 'none') return { kind: 'close' };
       return { kind: 'openSite', site: step.site };
     }
@@ -143,7 +202,7 @@ export class Hand {
         this.done++;
         return { kind: 'wait' };
       }
-      const need = step.kind === 'wagon' ? 10 : step.kind === 'engine' ? 65 : 0;
+      const need = step.kind === 'wagon' ? WAGON_PRICE : step.kind === 'engine' ? 80 : 0;
       if (v.cash < need) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
       if (v.card === 'train' && v.cardTrain === id) {
         this.done++;

@@ -257,7 +257,6 @@ export class Renderer2D {
   /** the platform tracks of every station, and the most platform tracks each has needed */
   private aprons: Apron[] = [];
   private apronAt = new Map<number, Apron>();
-  private kSeen = new Map<number, number>();
   /** the pillars drawn this frame, by site, so the HTML labels keep clear of their bright foot */
   /** the cloud cover that fades in when the map is zoomed out */
   private clouds: Clouds;
@@ -438,16 +437,15 @@ export class Renderer2D {
     this.dirty(Math.min(site.cx + r.dx0 - 2, site.cx - 8), site.cy + r.dy0 - 2, Math.max(site.cx + r.dx1 + 2, site.cx + 8), site.cy + 4);
   }
 
-  /** the platform tracks the station at a cell needs now: one for each line that ends there, more while trains stand together */
+  /**
+   * The platform tracks a station draws: as many as it owns, and a siding track beside them only
+   * while a train stands or runs on it.
+   */
   private platformsNeeded(cell: number): number {
     const s = this.s;
-    let k = 0;
-    for (const l of s.lines) if (l.path[0] === cell || l.path[l.path.length - 1] === cell) k++;
+    let k = Math.max(1, Math.min(SLOTS_MAX, s.stations.find((st) => st.cell === cell)?.platforms ?? 1));
     for (const t of s.trains) for (const [c, slot] of this.slotCells(t)) if (c === cell) k = Math.max(k, slot + 1);
-    k = Math.max(1, Math.min(SLOTS_MAX, k));
-    const seen = Math.max(k, this.kSeen.get(cell) ?? 0);
-    this.kSeen.set(cell, seen);
-    return seen;
+    return Math.min(SLOTS_MAX, k);
   }
 
   /** the stations a train uses a platform track at now: where it stands, or where it runs to and where it left */
@@ -1296,7 +1294,8 @@ export class Renderer2D {
     const S = this.cam.s;
     let st = this.puffs.get(t.id);
     if (!st) this.puffs.set(t.id, (st = { list: [], last: 0 }));
-    if (t.state === 'run' && this.time - st.last > 0.22) {
+    // a train waiting on its line for a platform keeps its fire in: a slow puff now and then
+    if (t.state === 'run' && this.time - st.last > (t.queued ? 0.7 : 0.22)) {
       st.last = this.time;
       const p = this.enginePos(t, 0.32);
       st.list.push({ x: p.x, y: p.y, lv: p.lv, up: 0.25, age: 0 });

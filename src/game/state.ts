@@ -1,7 +1,7 @@
 import type { Good, ScenarioDef, SimState, Site } from './types';
 import { GOODS } from './types';
 import { idx, inside } from './grid';
-import { RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
+import { PLATFORMS_START, RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
 
 const COVER = { none: 0, forest: 1, field: 2, street: 3 } as const;
 
@@ -84,6 +84,13 @@ export function createState(sc: ScenarioDef): SimState {
     month: 0,
     income: zeroGoods(),
     upkeep: 0,
+    running: 0,
+    engineUp: 0,
+    trackUp: 0,
+    loan: 0,
+    assets: 0,
+    paid: new Float32Array(sc.w * sc.h),
+    broke: 0,
     yearEnd: null,
     history: [],
     perks: [],
@@ -97,7 +104,7 @@ export function createState(sc: ScenarioDef): SimState {
   };
   for (const id of [sc.startStation, ...(sc.startStations ?? [])]) {
     const d = sc.sites.find((o) => o.id === id)!;
-    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id, crew: false });
+    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id, crew: false, platforms: PLATFORMS_START });
   }
   return s;
 }

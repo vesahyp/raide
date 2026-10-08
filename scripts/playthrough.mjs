@@ -75,12 +75,13 @@ const look = (page) =>
     });
     const glass = { ...r.area(), scale: r.scale };
     const el = (q) => document.querySelector(q);
-    const card = el('.card.result') ? 'result' : el('.card.ledger') ? 'yearEnd' : el('.choice-card') ? 'choice' : el('[data-act="wagon"]') ? 'train' : el('[data-track="card-buy-train"]') ? 'line' : el('.want, .card.sheet') ? 'site' : 'none';
+    const card = el('.card.result') ? 'result' : el('.money-card') ? 'money' : el('.card.ledger') ? 'yearEnd' : el('.choice-card') ? 'choice' : el('[data-act="wagon"]') ? 'train' : el('[data-track="card-buy-train"]') ? 'line' : el('.want, .card.sheet') ? 'site' : 'none';
     const head = el('.card.sheet h2')?.textContent ?? '';
     const nameOf = (id) => s.sites.find((o) => o.id === id)?.name.fi;
     const cardLine = card === 'line' ? lines.find((l) => head.includes(nameOf(l[0])) && head.includes(nameOf(l[1]))) ?? null : null;
     const cardSite = card === 'site' ? s.sites.find((o) => head.includes(o.name.fi))?.id ?? null : null;
     const crews = s.stations.filter((st) => st.crew).map((st) => st.siteId);
+    const platforms = Object.fromEntries(s.stations.map((st) => [st.siteId, st.platforms]));
     let cardTrain = null;
     if (card === 'train') {
       const earned = (el('.train-row.still .row-text')?.textContent ?? '').match(/(\d+)\s*$/)?.[1];
@@ -99,7 +100,10 @@ const look = (page) =>
     // the middle of each line on the glass, two points to try, to tap the track
     const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
     return {
-      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, cardSite, crews, nextCost, trainPrice: (() => { const n = Math.min(4, 2 + (s.perks.includes('wagon') ? 1 : 0)); return { hilma: 50 + 10 * n, jyry: 90 + 10 * n }; })(), lineTaps,
+      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, cardSite, crews, platforms, nextCost, trainPrice: (() => { const n = Math.min(4, 2 + (s.perks.includes('wagon') ? 1 : 0)); return { hilma: window.__act.price('hilma', n), jyry: window.__act.price('jyry', n) }; })(), lineTaps,
+      loan: s.loan, ceiling: window.__act.ceiling(), delivered: Object.fromEntries(s.sites.map((o) => [o.id, o.delivered])),
+      // whether a train bought now for the line the hand wants would stand on a platform and not park
+      spotFree: (() => { const st = hand && hand.steps[hand.done]; if (!st || st.kind !== 'train') return true; const l = s.lines.find((o) => { const p = pair(o); return (p[0] === st.line[0] && p[1] === st.line[1]) || (p[0] === st.line[1] && p[1] === st.line[0]); }); return l ? window.__act.spotFree(l.id, 2) : true; })(),
       time: s.time, year: s.year, firstPayAt: s.firstPayAt, towns: s.sites.filter((x) => x.kind === 'town').map((x) => x.size), bridges: s.lines.reduce((a, l) => a + l.path.filter((c) => s.water[c]).length, 0), cuttings: s.lines.reduce((a, l) => a + l.path.filter((c, k) => l.rail[k] < s.height[c] - 1 && !s.water[c]).length, 0),
     };
   });
@@ -318,6 +322,17 @@ async function run(orient) {
         await page.waitForTimeout(300);
         const after = await look(page);
         if (after.card !== 'site' && after.card !== 'none') { await tapButton(page.locator('.round.close')); await page.waitForTimeout(200); }
+      } else if (act.kind === 'openMoney') {
+        await tapButton(page.locator('[data-act="money"]'));
+        await page.waitForTimeout(300);
+      } else if (act.kind === 'borrow' || act.kind === 'repay') {
+        if (await tapButton(page.locator(`[data-act="${act.kind}"]:not([disabled])`))) stats.acts++;
+        await page.waitForTimeout(200);
+      } else if (act.kind === 'platform') {
+        if (await tapButton(page.locator('[data-act="platform"]'))) stats.acts++;
+        await page.waitForTimeout(250);
+        await tapButton(page.locator('.round.close'));
+        await page.waitForTimeout(200);
       } else if (act.kind === 'crew') {
         if (await tapButton(page.locator('[data-act="crew"]'))) stats.acts++;
         await page.waitForTimeout(250);
@@ -412,7 +427,7 @@ writeFileSync(join(OUT, 'summary.md'), `| run | result | year | cash | stars | f
 check(summary.every((r) => !r.error && r.won), `the thumb wins ${SCENARIO} in both orientations`);
 check(summary.every((r) => !r.errors?.length), `no page errors (${summary.flatMap((r) => r.errors ?? []).slice(0, 3).join('; ') || 'none'})`);
 check(summary.every((r) => r.firstPayAt !== null && r.firstPayAt < 90), `the first paid delivery lands inside 90 s (${summary.map((r) => r.firstPayAt?.toFixed(0) ?? '-').join(' ')})`);
-if (SCENARIO === 'sawmill') check(summary.every((r) => r.drags === 2 && r.buys === 3), `two drags and three trains do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
+if (SCENARIO === 'sawmill') check(summary.every((r) => r.drags === 2 && r.buys === 2), `two drags and two trains do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
 if (SCENARIO === 'harju') {
   check(summary.every((r) => r.lines === 6 && r.trains === 6), `the thumb builds the whole network: six lines, six trains (${summary.map((r) => `${r.lines}/${r.trains}`).join(' ')})`);
   check(summary.every((r) => r.routes.short >= 3 && r.bridges >= 5 && r.cuttings >= 2), `the thumb picks the short route where the plan says, with a bridge and a cutting built (${summary.map((r) => `${r.routes.short} short, ${r.bridges} bridge, ${r.cuttings} cutting`).join('; ')})`);

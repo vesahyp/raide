@@ -1,5 +1,5 @@
 // The trains check: the pictures of slice 4, on Harju in portrait and landscape, into shots/trains/.
-// A station with three lines and trains standing on its three platform tracks (play zoom and close
+// A station with a train on its one platform and another waiting on its line before it (play zoom and close
 // up), the buy card on the Kuusikko line, the train card of a running train, a train mid-dwell at
 // Kuusikko (one wagon full, one loading, one empty) close up with its tag, a train leaving a
 // terminus fully on the track, the site card with the loading crew row, and pick mode from
@@ -47,19 +47,27 @@ try {
     };
     const site = (id) => page.evaluate((id) => { const o = window.__sim.sites.find((x) => x.id === id); return { x: o.cx + 0.5, y: o.cy + 0.5 }; }, id);
 
-    // 1. Koskensaha with a train on each of its three platform tracks
+    // 1. Koskensaha with one train on its platform and the Kuusikko train waiting on its line before the station, the real sim: the box train keeps the platform, the flat train runs in and stops clear of it
     await page.evaluate(() => {
       const s = window.__sim; const act = window.__act;
-      const saw = s.sites.find((x) => x.id === 'sawmill'); const at = saw.cy * s.w + saw.cx;
-      let k = 0;
-      for (const l of s.lines.filter((l) => l.path[0] === at || l.path[l.path.length - 1] === at)) {
-        const t = act.buyTrain(l.id, k === 0 ? 'flat' : 'box', k === 1 ? 'jyry' : 'hilma', k === 2 ? 4 : 3);
-        const end = l.path[l.path.length - 1] === at;
-        t.state = 'stop'; t.at = at; t.dir = end ? 1 : -1; t.s = end ? l.dist[l.dist.length - 1] : 0;
-        t.slot = k; t.slotFrom = k; t.stopLeft = 999; t.cargo = 0;
-        k++;
-      }
+      const box = act.buyTrain(s.lines[1].id, 'box', 'hilma', 3);
+      box.stopLeft = 1e9; box.fullLoad = true;
+      act.buyTrain(s.lines[0].id, 'flat', 'hilma', 3);
     });
+    await page.waitForFunction(() => window.__sim.trains.some((t) => t.queued), null, { timeout: 90000, polling: 100 }).catch(() => errors.push(`${orient}: no train waited for the platform`));
+    await page.waitForTimeout(1500);
+    // the queued train and the one on the platform: each fully on a track, and the queue is clear of the platform
+    const queue = await page.evaluate(() => {
+      const s = window.__sim; const r = window.__renderer;
+      const q = s.trains.find((t) => t.queued); const p = s.trains.find((t) => t.state === 'stop' && t.at !== null);
+      if (!q || !p) return null;
+      const sc = s.sites.find((x) => x.id === 'sawmill');
+      const dist = (t) => Math.min(...r.vehicles(t).map((v) => Math.hypot(v.wx - (sc.cx + 0.5), v.wy - (sc.cy + 0.5))));
+      return { queued: q.id, platform: p.id, slot: p.slot, qDist: dist(q), pDist: Math.max(...r.vehicles(p).map((v) => Math.hypot(v.wx - (sc.cx + 0.5), v.wy - (sc.cy + 0.5)))) };
+    });
+    if (!queue) errors.push(`${orient}: the station scene has no queued train and train on a platform`);
+    else if (queue.qDist < queue.pDist - 0.2) errors.push(`${orient}: the waiting train reaches into the platform (${JSON.stringify(queue)})`);
+    else console.log(orient, 'queue', JSON.stringify(queue));
     const ks = await site('sawmill');
     await view(ks.x, ks.y + 0.6, 23);
     await shot('station-play');
@@ -158,10 +166,15 @@ try {
     await page.waitForTimeout(500);
     if (!(await page.locator('.site-card [data-sec="crew"]').count())) errors.push(`${orient}: the site card has no crew row`);
     await shot('site-card-crew');
+    if (!(await page.locator('.site-card [data-sec="platforms"] [data-act="platform"]').count())) errors.push(`${orient}: the site card has no platform row`);
     await page.locator('.site-card [data-act="crew"]').tap();
     await page.waitForTimeout(500);
     if (!(await page.evaluate(() => window.__sim.stations[0].crew))) errors.push(`${orient}: the crew button did not buy the crew`);
     await shot('site-card-crew-bought');
+    await page.locator('.site-card [data-act="platform"]').tap();
+    await page.waitForTimeout(400);
+    if ((await page.evaluate(() => window.__sim.stations[0].platforms)) !== 2) errors.push(`${orient}: the platform button did not buy a platform`);
+    await shot('site-card-platform-bought');
     await page.locator('.site-card .round.close').tap();
     await view(fo.x, fo.y - 1, 36);
     await shot('crew-at-station');

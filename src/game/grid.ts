@@ -26,13 +26,13 @@ export const DIRS: [number, number][] = [
   [1, -1],
 ];
 
-export const TRACK_COST = 0.5;
-export const BRIDGE_COST = 2;
+export const TRACK_COST = 1;
+export const BRIDGE_COST = 4;
 /** per percent of grade, on top of the track's price */
 export const GRADE_COST = 0.25;
 /** per metre of land cut away or filled in, per cell */
-export const EARTH_COST = 0.07;
-export const STATION_COST = 20;
+export const EARTH_COST = 0.25;
+export const STATION_COST = 40;
 /**
  * Cells of straight track every line runs into and out of a station, along the station's row,
  * east or west of it. The platform tracks of a station lie parallel to this stretch (one per
