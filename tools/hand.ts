@@ -47,6 +47,14 @@ export interface HandView {
   delivered: Record<string, number>;
   /** whether a train bought now for the next train step's line would stand on a platform (and not park) */
   spotFree: boolean;
+  /** the sim clock in seconds */
+  time: number;
+  /** pick mode is on: the banner says to tap where the track goes */
+  picking: boolean;
+  /** the tip row under the HUD, as read off the screen: its kind, its words, and the first and second site its words name */
+  tip: { kind: string; text: string; from: string | null; to: string | null } | null;
+  /** what the line the tip names costs at the cheapest, from the sites' cells; null when no route can be laid */
+  tipCost: number | null;
 }
 
 export type HandAction =
@@ -71,8 +79,36 @@ export type HandAction =
   | { kind: 'repay' }
   /** the year-end card: Take the contract, or Skip it (and Continue when none is offered) */
   | { kind: 'choose'; take: boolean }
+  /** a tap on the tip row under the HUD: the map pans to its site and the site card opens */
+  | { kind: 'tapTip' }
+  /** the site card's "Lay track from here" */
+  | { kind: 'lay' }
+  /** in pick mode: a tap on the site the tip named */
+  | { kind: 'pickTarget'; site: string }
   | { kind: 'wait' }
   | { kind: 'done' };
+
+/** the tip the thumb is following, and how far it has got */
+interface TipRun {
+  kind: string;
+  text: string;
+  from: string;
+  to: string | null;
+  since: number;
+  taps: number;
+  /** the second platform count the site had when the thumb began */
+  platforms0: number;
+  /** the trains on the line that joins the two sites, counted when that line first shows (null before it does) */
+  trains0: number | null;
+}
+
+/** sim seconds the hand's own step may stand still before the thumb reads the tip */
+const STALL_SECONDS = 20;
+/** sim seconds one tip may take, and the taps it may use, before the thumb gives it up */
+const TIP_SECONDS = 150;
+const TIP_TAPS = 40;
+/** sim seconds the thumb leaves a tip alone after giving it up */
+const TIP_REST = 60;
 
 export interface Pt {
   x: number;
@@ -113,6 +149,17 @@ const wantedConsist = (w: string | string[]): string[] => (Array.isArray(w) ? w 
 
 export class Hand {
   done = 0;
+  /** why the hand last chose to wait, for the playthrough's log */
+  why = '';
+  /** lines for the playthrough to print: each tip followed, given up or finished */
+  log: string[] = [];
+  /** how many tips were followed to the end */
+  tipsDone = 0;
+  tipRun: TipRun | null = null;
+  private tipRestUntil = 0;
+  /** the last sign of progress (a line, a train, a step, a platform) and the sim time it was seen */
+  private mark = '';
+  private markAt = 0;
   /** the wagon step the thumb has just tapped for, and how many wagons the train had */
   private wagonAt: { step: number; count: number } | null = null;
   /** seconds the thumb takes to react to what it sees */
@@ -166,9 +213,85 @@ export class Hand {
     return null;
   }
 
-  /** what to do next, given what the thumb sees on the screen */
+  /**
+   * What to do next. The plan's own step comes first. When it has not moved for 20 sim seconds
+   * the thumb reads the tip under the HUD and does what it says by touch.
+   */
   next(v: HandView): HandAction {
     if (v.result) return { kind: 'done' };
+    const mark = `${v.lines.length}/${v.trains.length}/${this.done}/${Object.values(v.platforms).join(',')}/${v.card === 'yearEnd' || v.yearEnd ? 'y' : ''}`;
+    if (mark !== this.mark) {
+      this.mark = mark;
+      this.markAt = v.time;
+    }
+    if (!this.tipRun && !v.yearEnd && v.card !== 'yearEnd' && v.time - this.markAt >= STALL_SECONDS && v.time >= this.tipRestUntil) this.beginTip(v);
+    if (this.tipRun) return this.followTip(v);
+    return this.own(v);
+  }
+
+  /** start following the tip on the screen, when it names something the cash can pay for */
+  private beginTip(v: HandView): void {
+    const t = v.tip;
+    if (!t || !t.from) return;
+    const line = t.kind === 'first' || t.kind === 'stuck' || t.kind === 'starved' || t.kind === 'cash';
+    if (!line && t.kind !== 'platform') return;
+    if (line && (!t.to || v.tipCost === null || v.cash < v.tipCost)) return;
+    if (t.kind === 'platform' && v.cash < PLATFORM_PRICE[0]) return;
+    this.tipRun = { kind: t.kind, text: t.text, from: t.from, to: line ? t.to : null, since: v.time, taps: 0, platforms0: v.platforms[t.from] ?? 1, trains0: null };
+    this.log.push(`tip followed at ${Math.round(v.time)} s: [${t.kind}] ${t.text}`);
+  }
+
+  private endTip(v: HandView, ok: boolean, why: string): HandAction {
+    const r = this.tipRun!;
+    this.tipRun = null;
+    this.markAt = v.time;
+    if (ok) this.tipsDone++;
+    else this.tipRestUntil = v.time + TIP_REST;
+    this.log.push(`tip ${ok ? 'done' : 'given up'} after ${Math.round(v.time - r.since)} s (${r.taps} taps): ${why}`);
+    return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+  }
+
+  /** one touch toward the tip: open its site, lay the track (or buy the platform), then a train on the new line */
+  private followTip(v: HandView): HandAction {
+    const r = this.tipRun!;
+    if (v.time - r.since > TIP_SECONDS) return this.endTip(v, false, 'too slow');
+    if (r.taps > TIP_TAPS) return this.endTip(v, false, 'too many taps');
+    const a = this.tipMove(v, r);
+    // every move counts, a close as much as a tap: a tip that keeps the thumb busy and gets nowhere is dropped
+    if (a.kind !== 'wait') r.taps++;
+    return a;
+  }
+
+  private tipMove(v: HandView, r: TipRun): HandAction {
+    const tap = <T extends HandAction>(a: T): T => a;
+    if (r.kind === 'platform') {
+      if ((v.platforms[r.from] ?? 1) > r.platforms0) return this.endTip(v, true, `platform bought at ${r.from}`);
+      if (v.card === 'site' && v.cardSite === r.from) return tap({ kind: 'platform' });
+      if (v.card !== 'none') return { kind: 'close' };
+      return tap({ kind: 'tapTip' });
+    }
+    // the line that joins the two sites: a new one, or the line the new track lengthened
+    const pair = [r.from, r.to!];
+    const line = v.lines.find((l) => pair.every((id) => l.includes(id)));
+    if (!line) {
+      if (v.picking) return tap({ kind: 'pickTarget', site: r.to! });
+      if (v.card === 'choice') return tap({ kind: 'route', mode: 'cheap', extend: null });
+      if (v.card === 'site' && v.cardSite === r.from) return tap({ kind: 'lay' });
+      if (v.card !== 'none') return { kind: 'close' };
+      return tap({ kind: 'tapTip' });
+    }
+    const on = (t: { line: string[] }) => pair.every((id) => t.line.includes(id));
+    r.trains0 ??= v.trains.filter(on).length;
+    if (v.trains.filter(on).length > r.trains0) return this.endTip(v, true, `line ${r.from} to ${r.to} laid and a train bought`);
+    // the new line is on the map: the default consist from its card
+    if (v.cash < ENGINES.hilma.price + WAGONS_DEFAULT * WAGON_PRICE) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+    if (v.card === 'line' && v.cardLine && same(v.cardLine, line)) return tap({ kind: 'buy', engine: '' });
+    if (v.card !== 'none') return { kind: 'close' };
+    return tap({ kind: 'openLine', line });
+  }
+
+  /** what the plan's own step asks for next, given what the thumb sees on the screen */
+  private own(v: HandView): HandAction {
     if (v.yearEnd || v.card === 'yearEnd') return { kind: 'choose', take: !!v.offer && planServes(this.steps, { site: v.offer.site, good: v.offer.good as never }, (id) => (v.makes[id] ?? null) as never) };
     const step = this.steps[this.done];
     const m = this.money(step, v);
@@ -281,7 +404,10 @@ export class Hand {
       }
       if (v.card !== 'none') return { kind: 'close' };
       // a train on the move is hard to hit: the thumb waits for it to stand at a platform
-      if (v.trains.find((t) => t.id === id)?.stopped === false) return { kind: 'wait' };
+      if (v.trains.find((t) => t.id === id)?.stopped === false) {
+        this.why = `train ${id} is not at a platform`;
+        return { kind: 'wait' };
+      }
       return { kind: 'openTrain', train: id };
     }
     return { kind: 'wait' };

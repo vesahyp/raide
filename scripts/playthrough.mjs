@@ -93,12 +93,8 @@ const look = (page) =>
     const offer = s.offer ? { site: s.offer.site, good: s.offer.good } : null;
     const makes = Object.fromEntries(s.sites.map((o) => [o.id, { forest: 'timber', sawmill: 'boards', farm: 'grain', mill: 'flour', town: null }[o.kind]]));
     let cardTrain = null;
-    if (card === 'train') {
-      const earned = (el('.train-row.still .row-text')?.textContent ?? '').match(/(\d+)\s*$/)?.[1];
-      const lineName = el('.line-name')?.textContent ?? '';
-      const cands = s.trains.filter((t) => { const p = pair(s.lines.find((o) => o.id === t.lineId)); return p.length === (lineName.match(/⇄/g) ?? []).length + 1 && p.every((id) => lineName.includes(nameOf(id))); });
-      cardTrain = (cands.find((t) => String(Math.round(t.earned)) === earned) ?? cands[0])?.id ?? null;
-    }
+    // the train card names its train in data-train-id, so two trains on one line are told apart
+    if (card === 'train') cardTrain = Number(el('.train-card')?.dataset.trainId ?? NaN);
     // the next line's cost by mode, read the way the cost shows on the line
     let nextCost = null;
     const step = hand && hand.steps[hand.done];
@@ -111,7 +107,25 @@ const look = (page) =>
     }
     // the middle of each line on the glass, two points to try, to tap the track
     const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
+    // the tip row under the HUD as it reads on the screen: its kind, its words, and the first two sites its words name
+    const tipEl = el('.hud-tip');
+    const tipText = (tipEl?.querySelector('.tip-text')?.textContent ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    const named = s.sites
+      .map((o) => ({ id: o.id, at: Math.min(...[o.name.en, o.name.fi].map((n) => { const i = tipText.indexOf(n); return i < 0 ? Infinity : i; })) }))
+      .filter((o) => o.at !== Infinity)
+      .sort((a, b) => a.at - b.at);
+    const tip = tipEl && tipText ? { kind: tipEl.dataset.tip, text: tipText, from: named[0]?.id ?? null, to: named[1]?.id ?? null } : null;
+    // what the line the tip names costs at the cheapest: laid from the end that has a station
+    let tipCost = null;
+    if (tip && tip.from && tip.to && window.__plan) {
+      const cellOf = (id) => { const o = s.sites.find((x) => x.id === id); return o.cy * s.w + o.cx; };
+      for (const [a, b] of [[tip.from, tip.to], [tip.to, tip.from]]) {
+        const opts = window.__plan(cellOf(a), cellOf(b));
+        if (opts.length) { tipCost = Math.min(...opts.map((o) => o.cost)); break; }
+      }
+    }
     return {
+      tip, tipCost, picking: !!el('[data-act="pick-cancel"]'),
       glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, consist, cardTrain, cardSite, crews, platforms, sidings, cranes, offer, makes, nextCost, lineTaps,
       loan: s.loan, ceiling: window.__act.ceiling(), delivered: Object.fromEntries(s.sites.map((o) => [o.id, o.delivered])),
       // whether a train bought now for the line the hand wants would stand on a platform and not park
@@ -140,6 +154,13 @@ async function run(orient) {
     let b = null;
     try {
       b = await locator.first().boundingBox({ timeout: 3000 });
+      // a button below the fold of a scrolling card: the thumb scrolls the card until it shows, then taps
+      const view = page.viewportSize();
+      if (b && view && (b.y + b.height > view.height - 4 || b.y < 0)) {
+        await locator.first().evaluate((el) => el.scrollIntoView({ block: 'center' }));
+        await page.waitForTimeout(250);
+        b = await locator.first().boundingBox({ timeout: 3000 });
+      }
     } catch {
       b = null;
     }
@@ -207,20 +228,53 @@ async function run(orient) {
     await page.waitForTimeout(600);
     const react = async () => page.waitForTimeout(Math.round(1000 * (await page.evaluate(() => window.__hand.reaction))));
     let idle = 0;
+    let lastLog = -1e9;
+    let acts = {};
+    let lastKey = '', lastDoneAt = 0, lastTime = -1, idleRich = 0;
+    let missedActs = 0;
+    let progressAt = 0;
+    let probed = false;
     let stuck = 0;
     let mark = '';
     for (let i = 0; i < 6000; i++) {
       const v = await look(page);
       if (!v) throw new Error('the game is gone');
       const act = await page.evaluate((view) => window.__hand.next(view), v);
+      for (const line of await page.evaluate(() => window.__hand.log.splice(0))) console.log(`[${orient}] t=${v.time.toFixed(0)} ${line}`);
+      // a line in the log every 60 sim seconds: the plan's step, what the hand does, the cash and the tip on the screen
+      // idle time: sim seconds with over 200 cash in which nothing was bought for more than 20 s
+      const doneKey = `${v.lines.length}/${v.trains.map((t) => t.wagons.length).join(',')}/${Object.values(v.platforms).join(',')}/${v.crews.length}/${v.cranes.length}/${v.sidings.length}`;
+      if (doneKey !== lastKey) { lastKey = doneKey; lastDoneAt = v.time; }
+      if (v.cash > 200 && v.time - lastDoneAt > 20 && lastTime >= 0) idleRich += v.time - Math.max(lastTime, lastDoneAt + 20);
+      lastTime = v.time;
+      acts[act.kind + (act.what ? ':' + act.what : '')] = (acts[act.kind + (act.what ? ':' + act.what : '')] ?? 0) + 1;
+      if (v.time - lastLog >= 60) {
+        lastLog = v.time;
+        const info = await page.evaluate(() => ({ done: window.__hand.done, step: JSON.stringify(window.__hand.steps[window.__hand.done] ?? null), why: window.__hand.why, tip: document.querySelector('.hud-tip .tip-text')?.textContent ?? '' }));
+        console.log(`[${orient}] t=${v.time.toFixed(0)} ${v.year} cash=${Math.round(v.cash)} loan=${v.loan} lines=${v.lines.length} trains=${v.trains.length} card=${v.card} step#${info.done} ${info.step} acts=${JSON.stringify(acts)} cardTrain=${v.cardTrain} act=${act.kind} why=${info.why} spot=${v.spotFree} tip="${info.tip}" trains=${JSON.stringify(v.trains.map((t) => ({ id: t.id, line: t.line.join('-'), stopped: t.stopped, w: t.wagons.length })))} sim=${JSON.stringify(await page.evaluate(() => window.__sim.trains.map((t) => ({ id: t.id, state: t.state, at: t.at, s: Math.round(t.s), gate: Math.round(t.gate), parked: t.parked, queued: t.queued, fl: t.fullLoad, idx: t.idx, dir: t.dir }))))} steps=${JSON.stringify((await page.evaluate(() => window.__hand.steps.slice(window.__hand.done - 1, window.__hand.done + 3))))}`);
+        acts = {};
+      }
       if (act.kind === 'done') break;
       // the plan must move: a hundred rounds of taps with no new line, train or step is a loop
       const now = `${v.lines.length}/${v.trains.length}/${await page.evaluate(() => window.__hand.done)}`;
       if (now === mark && act.kind !== 'wait') {
         if (++stuck > 100) throw new Error(`stuck at ${now} doing ${act.kind}`);
       } else stuck = 0;
+      if (now !== mark) { progressAt = v.time; probed = false; }
       mark = now;
+      if (process.env.PROBE && ['tapTip', 'lay', 'pickTarget', 'route', 'close', 'openLine', 'buy'].includes(act.kind) && v.time > 100 && await page.evaluate(() => !!window.__hand.tipRun)) console.log(`[${orient}]   tip act ${JSON.stringify(act)} card=${v.card} cardSite=${v.cardSite} picking=${v.picking} lines=${JSON.stringify(v.lines)} cash=${Math.round(v.cash)}`);
       if (act.kind === 'wait') {
+        // a one-off probe when the plan has not moved for 120 sim seconds: how often each train stands still
+        if (process.env.PROBE && !probed && v.time - progressAt > 120) {
+          probed = true;
+          const seen = {};
+          for (let n = 0; n < 200; n++) {
+            const st = await page.evaluate(() => window.__sim.trains.map((t) => `${t.id}:${t.state}${t.at === null ? '' : '@' + t.at}${t.parked ? 'P' : ''}`));
+            for (const x of st) seen[x] = (seen[x] ?? 0) + 1;
+            await page.waitForTimeout(100);
+          }
+          console.log(`[${orient}] probe 20 s`, JSON.stringify(seen), 'why', await page.evaluate(() => window.__hand.why));
+        }
         await page.waitForTimeout(250);
         if (++idle > 2400 / SPEED) throw new Error('the hand waited ten minutes with nothing to do');
         continue;
@@ -296,6 +350,21 @@ async function run(orient) {
         else if (group === 'new') stats.newLine++;
         stats.routes[act.mode]++;
         await page.waitForTimeout(300);
+      } else if (act.kind === 'tapTip') {
+        // the tip row is a button: a tap pans the map to its site and opens the site's card
+        await tapButton(page.locator('[data-act="tip"]'));
+        stats.taps++;
+        await page.waitForTimeout(500);
+      } else if (act.kind === 'lay') {
+        await tapButton(page.locator('[data-act="lay"]:not([disabled])'));
+        await page.waitForTimeout(500);
+      } else if (act.kind === 'pickTarget') {
+        // in pick mode: bring the site the tip named into view, then one tap on it
+        await frameOn((w) => [w.sites[act.site]]);
+        const p = (await look(page)).sites[act.site];
+        await tap(p.x, p.y);
+        stats.taps++;
+        await page.waitForTimeout(500);
       } else if (act.kind === 'openLine') {
         const idx = v.lines.findIndex((l) => same(l, act.line));
         await frameOn((w) => [w.lineTaps[idx][0]]);
@@ -319,14 +388,14 @@ async function run(orient) {
         await page.waitForTimeout(150);
       } else if (act.kind === 'buy') {
         const e = page.locator(`[data-engine="${act.engine}"]`);
-        if (await e.count()) {
+        if (act.engine && (await e.count())) {
           if (!(await e.evaluate((el) => el.classList.contains('on')))) { await tapButton(e); await page.waitForTimeout(150); }
         }
         await tapButton(page.locator('[data-track="card-buy-train"]'));
         stats.buys++;
         await page.waitForTimeout(300);
         const after = await look(page);
-        if (after.trains.length <= v.trains.length) {
+        if (after.trains.length <= v.trains.length && act.engine) {
           stats.error = `buy ${act.engine} bought nothing`;
           await page.screenshot({ path: join(OUT, `${name}-buy.png`) });
           break;
@@ -387,10 +456,19 @@ async function run(orient) {
           const at = await page.evaluate(({ type, id }) => { const t = window.__sim.trains.find((o) => o.id === id); return t ? t.wagons.lastIndexOf(type) : -1; }, { type: act.type, id: v.cardTrain });
           b = page.locator(`[data-act="drop-wagon"][data-wagon-at="${at}"]`);
         }
-        if (!(await b.count())) { stats.error = `no ${act.what} ${act.type ?? ""} on the train card (${JSON.stringify(act)}, train ${v.cardTrain})`; break; }
-        await tapButton(b);
+        // the card may have closed under the thumb (a year end opens over it): look again; only a button missing again and again is an error
+        if (!(await b.count())) {
+          if (++missedActs > 20) { stats.error = `no ${act.what} ${act.type ?? ""} on the train card (${JSON.stringify(act)}, train ${v.cardTrain})`; break; }
+          continue;
+        }
+        missedActs = 0;
+        const before = await b.first().evaluate((el) => ({ disabled: el.disabled, type: el.dataset.add })).catch(() => null);
+        const box = await b.first().boundingBox().catch(() => null);
+        if (process.env.PROBE && act.type === 'hopper') await page.screenshot({ path: join(OUT, `${name}-hopper.png`) });
+        const tapped = await tapButton(b);
         stats.acts++;
         await page.waitForTimeout(250);
+        if (process.env.PROBE) console.log(`[${orient}] act ${act.what} ${act.type ?? ''} tapped=${tapped} btn=${JSON.stringify(before)} box=${JSON.stringify(box)} cardTrain=${v.cardTrain} wagons=${JSON.stringify((await look(page)).trains.map((t) => [t.id, t.wagons]))} cash=${Math.round(v.cash)}`);
         await tapButton(page.locator('.round.close'));
         await page.waitForTimeout(200);
       } else if (act.kind === 'close') {
@@ -412,6 +490,8 @@ async function run(orient) {
     await page.waitForTimeout(900);
     await page.screenshot({ path: join(OUT, `${name}-result.png`) });
     const v = await look(page);
+    stats.idleRichMin = idleRich / 60;
+    stats.tipsDone = await page.evaluate(() => window.__hand.tipsDone).catch(() => 0);
     Object.assign(stats, { won: v.result.won, year: v.result.year, cash: v.result.cash, stars: v.result.stars, firstPayAt: v.firstPayAt, simSeconds: v.time, towns: v.towns, bridges: v.bridges, cuttings: v.cuttings, lines: v.lines.length, trains: v.trains.length });
   } catch (e) {
     stats.error = stats.error ?? String(e).split('\n')[0];
@@ -429,7 +509,7 @@ try {
   for (const o of ORIENTS) {
     const r = await run(o);
     summary.push(r);
-    console.log(`${r.name}: ${r.error ? `ERROR ${r.error}` : `${r.won ? 'won' : 'lost'} ${r.year} cash ${r.cash} stars ${r.stars} first pay ${r.firstPayAt?.toFixed(0)} s towns ${r.towns?.join('/')} lines ${r.lines} trains ${r.trains} bridge cells ${r.bridges} cutting cells ${r.cuttings}`} drags ${r.drags} routes cheap ${r.routes.cheap} short ${r.routes.short} buys ${r.buys} acts ${r.acts} choices ${r.choices} in ${r.seconds.toFixed(0)} s real, ${r.simSeconds?.toFixed(0) ?? '-'} s sim`);
+    console.log(`${r.name}: ${r.error ? `ERROR ${r.error}` : `${r.won ? 'won' : 'lost'} ${r.year} cash ${r.cash} stars ${r.stars} first pay ${r.firstPayAt?.toFixed(0)} s towns ${r.towns?.join('/')} lines ${r.lines} trains ${r.trains} bridge cells ${r.bridges} cutting cells ${r.cuttings}`} idle with cash over 200: ${r.idleRichMin?.toFixed(1)} min, tips followed ${r.tipsDone} drags ${r.drags} routes cheap ${r.routes.cheap} short ${r.routes.short} buys ${r.buys} acts ${r.acts} choices ${r.choices} in ${r.seconds.toFixed(0)} s real, ${r.simSeconds?.toFixed(0) ?? '-'} s sim`);
   }
 } finally {
   await browser.close();
