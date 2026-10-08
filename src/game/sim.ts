@@ -12,7 +12,7 @@ import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, STATIO
 import { siteAt, stationAt, siteById, goodsOnMap, zeroCargo } from './state';
 import {
   BANKRUPT_YEARS, BASE_FARE, BASE_PRICE, FARE_DECAY, FARE_FLOOR, FARE_SPEED, MAIL_CAP, MAIL_RATE, PAX_CAP, PAX_GROW_SIZE, PAX_MEMORY, PAX_RATE, WAGON_FARE, BRIDGE_UPKEEP, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, CREW_CUT, CREW_PRICE, GROW_LOSS, GROW_MONTHS, LIFT_BACK, LOAN_BASE, LOAN_RATE, LOAN_SHARE, MAKES, MILL_EATS, MONTHS,
-  CONTRACT_MAX, CONTRACT_MIN, CONTRACT_MONTHS, CONTRACT_PACE, CONTRACT_SHARE, CRANE_CUT, CRANE_GOODS, CRANE_PRICE, CRANE_SITES, SIDING_FROM_STATION, GATE_RESERVE, SIDING_GAP, SIDING_LEN, SIDING_MEET, SIDING_PRICE, SIDING_WAIT, SIDING_OFFSET, PLATFORM_PRICE, PLATFORMS_START, QUEUE_GAP, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, PATIENCE_SECONDS, STOP_SECONDS, TAKES, TOWN_EATS, EAT_GROWTH, TOWN_MAX, TOWN_STORE_CAP, TRACK_UPKEEP, UNDO_SECONDS,
+  CONTRACT_MAX, CONTRACT_MIN, CONTRACT_MONTHS, CONTRACT_PACE, CONTRACT_SHARE, CRANE_CUT, CRANE_GOODS, CRANE_PRICE, CRANE_SITES, SIDING_FROM_STATION, GATE_RESERVE, SIDING_GAP, SIDING_LEN, SIDING_MEET, SIDING_PRICE, SIDING_WAIT, SIDING_OFFSET, PLATFORM_PRICE, PLATFORMS_START, QUEUE_GAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, PATIENCE_SECONDS, STOP_SECONDS, TAKES, TOWN_EATS, EAT_GROWTH, TOWN_MAX, TOWN_STORE_CAP, TRACK_UPKEEP, UNDO_SECONDS,
   LINE_STOPS_MAX, WAGON_DWELL, WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGON_RUN, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
 
@@ -1574,11 +1574,11 @@ function monthTick(s: SimState): void {
     const raw = RAW_RATE[site.kind];
     if (raw) {
       // a served site makes more: the rate climbs while pickups keep coming and falls back after
-      const base = raw;
+      const base = site.rawRate;
       const recent = s.time - site.lastPickup < SERVED_MEMORY * (YEAR_SECONDS / MONTHS);
       const target = recent ? base * SERVED_RATE : base;
       site.rate += (target - site.rate) * 0.5;
-      site.stock = Math.min(RAW_CAP, site.stock + site.rate);
+      site.stock = Math.min(site.rawCap, site.stock + site.rate);
     }
     if (site.kind === 'town') {
       growMonth(s, site);
@@ -1608,6 +1608,8 @@ function makeFares(s: SimState, site: Site): void {
  */
 function growMonth(s: SimState, site: Site): void {
   if (site.size >= TOWN_MAX) return;
+  // a town no train has reached holds its meter: nobody has failed to supply it yet
+  if (!hasStation(s, site)) return;
   const wanted = wantedGoods(s);
   const supplied = wanted.length > 0 && wanted.every((g) => site.store[g] > 0.001) && (!wantsPeople(s, site) || visited(s, site));
   site.growth = supplied ? site.growth + 1 / GROW_MONTHS : Math.max(0, site.growth - GROW_LOSS);

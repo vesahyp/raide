@@ -152,7 +152,7 @@ maksusta sekunnilta; posti kolmanneksen hitaammin, ja se maksaa enemmän
 kuormalta). Maksu ei laske alle neljäsosan täydestä. Asemalle saapuvan junan
 yllä näkyy maksu lukuna.
 
-**Vuosi on puolitoista minuuttia.** Vuoden lopussa tilikirja näyttää
+**Vuosi on puolitoista minuuttia**, ja oikean alakulman ⏩-napista kolme kertaa nopeampi, kun mitään ei tarvitse tehdä. Vuoden lopussa tilikirja näyttää
 tulot, kulut jaettuna ajoon, veturien ylläpitoon, radan ylläpitoon ja korkoon,
 voiton, kassan, lainan ja nettovarallisuuden, kertoo mitkä kaupungit
 kasvoivat ja kunkin kasvumittarin, ja tarjoaa yhden sopimuksen.
@@ -174,7 +174,14 @@ kaksi sopimusta.
 - **Harju:** kaksi metsää ja saha, kaksi maatilaa ja mylly, kolme kaupunkia,
   harju ja järvi kaiken keskellä. Alussa sinulla on asema kummassakin
   metsässä, joten ensimmäinen valinta on kummasta aloitat, ja sen jälkeen
-  mitkä kaupungit palvelet. Tavoite: kaksi kaupunkia kokoon 3 ennen vuotta
+  mitkä kaupungit palvelet. Valinnat eroavat toisistaan, ja kartta näyttää
+  eron: Kuusikko on lähellä, mutta pieni ja hidas, Korpela kauempana, mutta
+  suuri ja rikas, ja rikkaan metsän kasa on kartalla selvästi isompi. Samoin
+  Peltola harjun takana on rikas, mutta Niittylä järven eteläpuolella on
+  köyhä ja lähempänä Tamperetta ja myllyä. Lahti on kaukana: sinne vie
+  pitkä rata, mutta se maksaa enemmän kuormaa kohti ja se alkaa kokoa 2,
+  kasvumittari kolme neljäsosaa täynnä, kun ensimmäinen juna on päässyt
+  perille. Kolme tapaa voittaa, ei yhtä oikeaa. Tavoite: kaksi kaupunkia kokoon 3 ennen vuotta
   1872, ja se vaatii tavaran lisäksi matkustajia. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
   tulot tavaroittain, matkustajittain ja postin mukaan sekä nettovarallisuuden vuosi vuodelta. Kaupunkien kasvuun tarvitaan matkustajarata kahden kaupungin välille.
 

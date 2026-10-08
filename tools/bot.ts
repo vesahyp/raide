@@ -114,6 +114,99 @@ export const PLANS: Record<string, BotPlan> = {
 };
 
 /**
+ * Three ways to win Harju, so that no choice is the one right answer.
+ *   A (PLANS.harju): Kuusikko and Peltola, then Hämeenlinna and Tampere. Near and poor forest, rich farm.
+ *   B: Korpela and Niittylä, then Tampere and Lahti. Rich forest, poor farm, the far town.
+ *   C: Kuusikko and Peltola, then Tampere and Lahti. A's sources with B's towns.
+ * sim-check holds all three to a win between 1869 and 1871 with two stars, and to a net worth within
+ * 20 % of each other, and it holds B and C to the money checks A keeps. B and C were found by a
+ * search over the order of the buys with the bot playing each game headless, then pruned of every
+ * buy that changed nothing, so the order is a fact about this map and these numbers and not a rule:
+ * run the search again after a change to a site's rate or cap. Nothing in them spends on the forest
+ * or the farm a plan does not run. A 3-stop line (tampere, mill, lahti) carries the flour to both towns
+ * and the travellers between them on one block, which beats a line to each.
+ */
+export const HARJU_PLANS: Record<string, BotPlan> = {
+  A: PLANS.harju,
+  B: {
+    steps: [
+      { kind: 'line', from: 'korpela', to: 'sawmill', mode: 'cheap' },
+      { kind: 'train', line: ['korpela', 'sawmill'], wagons: ['flat', 'flat', 'flat'] },
+      { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap', after: { site: 'sawmill', delivered: 6 } },
+      { kind: 'line', from: 'tampere', to: 'mill', mode: 'cheap' },
+      { kind: 'crew', site: 'korpela' },
+      { kind: 'line', from: 'mill', to: 'niittyla', mode: 'short' },
+      { kind: 'platform', site: 'mill' },
+      { kind: 'train', line: ['mill', 'niittyla'], wagons: ['hopper', 'hopper', 'hopper'], fullLoad: true },
+      { kind: 'platform', site: 'korpela' },
+      { kind: 'crew', site: 'niittyla' },
+      { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
+      { kind: 'platform', site: 'tampere' },
+      { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
+      { kind: 'line', from: 'mill', to: 'lahti', mode: 'short', extend: ['tampere', 'mill'] },
+      { kind: 'wagon', train: 2 },
+      { kind: 'crew', site: 'sawmill' },
+      { kind: 'engine', train: 2, engine: 'jyry' },
+      { kind: 'line', from: 'sawmill', to: 'lahti', mode: 'short' },
+      { kind: 'train', line: ['sawmill', 'lahti'], wagons: ['box', 'box', 'box'] },
+      { kind: 'wagon', train: 2 },
+      { kind: 'wagon', train: 3 },
+      { kind: 'platform', site: 'tampere' },
+      { kind: 'engine', train: 0, engine: 'jyry' },
+      { kind: 'crew', site: 'tampere' },
+      { kind: 'crew', site: 'lahti' },
+      { kind: 'platform', site: 'lahti' },
+      { kind: 'wagon', train: 4 },
+      { kind: 'platform', site: 'sawmill' },
+      { kind: 'wagon', train: 3, type: 'coach' },
+      { kind: 'train', line: ['sawmill', 'lahti'], wagons: ['box', 'box', 'box', 'box'] },
+      { kind: 'crane', site: 'niittyla' },
+      { kind: 'engine', train: 4, engine: 'jyry' },
+      { kind: 'crew', site: 'sawmill' },
+    ],
+  },
+  C: {
+    steps: [
+      { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
+      { kind: 'train', line: ['forest', 'sawmill'], wagons: ['flat', 'flat', 'flat'] },
+      { kind: 'crew', site: 'forest' },
+      { kind: 'wagon', train: 0 },
+      { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap', after: { site: 'sawmill', delivered: 6 } },
+      { kind: 'line', from: 'tampere', to: 'mill', mode: 'cheap' },
+      { kind: 'platform', site: 'forest' },
+      { kind: 'line', from: 'mill', to: 'farm', mode: 'cheap' },
+      { kind: 'platform', site: 'mill' },
+      { kind: 'train', line: ['mill', 'farm'], wagons: ['hopper', 'hopper', 'hopper'], fullLoad: true },
+      { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
+      { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
+      { kind: 'platform', site: 'tampere' },
+      { kind: 'wagon', train: 1 },
+      { kind: 'line', from: 'mill', to: 'lahti', mode: 'short', extend: ['tampere', 'mill'] },
+      { kind: 'line', from: 'sawmill', to: 'lahti', mode: 'short' },
+      { kind: 'crew', site: 'farm' },
+      { kind: 'crew', site: 'sawmill' },
+      { kind: 'wagon', train: 3, type: 'coach' },
+      { kind: 'crew', site: 'mill' },
+      { kind: 'wagon', train: 2 },
+      { kind: 'train', line: ['sawmill', 'lahti'], wagons: ['box', 'box', 'box'] },
+      { kind: 'crew', site: 'lahti' },
+      { kind: 'platform', site: 'lahti' },
+      { kind: 'wagon', train: 2 },
+      { kind: 'wagon', train: 4 },
+      { kind: 'wagon', train: 3, type: 'coach' },
+      { kind: 'crew', site: 'tampere' },
+      { kind: 'platform', site: 'sawmill' },
+      { kind: 'platform', site: 'farm' },
+      { kind: 'train', line: ['tampere', 'mill', 'lahti'], wagons: ['box', 'box', 'box', 'box'] },
+      { kind: 'platform', site: 'farm' },
+      { kind: 'crane', site: 'sawmill' },
+      { kind: 'platform', site: 'sawmill' },
+      { kind: 'wagon', train: 1 },
+    ],
+  },
+};
+
+/**
  * Whether a plan serves a contract: one of its lines joins the site to another that makes the good.
  * The bot and the hand take only what their network will carry anyway.
  */
@@ -169,7 +262,8 @@ export class Bot {
     public borrows = true,
   ) {}
 
-  static for(s: SimState, greedy = false): Bot {
+  static for(s: SimState, greedy = false, variant?: string): Bot {
+    if (variant && s.scenario.id === 'harju') return new Bot(HARJU_PLANS[variant]);
     return new Bot(greedy ? GREEDY[s.scenario.id] : PLANS[s.scenario.id]);
   }
 

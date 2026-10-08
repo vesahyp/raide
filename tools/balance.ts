@@ -13,7 +13,7 @@ import { CARGOS } from '../src/game/types';
 declare const process: { env: Record<string, string | undefined> };
 const sc = SCENARIO_BY_ID[process.env.SCENARIO ?? 'sawmill'];
 const s = createState(sc);
-const bot = Bot.for(s, process.env.GREEDY === '1');
+const bot = Bot.for(s, process.env.GREEDY === '1', process.env.PLAN);
 // SKIP=crane,siding leaves those buys out of the plan, to see what they add
 const skip = (process.env.SKIP ?? '').split(',');
 bot.plan = { steps: bot.plan.steps.filter((x) => !skip.includes(x.kind)) };

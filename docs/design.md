@@ -685,6 +685,37 @@ second scenario, Harju, is built around the choices the research found:
 - A goal that needs a network: both towns at size 3, and a town grows only
   when a year brings enough of every good on the map.
 
+### The Harju map: what each site is for
+
+Played by the bot on 2026-10-09: half the map got no deliveries, which
+forest the bot started from changed nothing, and Lahti never grew. A choice
+is real only when the other ways are real alternatives with a different
+trade-off, so every site has a job, and the numbers are data on the site
+(`rawRate` and `rawCap` on the `SiteDef`, the defaults in `economy.ts`).
+
+| Site | What it is for | Rate a month, pile cap |
+| --- | --- | --- |
+| Kuusikko | The near forest. 23 tiles to Koskensaha, the cheapest first line. Small and slow, so one train runs it dry and a second wagon buys little. | 0.6, 4 |
+| Korpela | The far forest in the north west woods. 32 tiles to Koskensaha. Big and rich: it feeds a train of four wagons and then a second train. | 1.2, 8 |
+| Peltola | The farm behind the ridge. 56 tiles round the end of the ridge or 50 through the cutting. Rich, so a long grain train pays. | 1.4, 10 |
+| Niittylä | The farm south of the lake. 47 tiles to Myllykylä over a bridge, 41 to Tampere. Poor, so one train takes all it makes. | 0.75, 4 |
+| Hämeenlinna | The near town east of the river. 39 tiles from the sawmill. The easy first town. | size 1 |
+| Tampere | The south west town. 56 tiles from the sawmill, near Niittylä and the mill. | size 1 |
+| Lahti | The far town beyond the ridge, 61 tiles from the sawmill. A load of boards pays about a quarter more than in Tampere. It starts at size 2 with its growth meter at three quarters and keeps the meter until a train first reaches it. It wants travellers too, so it needs a line to another town. | size 2, meter 0.75 |
+
+The map shows the numbers: a rich site has a bigger pile on the ground, and
+the site card shows the rate and the cap. A site that is not a raw site has
+no rate. The goal stays two towns at size 3 of the three.
+
+Three plans win it, and the bot plays all three in `npm run sim-check`: A
+(Kuusikko, Peltola, Hämeenlinna and Tampere, the default), B (Korpela,
+Niittylä, Tampere and Lahti) and C (Kuusikko, Peltola, Tampere and Lahti).
+Each wins between 1869 and 1871 with two stars, and their net worth at the end
+lies within 20 % of each other, so no plan is the one right answer. A rich
+site pays only when the player buys the wagons and trains it can fill, and
+a poor one pays when it is the shorter way to a town: that is the trade-off
+the plans show.
+
 ## Next step
 
 Harju is played on a phone. The rest of this file is built only if its

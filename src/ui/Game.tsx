@@ -9,7 +9,7 @@ import type { Cargo, EngineId, Good, Line, Load, ScenarioDef, SimState, Site, Tr
 import { createState, siteById, siteAt, goodsOnMap, stationAt } from '../game/state';
 import { DT, freeSide, canExtend, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, setFullLoad, sellTrain, fillOf, storeCap, eatsPerMonth, growthOutlook, goalProgress, lineOf, buyers, moveTrain, buyCrew, canMove, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, farePay, visited, townEats, fareTargets, wantsPeople, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice, buySiding, buyCrane, craneSite, sidingAt, defaultConsist, consistCycle, stopSite, stopGood, stopS, wagonRoutes, wagonWaste, wasteWagons, WAGON_BACK } from '../game/sim';
 import { HOUSES_PER_SIZE } from '../render/town';
-import { WAGON_GOODS, CRANE_GOODS, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, SIDING_LEN, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, YEAR_SECONDS, TOWN_MAX, TOWN_STORE_CAP, RAW_CAP, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { WAGON_GOODS, CRANE_GOODS, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, SIDING_LEN, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, YEAR_SECONDS, TOWN_MAX, TOWN_STORE_CAP, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
 import { earthWord, gradeText, GRADE_COL, perYear, routeKm, tripsByEngine } from './routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
@@ -25,6 +25,9 @@ import { townLacks } from '../game/advice';
 import { advice, adviceKey, type Advice } from '../game/advice';
 import { tipText, readGoalTowns, GoalTowns, untilText, type GoalTown } from './tips';
 import { GoodIcon, NONE_OF, WagonStrip, WagonPicker, CarryText } from './Wagons';
+
+/** how much faster the clock runs while the fast button is on */
+const FAST = 3;
 
 type Card =
   | { kind: 'line'; lineId: number }
@@ -61,6 +64,10 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const [card, setCard] = useState<Card>(null);
   const [cancel, setCancel] = useState<{ x: number; y: number } | null>(null);
   const [paused, setPaused] = useState(false);
+  // the fast clock: a year in 30 s instead of 90, for the stretches where nothing needs the thumb
+  const [fast, setFast] = useState(false);
+  const fastRef = useRef(false);
+  fastRef.current = fast;
   // the tip under the HUD: held at least 8 s so it can be read, hidden for the year with the x
   const [tip, setTip] = useState<Advice | null>(null);
   const tipRef = useRef<{ adv: Advice | null; key: string; at: number }>({ adv: null, key: '', at: -1e9 });
@@ -159,9 +166,9 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       last = now;
       // window.__freeze holds the sim for the picture scripts, with the frame still drawn
       if (!pausedRef.current && !s.yearEnd && !s.result && !(window as unknown as { __freeze?: boolean }).__freeze) {
-        acc += real * speed;
+        acc += real * speed * (fastRef.current ? FAST : 1);
         let n = 0;
-        while (acc >= DT && n < 30) {
+        while (acc >= DT && n < 30 * FAST) {
           if (bot && !(holdLedger > 0 && s.yearEnd && s.history.length >= holdLedger)) bot.act(s);
           step(s);
           acc -= DT;
@@ -362,6 +369,9 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       )}
       {card === null && !paused && (
         <div className="zoom" data-ui>
+          <button className={`round fast${fast ? ' on' : ''}`} aria-label={fast ? tr('Normaali nopeus', 'Normal speed') : tr('Nopeammin', 'Faster')} aria-pressed={fast} data-act="fast" onClick={() => setFast((f) => !f)}>
+            <svg viewBox="0 0 24 24" className="glyph"><path d="M4 6 L11 12 L4 18 Z M12 6 L19 12 L12 18 Z" fill="currentColor" /></svg>
+          </button>
           <button className="round" aria-label={tr('Lähemmäs', 'Zoom in')} data-zoom="in" onClick={() => rendRef.current?.zoomStep(1)}>
             +
           </button>
@@ -959,7 +969,7 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
   const lines = s.lines.filter((l) => l.id !== line.id && l.stops.some((x) => mine.has(x)));
   const goodsAboard = [...new Set(t.loads.filter((l): l is Load => !!l).map((l) => l.good))];
   return (
-    <div className="card sheet train-card" data-ui>
+    <div className="card sheet train-card" data-ui data-train-id={t.id}>
       <CardHead
         title={
           <>
@@ -1124,7 +1134,7 @@ function stuckText(s: SimState, site: Site): string | null {
       return `${tr(`Ei ${NO_GOOD[input] ?? ''} tule`, `No ${tt(GOOD_NAME[input])} comes in`)}: ${k ? tr(`ei rataa ${k[0]}`, `no line from ${k[1]}`) : tr('ei rataa', 'no line')}`;
     }
   }
-  if (makes && site.stock >= RAW_CAP - 0.01 && !s.trains.some((t) => lines.some((l) => l.id === t.lineId) && t.wagons.some((w) => WAGON_GOODS[w].includes(makes))))
+  if (makes && site.stock >= site.rawCap - 0.01 && !s.trains.some((t) => lines.some((l) => l.id === t.lineId) && t.wagons.some((w) => WAGON_GOODS[w].includes(makes))))
     return tr('Täynnä: mikään juna ei hae', 'Full: no train picks it up');
   return null;
 }
@@ -1280,9 +1290,9 @@ function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClos
           <div className="gline">
             <GoodIcon good={makes} />
             <b>{Math.floor(site.stock)}</b>
-            {raw && <span className="of">/{RAW_CAP}</span>}
+            {raw && <span className="of">/{site.rawCap}</span>}
             <span className="bar">
-              <i style={{ width: `${Math.min(100, (100 * site.stock) / RAW_CAP)}%` }} />
+              <i style={{ width: `${Math.min(100, (100 * site.stock) / site.rawCap)}%` }} />
             </span>
             {site.rate > 0 && <small>{site.rate.toFixed(1)}/{tr('kk', 'mo')}</small>}
           </div>

@@ -1,7 +1,7 @@
 import type { Cargo, Good, ScenarioDef, SimState, Site } from './types';
 import { CARGOS, GOODS } from './types';
 import { idx, inside } from './grid';
-import { PLATFORMS_START, RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
+import { PLATFORMS_START, RAW_CAP, RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
 
 const COVER = { none: 0, forest: 1, field: 2, street: 3 } as const;
 
@@ -38,16 +38,19 @@ export function createState(sc: ScenarioDef): SimState {
     }
   const sites: Site[] = sc.sites.map((d) => ({
     ...d,
-    stock: RAW_RATE[d.kind] ? RAW_START : 0,
+    // a raw site starts three quarters full, so a rich site shows a bigger pile from the first frame
+    stock: RAW_RATE[d.kind] ? (d.rawCap ? Math.round(d.rawCap * 0.75) : RAW_START) : 0,
     taken: zeroGoods(),
     delivered: 0,
     store: zeroGoods(),
-    growth: 0,
+    growth: d.kind === 'town' ? d.growth ?? 0 : 0,
     pax: {},
     mail: {},
     arrived: 0,
     lastArrival: -Infinity,
-    rate: RAW_RATE[d.kind] ?? 0,
+    rawRate: d.rawRate ?? RAW_RATE[d.kind] ?? 0,
+    rawCap: d.rawCap ?? RAW_CAP,
+    rate: d.rawRate ?? RAW_RATE[d.kind] ?? 0,
     lastPickup: -Infinity,
     size: d.kind === 'town' ? d.size ?? 1 : 0,
     grewAt: -1,

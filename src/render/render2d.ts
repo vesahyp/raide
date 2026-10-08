@@ -22,13 +22,16 @@ import { createState } from '../game/state';
 import type { Advice } from '../game/advice';
 import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
-import { ENGINE_LEN, WAGON_FARE, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, TERRACE_M, TOWN_MAX, SIDING_OFFSET, SIDING_RAMP, yard } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_FARE, WAGON_LEN, MAKES, TAKES, RAW_RATE, TERRACE_M, TOWN_MAX, SIDING_OFFSET, SIDING_RAMP, yard } from '../game/content/economy';
 import { t as tt, tr } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, drawEngine, drawWagon, hash, logPile, makeView, pine,
   crew, derrick, handcart, platform, sacks, sails, waiting, shade, switchStand, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
 } from './draw2d';
 
+/** logs and sacks a pile shows for each load in stock: the biggest pile (27 logs, 12 sacks) is a pile of 8 loads, so a rich site's pile is plainly bigger than a poor site's */
+const PILE_LOGS = 27 / 8;
+const PILE_SACKS = 12 / 8;
 export const OPTION_COLOUR = ['rgba(239,230,207,0.95)', 'rgba(70,150,230,0.95)'];
 
 
@@ -709,7 +712,7 @@ export class Renderer2D {
     const x = site.cx;
     const y = site.cy;
     if (site.kind === 'forest') {
-      const logs = Math.min(27, Math.floor(site.stock * 4.5));
+      const logs = Math.min(27, Math.floor(site.stock * PILE_LOGS));
       const per = [Math.min(9, logs), Math.min(9, Math.max(0, logs - 9)), Math.max(0, logs - 18)];
       return { key: per.join(','), draw: (v) => per.forEach((m, i) => logPile(v, x - 2.9 + i * 2, y - 3.9, m, lv)) };
     }
@@ -728,7 +731,7 @@ export class Renderer2D {
       };
     }
     if (site.kind === 'farm') {
-      const n = Math.min(12, Math.floor(site.stock * 2));
+      const n = Math.min(12, Math.floor(site.stock * PILE_SACKS));
       return { key: String(n), draw: (v) => sacks(v, x - 2.8, y - 1.5, n, '#e9c547', lv, 6) };
     }
     if (site.kind === 'mill') {
@@ -2525,7 +2528,7 @@ export class Renderer2D {
     this.folkChip(refs.folk, site);
     if (refs.has) {
       this.setText(refs.has.b, String(Math.floor(site.stock)));
-      refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / RAW_CAP)}%`;
+      refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / site.rawCap)}%`;
     }
     for (const w of refs.wants) {
       const taken = intake(site, w.good);

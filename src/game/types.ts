@@ -32,6 +32,11 @@ export interface SiteDef {
   cy: number;
   /** a town's size at the start, 1 to 5 */
   size?: number;
+  /** a town's growth meter at the start, 0 to 1: a town that begins part way to the next size keeps it until a station opens */
+  growth?: number;
+  /** a raw site's loads a month and the most its pile holds; the economy's RAW_RATE and RAW_CAP when left out */
+  rawRate?: number;
+  rawCap?: number;
 }
 
 export type Goal =
@@ -69,6 +74,9 @@ export interface ScenarioDef {
 }
 
 export interface Site extends SiteDef {
+  /** the base rate and the pile cap, from the site's definition or the economy's defaults; 0 for a site that makes no raw goods */
+  rawRate: number;
+  rawCap: number;
   /** what the site holds of what it makes (a forest's timber, a sawmill's boards) */
   stock: number;
   /** a refinery's input: what it has taken in over the last months, per good, for the demand curve; decays. Towns use `store` */

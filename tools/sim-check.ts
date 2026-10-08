@@ -231,6 +231,45 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(results.every(Boolean), `from the start two different first lines both pay back within two years (${back.join('; ')})`);
 }
 
+// the first choice rewards more train: with a wagon added whenever the cash allows, the rich forest's
+// line earns more than the near forest's over eight years, because the near forest runs dry
+{
+  const worth = (from: 'forest' | 'korpela') => {
+    const s = createState(HARJU);
+    const line = build(s, plan(s, cell(s, from), cell(s, 'sawmill'))[0])!;
+    buyTrain(s, line.id, 'flat');
+    for (let k = 0; k < 8 * YEAR_SECONDS * 60 + 120; k++) {
+      step(s);
+      if (s.yearEnd) {
+        closeYearEnd(s);
+        while (s.cash > 90 && s.trains[0].wagons.length < 4 && addWagon(s, s.trains[0].id));
+      }
+    }
+    return Math.round(s.cash);
+  };
+  const near = worth('forest');
+  const rich = worth('korpela');
+  check(rich > 1.4 * near, `with wagons added as cash allows, Korpela's line earns over 1.4 times Kuusikko's in eight years (${rich} against ${near})`);
+}
+
+// the sites differ, and the far town is worth the long line
+{
+  const s = createState({ ...HARJU, startStations: HARJU.sites.map((d) => d.id) });
+  const site = (id: string) => siteById(s, id);
+  check(site('korpela').rawRate >= 1.5 * site('forest').rawRate && site('korpela').rawCap >= 1.5 * site('forest').rawCap, `Korpela is a rich forest, Kuusikko a poor one (rate ${site('korpela').rawRate} against ${site('forest').rawRate}, cap ${site('korpela').rawCap} against ${site('forest').rawCap})`);
+  check(site('farm').rawRate >= 1.5 * site('niittyla').rawRate && site('farm').rawCap >= 1.5 * site('niittyla').rawCap, `Peltola is a rich farm, Niittylä a poor one (rate ${site('farm').rawRate} against ${site('niittyla').rawRate}, cap ${site('farm').rawCap} against ${site('niittyla').rawCap})`);
+  check(site('sawmill').rawRate === 0 && site('forest').rawRate > 0 && site('korpela').rawCap > site('forest').rawCap, 'the rate and cap are data on the site, and a sawmill makes nothing raw');
+  const len = (a: string, b: string) => plan(s, cell(s, a), cell(s, b))[0].cells.length;
+  const pays = (to: string) => price(createState(HARJU), 'boards', to, len('sawmill', to));
+  check(pays('lahti') > pays('tampere') && pays('tampere') > pays('hameenlinna'), `a load of boards pays more the further the town: Lahti ${pays('lahti')}, Tampere ${pays('tampere')}, Hämeenlinna ${pays('hameenlinna')}`);
+  const lahti = site('lahti');
+  check(lahti.size === 2 && lahti.growth > 0.5, `Lahti starts at size ${lahti.size} with its meter at ${lahti.growth}: hungrier than the others`);
+  // no station, no change: the meter waits for the first train
+  const g = createState(HARJU);
+  for (let k = 0; k < 4 * (YEAR_SECONDS / 12) * 60; k++) step(g);
+  check(siteById(g, 'lahti').growth === lahti.growth, `a town no train has reached holds its meter (${siteById(g, 'lahti').growth})`);
+}
+
 // money: running costs per tile, track upkeep, the loan, lifting a line, bankruptcy
 {
   const s = createState(HARJU);
@@ -537,8 +576,10 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
 
 // a town's store and growth meter: supplied every month it grows inside GROW_MONTHS + 1 months; missing one good it never grows
 {
+  // a town no train has reached holds its meter, so these towns have a station
+  const withStation = { ...HARJU, startStations: ['korpela', 'tampere'] };
   const run = (feed: (t: ReturnType<typeof siteById>) => void, months: number) => {
-    const s = createState(HARJU);
+    const s = createState(withStation);
     const t = siteById(s, 'tampere');
     const out = { grewAt: -1, size: t.size, growth: 0, floats: 0, sounds: 0, month: 0 };
     const stop = Math.round(60 * (YEAR_SECONDS / 12) * months);
@@ -558,7 +599,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   const half = run((t) => { t.store.boards = storeCap(t); t.store.flour = 0; }, 40);
   check(half.size === 1 && half.growth === 0, `a town missing one good never grows (size ${half.size} after 40 months, meter ${half.growth})`);
   // the meter fills in whole steps, a short month drains a smaller one, never below zero
-  const s = createState(HARJU);
+  const s = createState(withStation);
   const t = siteById(s, 'tampere');
   t.store.boards = 3;
   t.store.flour = 3;
@@ -667,7 +708,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   }
   // a size 2 town with every good but no travellers does not grow; with them it does
   const grow = (visit: boolean) => {
-    const g = createState(HARJU);
+    const g = createState({ ...HARJU, startStations: ['korpela', 'tampere'] });
     const t = siteById(g, 'tampere');
     t.size = 2;
     const stop = Math.round(60 * (YEAR_SECONDS / 12) * (GROW_MONTHS + 2));
@@ -879,9 +920,10 @@ class Watch {
 }
 
 /** the whole game of one bot: the state it ends in, with the checks that run every frame */
-function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
+function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity, variant?: string) {
   const s = createState(sc);
-  const bot = Bot.for(s, greedy);
+  const bot = Bot.for(s, greedy, variant);
+  const name = `${sc.id}${variant ? ` plan ${variant}` : ''}`;
   const watch = new Watch();
   const limit = (Math.min(sc.goal.beforeYear, upToYear + 1) - sc.startYear) * YEAR_SECONDS + 10;
   for (let t = 0; t < limit && !s.result; t += DT) {
@@ -891,37 +933,38 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
   }
   const { overlap, shared, apart } = watch;
   if (!greedy) for (const l of bot.log.filter((x) => !x.includes('borrow'))) console.log(`  ${l}`);
-  years[`${sc.id}${greedy ? '-greedy' : ''}`] = bot.years;
-  bots[`${sc.id}${greedy ? '-greedy' : ''}`] = bot;
-  maxLoan[`${sc.id}${greedy ? '-greedy' : ''}`] = bot.maxLoan;
+  const key = `${sc.id}${greedy ? '-greedy' : ''}${variant ? `-${variant}` : ''}`;
+  years[key] = bot.years;
+  bots[key] = bot;
+  maxLoan[key] = bot.maxLoan;
   const r = s.result;
   if (greedy) return s;
-  check(!!r && r.won, `the bot wins ${sc.id} (${r ? `${r.won ? 'won' : r.reason} in ${r.year}, cash ${r.cash}, net worth ${r.worth}, ${r.stars} stars` : 'not over'})`);
-  check(s.firstPayAt !== null && s.firstPayAt < 90, `${sc.id}: the first paid delivery lands inside 90 s (${s.firstPayAt?.toFixed(0)} s)`);
-  check(overlap === 0, `${sc.id}: no two trains are ever on the same track cell (${overlap} frames)`);
-  check(shared === 0, `${sc.id}: no two standing trains share a platform track (${shared} frames)`);
-  check(apart === 0, `${sc.id}: a waiting train never stands over the station (${apart} frames)`);
-  check(bot.done >= 6, `${sc.id}: the bot made ${bot.done} of the ${bot.plan.steps.length} buys of its plan`);
+  check(!!r && r.won, `the bot wins ${name} (${r ? `${r.won ? 'won' : r.reason} in ${r.year}, cash ${r.cash}, net worth ${r.worth}, ${r.stars} stars` : 'not over'})`);
+  check(s.firstPayAt !== null && s.firstPayAt < 90, `${name}: the first paid delivery lands inside 90 s (${s.firstPayAt?.toFixed(0)} s)`);
+  check(overlap === 0, `${name}: no two trains are ever on the same track cell (${overlap} frames)`);
+  check(shared === 0, `${name}: no two standing trains share a platform track (${shared} frames)`);
+  check(apart === 0, `${name}: a waiting train never stands over the station (${apart} frames)`);
+  check(bot.done >= 6, `${name}: the bot made ${bot.done} of the ${bot.plan.steps.length} buys of its plan`);
   const lateWin: Record<string, [number, number]> = { sawmill: [1864, 1865], harju: [1869, 1871] };
-  check(!!r && r.year >= lateWin[sc.id][0] && r.year <= lateWin[sc.id][1], `${sc.id}: the goal falls late, in ${lateWin[sc.id][0]} to ${lateWin[sc.id][1]} (${r?.year})`);
-  check(!!r && r.stars >= 2, `${sc.id}: the bot's net worth earns two stars or more (${r?.worth}, ${r?.stars} stars)`);
+  check(!!r && r.year >= lateWin[sc.id][0] && r.year <= lateWin[sc.id][1], `${name}: the goal falls late, in ${lateWin[sc.id][0]} to ${lateWin[sc.id][1]} (${r?.year})`);
+  check(!!r && r.stars >= 2, `${name}: the bot's net worth earns two stars or more (${r?.worth}, ${r?.stars} stars)`);
   for (const t of s.trains) {
     const p = along(lineOf(s, t), t.s, s.w);
-    check(p.x >= 0 && p.x <= s.w && p.y >= 0 && p.y <= s.h, `${sc.id}: train ${t.id} is on the map (${p.x.toFixed(1)}, ${p.y.toFixed(1)}), length ${trainLength(t).toFixed(1)}`);
+    check(p.x >= 0 && p.x <= s.w && p.y >= 0 && p.y <= s.h, `${name}: train ${t.id} is on the map (${p.x.toFixed(1)}, ${p.y.toFixed(1)}), length ${trainLength(t).toFixed(1)}`);
   }
   // the money checks, from the bot's year ends
   const ys = bot.years;
   const lastYear = sc.goal.kind === 'deliver' ? r!.year : r!.year - 1;
   const early = ys.filter((y) => y.year <= lastYear - 2);
-  check(early.length > 0 && early.every((y) => y.next > 0 && y.cash <= 1.5 * y.next), `${sc.id}: before the last two years the cash is never more than the next buy plus half (${early.map((y) => `${y.year}: ${y.cash} of ${y.next}`).join(', ')})`);
+  check(early.length > 0 && early.every((y) => y.next > 0 && y.cash <= 1.5 * y.next), `${name}: before the last two years the cash is never more than the next buy plus half (${early.map((y) => `${y.year}: ${y.cash} of ${y.next}`).join(', ')})`);
   const share = (y: YearRecord) => (100 * y.upkeep) / Math.max(1, CARGOS.reduce((a, g) => a + y.income[g], 0));
   const whole = (100 * ys.reduce((a, y) => a + y.upkeep, 0)) / Math.max(1, ys.reduce((a, y) => a + CARGOS.reduce((b, g) => b + y.income[g], 0), 0));
-  check(whole >= 33 && whole <= 46, `${sc.id}: running costs are ${whole.toFixed(0)} % of gross over the game, and ${ys.map((y) => `${y.year} ${share(y).toFixed(0)}`).join(', ')} year by year`);
-  check(ys.every((y) => share(y) >= 25 && share(y) <= 60), `${sc.id}: no year's running costs stray outside 25 to 60 % of gross`);
+  check(whole >= 33 && whole <= 46, `${name}: running costs are ${whole.toFixed(0)} % of gross over the game, and ${ys.map((y) => `${y.year} ${share(y).toFixed(0)}`).join(', ')} year by year`);
+  check(ys.every((y) => share(y) >= 25 && share(y) <= 60), `${name}: no year's running costs stray outside 25 to 60 % of gross`);
   const offers = bot.years.filter((y) => y.offered);
-  check(offers.every((y) => !!MAKES[siteById(s, y.offered!.site).kind] === false || true) && offers.every((y) => TAKES[siteById(s, y.offered!.site).kind].includes(y.offered!.good) && s.sites.some((o) => MAKES[o.kind] === y.offered!.good)), `${sc.id}: every contract on offer was for a good the map makes and a site that takes it (${offers.length} offers)`);
-  check(bot.contractsDone >= 1, `${sc.id}: the bot completes a contract (${bot.contractsDone} done, ${bot.contractsLost} lost, of ${bot.years.filter((y) => y.took).length} taken)`);
-  check(bot.maxLoan > 0, `${sc.id}: the bot borrows when a buy needs it (most owed ${bot.maxLoan}, ceiling at the start ${loanCeiling(createState(sc))})`);
+  check(offers.every((y) => !!MAKES[siteById(s, y.offered!.site).kind] === false || true) && offers.every((y) => TAKES[siteById(s, y.offered!.site).kind].includes(y.offered!.good) && s.sites.some((o) => MAKES[o.kind] === y.offered!.good)), `${name}: every contract on offer was for a good the map makes and a site that takes it (${offers.length} offers)`);
+  check(bot.contractsDone >= 1, `${name}: the bot completes a contract (${bot.contractsDone} done, ${bot.contractsLost} lost, of ${bot.years.filter((y) => y.took).length} taken)`);
+  check(bot.maxLoan > 0, `${name}: the bot borrows when a buy needs it (most owed ${bot.maxLoan}, ceiling at the start ${loanCeiling(createState(sc))})`);
   return s;
 }
 {
@@ -952,6 +995,24 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
 play(SAWMILL);
 const h = play(HARJU);
 check(h.sites.filter((x) => x.kind === 'town' && x.size >= 3).length >= 2, `harju: two towns reached size 3 (${h.sites.filter((x) => x.kind === 'town').map((x) => `${x.id} ${x.size}`).join(', ')})`);
+// three ways to win Harju: no plan is the one right answer
+{
+  const plans = { A: h, B: play(HARJU, false, Infinity, 'B'), C: play(HARJU, false, Infinity, 'C') };
+  const served = (s: SimState, id: string) => s.lines.some((l) => l.stops.some((k) => s.stations.find((st) => st.id === k)?.siteId === id));
+  const worths = Object.values(plans).map((s) => s.result!.worth);
+  const top = Math.max(...worths);
+  const low = Math.min(...worths);
+  check(top <= 1.2 * low, `the three plans end within 20 % of each other in net worth (${Object.entries(plans).map(([k, s]) => `${k} ${s.result!.worth} in ${s.result!.year}`).join(', ')})`);
+  check(Object.values(plans).every((s) => s.result!.won && s.result!.stars >= 2 && s.result!.year >= 1869 && s.result!.year <= 1871), 'and each wins between 1869 and 1871 with two stars or more');
+  const grown = (s: SimState) => s.sites.filter((x) => x.kind === 'town' && x.size >= 3).map((x) => x.id).sort().join('+');
+  // contracts name sites that take a good, so the far town can be named; the two raw sites never are
+  const named = new Set(Object.values(years).flatMap((ys) => ys.filter((y) => y.offered).map((y) => y.offered!.site)));
+  check(named.has('lahti') && named.has('tampere'), `contracts name the far town as well as a near one across the three games (${[...named].join(', ')})`);
+  check(grown(plans.A) === 'hameenlinna+tampere' && grown(plans.B) === 'lahti+tampere' && grown(plans.C) === 'lahti+tampere', `A grows Hämeenlinna and Tampere, B and C grow Tampere and Lahti (${Object.values(plans).map(grown).join(', ')})`);
+  check(served(plans.A, 'forest') && !served(plans.A, 'korpela') && served(plans.A, 'farm') && !served(plans.A, 'niittyla') && !served(plans.A, 'lahti'), 'plan A runs Kuusikko and Peltola and never Korpela, Niittylä or Lahti');
+  check(served(plans.B, 'korpela') && !served(plans.B, 'forest') && served(plans.B, 'niittyla') && !served(plans.B, 'farm') && served(plans.B, 'lahti'), 'plan B runs Korpela, Niittylä and Lahti and never Kuusikko or Peltola');
+  check(served(plans.C, 'forest') && served(plans.C, 'farm') && served(plans.C, 'lahti') && !served(plans.C, 'korpela') && !served(plans.C, 'niittyla'), 'plan C runs Kuusikko, Peltola and Lahti: a mix of the other two');
+}
 // a greedy plan, every coin into trains on the first line, ends 1868 with less net worth than the planned network
 {
   play(HARJU, true, 1868);

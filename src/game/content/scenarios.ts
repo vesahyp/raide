@@ -126,17 +126,17 @@ export const SAWMILL: ScenarioDef = {
 const HARJU_W = 120;
 const HARJU_H = 100;
 const HARJU_SITES: SiteDef[] = [
-  { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 14, cy: 30 },
+  { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 14, cy: 30, rawRate: 0.6, rawCap: 4 },
   { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 36, cy: 33 },
-  { id: 'farm', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 106, cy: 33 },
+  { id: 'farm', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 106, cy: 33, rawRate: 1.4, rawCap: 10 },
   { id: 'mill', kind: 'mill', name: { fi: 'Myllykylä', en: 'Myllykylä' }, cx: 62, cy: 66 },
   { id: 'hameenlinna', kind: 'town', name: { fi: 'Hämeenlinna', en: 'Hämeenlinna' }, cx: 73, cy: 36, size: 1 },
   { id: 'tampere', kind: 'town', name: { fi: 'Tampere', en: 'Tampere' }, cx: 27, cy: 72, size: 1 },
   // the second forest in the north west woods, the second farm south of the lake, the third town
   // beyond the ridge's south end
-  { id: 'korpela', kind: 'forest', name: { fi: 'Korpela', en: 'Korpela' }, cx: 12, cy: 18 },
-  { id: 'niittyla', kind: 'farm', name: { fi: 'Niittylä', en: 'Niittylä' }, cx: 50, cy: 96 },
-  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 96, cy: 72, size: 1 },
+  { id: 'korpela', kind: 'forest', name: { fi: 'Korpela', en: 'Korpela' }, cx: 12, cy: 18, rawRate: 1.2, rawCap: 8 },
+  { id: 'niittyla', kind: 'farm', name: { fi: 'Niittylä', en: 'Niittylä' }, cx: 50, cy: 96, rawRate: 0.75, rawCap: 4 },
+  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 96, cy: 72, size: 2, growth: 0.75 },
 ];
 const RIVER = [[46, -2], [44, 12], [45.5, 24], [44, 34], [41, 46], [45, 58], [50, 68], [54, 74]];
 const LAKE = { x: 56, y: 77, rx: 17, ry: 8 };
