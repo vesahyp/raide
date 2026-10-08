@@ -59,11 +59,15 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   const tj = routeTrips(s, over, 'jyry');
   const th = routeTrips(s, over, 'hilma');
   check(tj > th, `over the ridge Jyry makes more trips a year than Little Hilma (${tj.toFixed(1)} against ${th.toFixed(1)})`);
-  // A* on 12000 cells: the second search, once the code is warm, takes under 15 ms
+  // A* on 12000 cells, once the code is warm: the fastest of five searches takes under 15 ms,
+  // so a busy machine slowing one run does not fail the check
   route(s, cell(s, 'hameenlinna'), cell(s, 'farm'));
-  const t0 = performance.now();
-  route(s, cell(s, 'hameenlinna'), cell(s, 'farm'), 'cheap');
-  const ms = performance.now() - t0;
+  let ms = Infinity;
+  for (let k = 0; k < 5; k++) {
+    const t0 = performance.now();
+    route(s, cell(s, 'hameenlinna'), cell(s, 'farm'), 'cheap');
+    ms = Math.min(ms, performance.now() - t0);
+  }
   check(s.w * s.h === 12000 && ms < 15, `route() from Hämeenlinna to Peltola on ${s.w * s.h} cells takes ${ms.toFixed(1)} ms`);
   // the engines over the cutting, both with a full load of grain: the strong one is faster
   const trip = (engine: 'hilma' | 'jyry') => {

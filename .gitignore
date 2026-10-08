@@ -14,3 +14,4 @@ infra/*.tfstate.backup
 tools/dbg/
 shots/
 .*-check*
+.sim-try/

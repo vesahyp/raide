@@ -31,9 +31,8 @@ at the screen on phone emulation. Scripted checks stay short.
   4-stop line in sim-check). Rule 5 holds (no deadlock), but a starved
   train reads as a broken one; the fair-turn rule at a shared block needs
   a look before passengers add more trains.
-- Two checks flake: `make touch-check` fails now and then on "Buy puts a
-  train on the line", and sim-check's "route() under 15 ms" on a loaded
-  machine.
+- `make touch-check` fails now and then on "Buy puts a train on the
+  line" and passes on a rerun.
 - A mixed train (forest, sawmill, town) earns about a third less per
   engine than two single trains, because each wagon loads on one leg. It
   pays where cash is short. Vesa decides whether that is the right
