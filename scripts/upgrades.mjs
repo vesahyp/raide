@@ -53,7 +53,7 @@ try {
       const s = window.__sim; const l = s.lines[1]; const c = l.path[Math.floor(l.path.length / 2)];
       return { x: (c % s.w) + 0.5, y: Math.floor(c / s.w) + 0.5 };
     });
-    await view(mid.x, mid.y - 1, 23);
+    await view(mid.x + (orient === 'landscape' ? 4 : 0), mid.y - 1, 23);
     let p = await page.evaluate(([x, y]) => window.__renderer.project(x, y, 0), [mid.x, mid.y]);
     await page.touchscreen.tap(p.x, p.y);
     await page.waitForTimeout(500);

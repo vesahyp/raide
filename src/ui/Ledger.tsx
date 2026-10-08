@@ -6,8 +6,8 @@
  * One measure in each chart, so one ink colour: the good is told by its icon and name.
  */
 import { useState } from 'react';
-import type { Contract, Good, SimState } from '../game/types';
-import { GOODS } from '../game/types';
+import type { Cargo, Contract, Good, SimState } from '../game/types';
+import { FARES, GOODS } from '../game/types';
 import { goodsOnMap, siteById } from '../game/state';
 import { GOOD_NAME, TOWN_MAX } from '../game/content/economy';
 import { tr, t as tt, num } from '../i18n';
@@ -39,16 +39,17 @@ function TipBox({ tip, h }: { tip: Tip | null; h: number }) {
 }
 
 /** income by good this year: one bar a good from a zero baseline, the value at the bar's end */
-function IncomeChart({ income, goods }: { income: Record<Good, number>; goods: Good[] }) {
-  const [tip, setTip] = useState<{ good: Good; x: number; y: number } | null>(null);
-  const row = 20;
+function IncomeChart({ income, goods }: { income: Record<Cargo, number>; goods: Cargo[] }) {
+  const [tip, setTip] = useState<{ good: Cargo; x: number; y: number } | null>(null);
+  // more rows (travellers and mail) take a little less each, so the card keeps its height
+  const row = goods.length > 4 ? 16 : 20;
   const gap = 2;
   const h = goods.length * row;
-  const x0 = 76;
+  const x0 = 88;
   const room = W - x0 - 40;
   const top = Math.max(1, ...goods.map((g) => income[g]));
   return (
-    <svg className="chart income" viewBox={`0 0 ${W} ${h}`} role="img" aria-label={tr('Tulot tavaroittain tänä vuonna', 'Income by good this year')}>
+    <svg className="chart income" viewBox={`0 0 ${W} ${h}`} role="img" aria-label={tr('Tulot lajeittain tänä vuonna', 'Income by cargo this year')}>
       <line x1={x0} x2={x0} y1={0} y2={h} stroke={INK} strokeOpacity={0.35} strokeWidth={1} />
       {goods.map((g, i) => {
         const y = i * row;
@@ -164,7 +165,9 @@ export function contractText(s: SimState, c: Contract): string {
 
 export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boolean) => void }) {
   const y = s.yearEnd!;
-  const goods = GOODS.filter((g) => goodsOnMap(s).includes(g));
+  // travellers and mail are rows of their own once the map has two towns to carry them between
+  const folk = s.sites.filter((x) => x.kind === 'town').length >= 2;
+  const goods: Cargo[] = [...GOODS.filter((g) => goodsOnMap(s).includes(g)), ...(folk ? FARES : [])];
   const offer = s.offer;
   return (
     <div className="card ledger overlay" data-ui>
@@ -172,7 +175,7 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boo
       <div className="ledger-body">
         <div className="ledger-charts">
           <section>
-            <h3>{tr('Tulot tavaroittain tänä vuonna', 'Income by good this year')}</h3>
+            <h3>{tr('Tulot lajeittain tänä vuonna', 'Income by cargo this year')}</h3>
             <IncomeChart income={y.income} goods={goods} />
           </section>
           <section>

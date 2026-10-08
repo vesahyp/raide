@@ -18,7 +18,9 @@ import { siteById } from '../src/game/state';
 /** a step waits until a site has taken this many loads: a boards line is no use before the timber has come */
 export interface Gate {
   site: string;
-  delivered: number;
+  delivered?: number;
+  /** or until the town has grown to this size: the passenger line waits for towns that want travellers */
+  size?: number;
 }
 
 export type Step =
@@ -77,47 +79,36 @@ export const PLANS: Record<string, BotPlan> = {
       { kind: 'train', line: ['mill', 'farm'], wagons: 'hopper', fullLoad: true },
       { kind: 'wagon', train: 2 },
       { kind: 'train', line: ['hameenlinna', 'mill'], wagons: 'box' },
-      { kind: 'wagon', train: 3 },
       { kind: 'platform', site: 'mill' },
+      // Tampere: boards from the sawmill, then the line between the two towns with two coaches and a mail van
+      // (the towns want travellers from size 2), then flour from the mill
       { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
       { kind: 'wagon', train: 4 },
+      { kind: 'line', from: 'tampere', to: 'hameenlinna', mode: 'short' },
+      { kind: 'train', line: ['tampere', 'hameenlinna'], wagons: ['coach', 'coach', 'mailvan'] },
       { kind: 'line', from: 'tampere', to: 'mill', mode: 'short' },
       { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
-      { kind: 'wagon', train: 5 },
+      { kind: 'wagon', train: 6 },
       { kind: 'wagon', train: 0 },
-      { kind: 'wagon', train: 1 },
-      { kind: 'wagon', train: 2 },
       { kind: 'wagon', train: 3 },
-      { kind: 'wagon', train: 4 },
-      { kind: 'wagon', train: 5 },
-      // the flour line to Hämeenlinna is long: a second train on it needs a platform at each end and the passing siding
+      // the mill's flour line to Hämeenlinna is long: a second platform at each end, a second train and the passing siding
       { kind: 'platform', site: 'mill' },
       { kind: 'platform', site: 'hameenlinna' },
-      { kind: 'platform', site: 'sawmill' },
+      { kind: 'wagon', train: 4 },
       { kind: 'train', line: ['hameenlinna', 'mill'], wagons: 'box' },
-      { kind: 'wagon', train: 6 },
-      { kind: 'siding', line: ['hameenlinna', 'mill'] },
       { kind: 'crew', site: 'sawmill' },
-      { kind: 'crane', site: 'forest' },
+      { kind: 'siding', line: ['hameenlinna', 'mill'] },
+      { kind: 'platform', site: 'tampere' },
+      // the crews where the wagons are many, and the cranes last: they pay only on the busy platforms
       { kind: 'crew', site: 'mill' },
       { kind: 'crew', site: 'tampere' },
-      { kind: 'crew', site: 'farm' },
-      // and for Tampere, fed by one train on the long boards line, the same: a platform, a second train, a siding
-      { kind: 'platform', site: 'tampere' },
-      { kind: 'crane', site: 'sawmill' },
       { kind: 'crew', site: 'hameenlinna' },
-      { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
-      { kind: 'wagon', train: 7 },
-      { kind: 'siding', line: ['sawmill', 'tampere'] },
-      // and the cranes where grain and boards are moved: the mill and the farm, then a third platform at the busy sawmill
+      { kind: 'crew', site: 'farm' },
+      { kind: 'crane', site: 'forest' },
+      { kind: 'crane', site: 'sawmill' },
       { kind: 'crane', site: 'mill' },
       { kind: 'crane', site: 'farm' },
-      { kind: 'platform', site: 'sawmill' },
-      // with the network built and cash to spare: Korpela's timber to Koskensaha and on to Hämeenlinna, one mixed train (two flat, two box)
-      { kind: 'line', from: 'korpela', to: 'sawmill', mode: 'cheap' },
-      { kind: 'line', from: 'sawmill', to: 'hameenlinna', mode: 'cheap', extend: ['korpela', 'sawmill'] },
-      { kind: 'train', line: ['korpela', 'sawmill', 'hameenlinna'], wagons: ['flat', 'flat', 'box', 'box'] },
     ],
   },
 };
@@ -277,7 +268,7 @@ export class Bot {
     }
     const step = this.plan.steps[this.done];
     // a gated step waits for its loads, and so does the borrowing for it
-    if (step && 'after' in step && step.after && siteById(s, step.after.site).delivered < step.after.delivered) return;
+    if (step && 'after' in step && step.after && (siteById(s, step.after.site).delivered < (step.after.delivered ?? 0) || siteById(s, step.after.site).size < (step.after.size ?? 0))) return;
     // what is left over once the next buy is covered pays the loan down
     const want = step ? this.need(s, step).price : 0;
     if (s.loan > 0 && s.cash > want + 2 * reserveFor(want)) repay(s, Math.min(s.loan, Math.floor(s.cash - want - reserveFor(want))));

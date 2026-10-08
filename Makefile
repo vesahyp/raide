@@ -15,6 +15,12 @@
 #   make trains         # the station with three trains, the buy card, the train card, loading, the crew, into shots/trains/
 #   make goods          # piles, chips, badges, the site card and pick mode, portrait and landscape, into shots/goods/
 #   make mixed          # the economy step 4 pictures: the extend card, a three-stop line, the buy card with a mixed consist, a mixed train at its middle stop, the train card, into shots/mixed/
+#   make people         # the line card and the buy sheet
+buy-sheet: build
+	node scripts/buysheet.mjs
+
+# the economy step 5 pictures: travellers waiting on a platform, a coach train arriving with its pay, the town card, the buy card with a coach and a mail van, the ledger's travellers and mail rows, into shots/people/
+#   make buy-sheet      # the line card and buy sheet on iPhone 16, portrait and landscape, Finnish and English, into shots/buysheet/; fails when the footer covers the list, a card wraps or a useless action looks like a button
 #   make upgrades       # the economy step 3 pictures: the passing siding, the crane, the contract offer and its chip, into shots/upgrades/
 #   make ledger         # the slice 5 pictures: the nine sites, the year-end charts, towns growing, price steps, into shots/ledger/
 #   make money-look     # the money card and the line card with its net, portrait and landscape, into shots/money/
@@ -39,7 +45,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots look spots home trains goods ledger upgrades mixed drag-look icon money-look touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: dev build preview check balance shots-setup shots look spots home trains goods ledger upgrades mixed people buy-sheet drag-look icon money-look touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -95,6 +101,10 @@ upgrades: build
 # the economy step 4 pictures: lengthening a line, a mixed consist, a mixed train unloading and loading
 mixed: build
 	node scripts/mixed.mjs
+
+# the economy step 5 pictures: travellers on a platform, a coach train arriving, the town card, the buy card, the ledger
+people: build
+	node scripts/people.mjs
 
 # the money card and the line card with its earnings and net
 money-look: build

@@ -13,19 +13,19 @@
  * Text and chips are HTML in the overlay div, placed each frame by projecting tile points, so
  * they stay crisp at any zoom.
  */
-import type { Contract, Good, Line, Load, ScenarioDef, Siding, SimState, Site, Train } from '../game/types';
+import type { Cargo, Contract, Good, Line, Load, ScenarioDef, Siding, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
-import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS } from '../game/sim';
+import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, waitingTotal, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS } from '../game/sim';
 import { createState } from '../game/state';
 import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
-import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, TERRACE_M, TOWN_MAX, SIDING_OFFSET, SIDING_RAMP, yard } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_FARE, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, TERRACE_M, TOWN_MAX, SIDING_OFFSET, SIDING_RAMP, yard } from '../game/content/economy';
 import { t as tt, tr } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, drawEngine, drawWagon, hash, logPile, makeView, pine,
-  crew, derrick, handcart, platform, sacks, sails, shade, switchStand, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
+  crew, derrick, handcart, platform, sacks, sails, waiting, shade, switchStand, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
 } from './draw2d';
 
 export const OPTION_COLOUR = ['rgba(239,230,207,0.95)', 'rgba(70,150,230,0.95)'];
@@ -208,6 +208,8 @@ interface TagRefs {
   /** a town's growth bar under its name, or the ring round its badge, and the growth last written */
   grow: HTMLElement | null;
   gv: number;
+  /** the count of travellers waiting at a town's station, in the person chip of its label */
+  folk: HTMLElement | null;
   /** the progress of each contract aimed at this site: the node that shows 3/8, and the contract */
   cts: { b: HTMLElement; c: Contract }[];
 }
@@ -740,11 +742,17 @@ export class Renderer2D {
       // the town's store waits by the platform: the pile is the store, and shrinks as the town eats it
       const boards = site.store.boards > 0.05 ? Math.ceil(10 * storeFill(site, 'boards')) : 0;
       const flour = site.store.flour > 0.05 ? Math.ceil(9 * storeFill(site, 'flour')) : 0;
+      // the travellers and the post waiting at the station: people on the platform, grey-blue sacks at its east end
+      const railed = this.s.stations.some((st) => st.siteId === site.id);
+      const folk = railed ? waitingTotal(site, 'pax') : 0;
+      const post = railed ? Math.min(6, waitingTotal(site, 'mail')) : 0;
       return {
-        key: `${boards}:${flour}`,
+        key: `${boards}:${flour}:${folk}:${post}`,
         draw: (v) => {
           boardStack(v, x - 2.9, y - 1.45, boards, lv);
           sacks(v, x - 0.9, y - 1.95, flour, '#f4f0e4', lv);
+          if (folk) waiting(v, x - 0.9, y - 0.28, folk, lv);
+          if (post) sacks(v, x + 2.0, y - 0.5, post, '#8fa4c4', lv, 3);
         },
       };
     }
@@ -1243,9 +1251,10 @@ export class Renderer2D {
   }
 
   /** the good a wagon shows: what is aboard, or what is being loaded */
-  private wagonGood(t: Train, w: number): Good | null {
+  private wagonGood(t: Train, w: number): Cargo | null {
     if (t.loads[w]) return t.loads[w]!.good;
     if (t.dock !== 'load' || t.job !== w || t.at === null) return null;
+    if (WAGON_FARE[t.wagons[w]]) return WAGON_FARE[t.wagons[w]];
     const st = this.s.stations.find((o) => o.cell === t.at);
     const site = st && this.s.sites.find((o) => o.id === st.siteId);
     return site ? MAKES[site.kind] : null;
@@ -1338,7 +1347,7 @@ export class Renderer2D {
         const w = workingWagon(this.s, t);
         const veh = w ? this.vehicles(t)[w.wagon + 1] : null;
         const good = w ? this.wagonGood(t, w.wagon) : null;
-        if (w && veh && good) {
+        if (w && veh && good && good !== 'pax' && good !== 'mail') {
           // loading goes from the pile to the wagon, unloading the other way
           work = { wx: veh.wx, wy: veh.wy, good, phase: t.dock === 'load' ? w.progress : 1 - w.progress };
           break;
@@ -1455,7 +1464,8 @@ export class Renderer2D {
     const S = this.cam.s;
     const work = workingWagon(this.s, t);
     const good = work ? this.wagonGood(t, work.wagon) : null;
-    if (!work || !good || S < 14 || t.at === null) return;
+    // travellers and mail do not fly through the air: they walk along the platform
+    if (!work || !good || good === 'pax' || good === 'mail' || S < 14 || t.at === null) return;
     const veh = list[work.wagon + 1];
     const st = this.s.stations.find((o) => o.cell === t.at);
     const site = st && this.s.sites.find((o) => o.id === st.siteId);
@@ -2344,8 +2354,17 @@ export class Renderer2D {
     if (on) el.style.transform = `translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`;
   }
 
-  private goodIcon(g: Good): string {
+  private goodIcon(g: Cargo): string {
     return `<svg class="gi"><use href="#g-${g}"/></svg>`;
+  }
+
+  /** the person chip of a town's label: the travellers waiting at its station, hidden when none wait */
+  private folkChip(el: HTMLElement | null, site: Site): void {
+    if (!el) return;
+    const n = waitingTotal(site, 'pax');
+    const b = el.querySelector('b');
+    if (b) this.setText(b as HTMLElement, String(n));
+    el.classList.toggle('none', n === 0);
   }
 
   /** a number into a node, written only when it changed */
@@ -2382,12 +2401,13 @@ export class Renderer2D {
       if (!refs || refs.key !== key) {
         const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
         const ring = town && railed && site.size < TOWN_MAX ? '<i class="ring"></i>' : '';
-        badge.innerHTML = `<span class="c">${ring}${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => `<span class="wg${floors.includes(g) ? ' floor' : ''}${starved.includes(g) ? ' short' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}${cts.map((c) => `<span class="ct">${this.goodIcon(c.good)}<b></b></span>`).join('')}`;
+        badge.innerHTML = `<span class="c">${ring}${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => `<span class="wg${floors.includes(g) ? ' floor' : ''}${starved.includes(g) ? ' short' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}${town && railed ? `<span class="folk">${this.goodIcon('pax')}<b></b></span>` : ''}${cts.map((c) => `<span class="ct">${this.goodIcon(c.good)}<b></b></span>`).join('')}`;
         const ctNodes = Array.from(badge.querySelectorAll<HTMLElement>('.ct b'));
-        refs = { key, has: null, wants: [], n: badge.querySelector('.n'), grow: badge.querySelector<HTMLElement>('.ring'), gv: -1, cts: cts.map((c, k) => ({ b: ctNodes[k], c })) };
+        refs = { key, has: null, wants: [], n: badge.querySelector('.n'), grow: badge.querySelector<HTMLElement>('.ring'), gv: -1, folk: badge.querySelector<HTMLElement>('.folk'), cts: cts.map((c, k) => ({ b: ctNodes[k], c })) };
         this.tags.set(`badge:${site.id}`, refs);
       }
       if (refs.n) this.setText(refs.n, String(Math.floor(site.stock)));
+      this.folkChip(refs.folk, site);
       for (const ct of refs.cts) this.setText(ct.b, `${ct.c.got}/${ct.c.count}`);
       if (refs.grow && Math.abs(site.growth - refs.gv) > 0.004) {
         refs.grow.style.setProperty('--g', String(Math.round(site.growth * 1000) / 1000));
@@ -2410,6 +2430,7 @@ export class Renderer2D {
       let html = `<div class="name">${rail}${tt(site.name)}${town ? ` <small>${site.size}</small>` : ''}${cost}</div>${town && railed && site.size < TOWN_MAX ? '<div class="grow"><i></i></div>' : ''}<div class="chips">`;
       if (makes) html += `<span class="chip has">${this.goodIcon(makes)}<b></b><i></i></span>`;
       for (const g of takes) html += `<span class="chip wants">${this.goodIcon(g)}<b></b><i></i>${town ? '<em>!</em>' : ''}</span>`;
+      if (town && railed) html += `<span class="chip folk" data-folk>${this.goodIcon('pax')}<b></b></span>`;
       for (const c of cts) html += `<span class="chip contract">${this.goodIcon(c.good)}<b></b><small>${c.deadline}</small></span>`;
       el.innerHTML = html + '</div>';
       const ctNodes = Array.from(el.querySelectorAll<HTMLElement>('.chip.contract b'));
@@ -2422,11 +2443,13 @@ export class Renderer2D {
         n: null,
         grow: el.querySelector<HTMLElement>('.grow i'),
         gv: -1,
+        folk: el.querySelector<HTMLElement>('.chip.folk'),
         cts: cts.map((c, k) => ({ b: ctNodes[k], c })),
       };
       this.tags.set(`site:${site.id}`, refs);
     }
     for (const ct of refs.cts) this.setText(ct.b, `${ct.c.got}/${ct.c.count}`);
+    this.folkChip(refs.folk, site);
     if (refs.has) {
       this.setText(refs.has.b, String(Math.floor(site.stock)));
       refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / RAW_CAP)}%`;

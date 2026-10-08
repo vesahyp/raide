@@ -274,6 +274,15 @@ more than two stops takes no siding. Trains already on a lengthened line run all
 of it, so a flat-wagon train sent on to the town runs the new leg empty until
 box wagons go on it. Undo takes a lengthening back inside its second.
 
+**Turns at a shared block.** Two lines that share a cell share the block, one
+running train at a time. When several trains stand ready and the block is
+free, the one that has stood ready longest goes first (first come, first
+served), so a train is never passed over again and again. A train that has
+waited 30 seconds is served next in a stricter sense: the trains behind it stop
+setting out over its cells while only running trains hold it up, so it gets the
+block the moment it is free. The sim-check holds the longest wait at a block
+under 40 seconds on the four-stop and three-stop lines over ten years.
+
 **Mixed trains.** A train's wagons are a list, each wagon its own type. At each
 stop every wagon unloads what the stop takes (a town takes boards and flour, a
 sawmill timber, a mill grain), then each empty wagon whose type can carry what
@@ -289,9 +298,24 @@ of any type is added, and one taken off returns half its price. The trips a year
 count every stop.
 
 **Wagons** are typed, one type per good family, and a train's wagons decide
-what it carries: flat wagon (timber, boards), hopper (ore, coal), box wagon
-(flour, paper, goods), tank wagon (tar, oil), coach (passengers), mail van.
-Wagons cost little; the engine is the investment.
+what it carries: flat wagon (timber), box wagon (boards, flour), hopper
+(grain, later ore and coal), tank wagon (tar, oil, later), **coach**
+(travellers) and **mail van** (mail). Wagons cost little (20 each, coaches
+and vans too); the engine is the investment.
+
+**Coaches and mail vans** (economy step 5). A coach carries travellers and a
+mail van carries mail, one load each wagon like the goods wagons. At a stop
+that is a town, an empty coach takes a load of travellers whose town is a
+later stop on the train's way (forward from the stop, turning at the ends as
+the train does), the town with the most waiting first; it unloads at that
+town. A mixed train carries them with goods in the same consist, a coach and
+a van beside two box wagons. A coach or a van on a line with fewer than two
+towns carries nothing and is marked as a waste like any other wagon; on a
+line between two towns the buy card says "carries travellers Hämeenlinna ↔
+Tampere". The buy card starts a town-to-town line with two coaches and a
+mail van. A load of goods does not pass through a town (the first town that
+takes it unloads it), so a line with a town in the middle serves the two ends
+with goods only by turning there; travellers do pass through.
 
 **Engines** have four stats: speed, power, upkeep per year, and life in
 years. Power sets how many loaded wagons the engine can pull on a grade at
@@ -332,16 +356,22 @@ Never more than three tiers.
 what it takes. A raw site makes a fixed amount per month, up to a cap, and
 its rate rises when it is picked up often. A refinery makes one unit of
 output per unit of input delivered. A town consumes a fixed amount per month
-per size, and the stock it holds decays. The **harbour** takes anything,
+for its size, and the stock it holds decays. The **harbour** takes anything,
 without limit, at a flat 60 % of base price, so every good always has a
 buyer.
 
 **Prices.** Each site pays `base × demand`. Demand starts at 1.0, falls
 towards 0.4 as the site's stock fills (a lot of recent deliveries), and
 recovers towards 1.0 over a few months. Pay is multiplied by a distance
-factor from 1.0 at zero to 1.5 at 40 cells, capped there. Passengers and
-mail lose 1 % of pay per day in transit past a fixed allowance; goods do
-not. These numbers are starting values for the sim to tune.
+factor (the numbers are in `economy.ts`). **Travellers and mail pay by
+time too** (built): a load pays the base (3.5 for travellers, 5 for mail)
+times the distance factor, less 2 % of the full pay for every second on
+board past a fair trip, the distance at 1.2 cells a second; mail loses a third
+as fast, and a load never pays less than a quarter of the full pay. Goods do
+not lose pay in transit. The clock starts when the load boards and stops when
+it comes off, so a train held at a signal-free block, or kept waiting for a full
+load, pays less. The delivery float over the station is the sum paid. These
+numbers are starting values for the sim to tune.
 
 **What the player sees.** Tap any site: what it has, what it wants, what it
 pays now, with a bar for demand. A chain button on a refinery shows the
@@ -402,16 +432,15 @@ siding. With two platforms at each end two trains make about 1.8 times the
 trips of one (the sim-check holds it between 1.6 and 2.0); without the siding
 the second train adds a tenth. The line card and the buy card show the
 trips a year with and without it. Lines that share track with a siding line
-keep the old block rule against it, so a siding line yields to a waiting
-train of a neighbour: the siding helps its own line and takes turns with the
-rest.
+take turns with it by who has waited longest, the same as any two lines: the
+siding helps its own line and gives no one the block twice in a row.
 
 A **town** has a size from 1 to 5 and keeps a **store** of each good it
 takes (Vesa, 2026-10-08: "What happens to goods at stations? They just
 seem to disappear with no impact."):
 
 - A delivery adds a load to the store. The store holds 4 loads per size.
-  The town eats 0.25 loads a month per size from each store, a little
+  A size 1 town eats 0.25 loads a month from each store and every size above adds a quarter of that (size 3 eats 0.375), a little
   every tick. The pile by the station is the store, and handcarts carry
   goods from it into the streets while the town eats.
 - The price follows the store: full price when it is empty, the floor
@@ -424,6 +453,14 @@ seem to disappear with no impact."):
   below zero. When the meter is full the town grows then, not at the year
   end: the houses rise, the meter resets, a float names the town and its
   new size.
+- **From size 2 a town wants people too.** A month counts as supplied only
+  when, besides the goods it wants, travellers arrived there lately: a
+  delivered load of travellers counts for the month it comes and for the 11
+  after it (a train calls once a round trip, which is several months on a long
+  line, so a service that reaches the town about once a year keeps it
+  supplied). Size 1 needs goods only, so the start is as it was, and a map with
+  one town asks for no travellers (Sawmill). The town's card says "travellers:
+  4 arrived this month" and, when none have come, "no travellers: not growing".
 - A good whose store is empty is marked on its chip in red with a "!", so
   the player sees which good holds the town back. The town's card says
   "grows in about N months at this supply" or "no flour: not growing".
@@ -433,8 +470,19 @@ seem to disappear with no impact."):
   price and decay each month. A shared store would have changed the
   mill and sawmill balance for no gain.
 
-Passengers, shrinking, and a new demand at sizes 3 and 5 (first iron,
-then paper) are later steps. A size 4 town founds a new industry nearby.
+**Travellers and mail** (built). A town with a station makes 0.5 loads of
+travellers and 0.25 loads of mail a month for every size, shared among the
+other towns that have a station by their size (a town without a station is not
+a destination). They wait at the station, up to 2 loads of each per size for
+each destination, drawn as small people in coats on the platform (up to twelve)
+and grey-blue sacks at its east end (up to six). The label of a town with a
+station shows a person icon with the number waiting, and the town card lists,
+per destination, the travellers and the mail waiting and how many travellers
+arrived this month. The card's growth line names what is missing, goods or
+travellers.
+
+Shrinking, and a new demand at sizes 3 and 5 (first iron, then paper) are later
+steps. A size 4 town founds a new industry nearby.
 Growth is the visible reward for a working network and the thing that
 keeps demand moving.
 

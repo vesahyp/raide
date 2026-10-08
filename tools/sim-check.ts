@@ -7,11 +7,11 @@
  */
 import { createState, siteById, stationAt } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood } from '../src/game/sim';
+import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth } from '../src/game/sim';
 import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot, type Step, type YearRecord } from './bot';
-import { YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, TOWN_EATS } from '../src/game/content/economy';
-import { GOODS } from '../src/game/types';
+import { YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
+import { CARGOS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
 
 let failed = false;
@@ -110,7 +110,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(pHalf < p0 && pHalf > half, `a half store pays between full price and the floor (${p0}, ${pHalf}, ${half})`);
   town.store.boards = storeCap(town);
   s.cash = 9999;
-  const eatMonths = storeCap(town) / (TOWN_EATS * town.size);
+  const eatMonths = storeCap(town) / eatsPerMonth(town);
   for (let k = 0; k < 60 * YEAR_SECONDS * (eatMonths / 12 + 0.1); k++) {
     step(s);
     if (s.yearEnd) closeYearEnd(s);
@@ -497,13 +497,13 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   const hl = siteById(s2, 'hameenlinna');
   const c = { id: 900, site: 'hameenlinna', good: 'boards' as const, count: 2, got: 0, deadline: s2.year, reward: 80 };
   s2.offer = c;
-  s2.yearEnd = { year: s2.year, income: { timber: 0, boards: 0, grain: 0, flour: 0 }, running: 0, engine: 0, track: 0, interest: 0, upkeep: 0, profit: 0, cash: 0, loan: 0, worth: 0, lost: [], bonus: 0, grew: [], growth: {} };
+  s2.yearEnd = { year: s2.year, income: { timber: 0, boards: 0, grain: 0, flour: 0, pax: 0, mail: 0 }, running: 0, engine: 0, track: 0, interest: 0, upkeep: 0, profit: 0, cash: 0, loan: 0, worth: 0, lost: [], bonus: 0, grew: [], growth: {} };
   closeYearEnd(s2, true);
   check(s2.contracts.length === 1 && s2.offer === null, 'Take holds the contract');
   const o3 = { ...c, id: 901, site: 'tampere', count: 5 };
   s2.offer = o3;
   s2.yearEnd = { ...(s2.yearEnd ?? ({} as never)) } as never;
-  s2.yearEnd = { year: s2.year, income: { timber: 0, boards: 0, grain: 0, flour: 0 }, running: 0, engine: 0, track: 0, interest: 0, upkeep: 0, profit: 0, cash: 0, loan: 0, worth: 0, lost: [], bonus: 0, grew: [], growth: {} };
+  s2.yearEnd = { year: s2.year, income: { timber: 0, boards: 0, grain: 0, flour: 0, pax: 0, mail: 0 }, running: 0, engine: 0, track: 0, interest: 0, upkeep: 0, profit: 0, cash: 0, loan: 0, worth: 0, lost: [], bonus: 0, grew: [], growth: {} };
   closeYearEnd(s2, false);
   check(s2.contracts.length === 1, 'Skip leaves it');
   // two lines of deliveries: the second load reaches the count and pays
@@ -579,6 +579,116 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(storeCap(h) === 4 * h.size, `the store cap is ${storeCap(h)} loads for size ${h.size}`);
 }
 
+// travellers and mail: made by the towns with a station, carried by coaches and mail vans, paid by distance and time
+{
+  const s0 = createState(HARJU);
+  const tampere0 = siteById(s0, 'tampere');
+  // nothing is made until a town has a station and another town has one too
+  for (let k = 0; k < 60 * YEAR_SECONDS; k++) { step(s0); if (s0.yearEnd) closeYearEnd(s0); }
+  check(waitingTotal(tampere0, 'pax') === 0 && waitingTotal(tampere0, 'mail') === 0, 'a town with no station makes no travellers and no mail');
+  // two towns with stations, both size 2: each makes travellers and mail for the other, by its size, up to a cap
+  const open = { ...HARJU, startStations: ['tampere', 'hameenlinna'] };
+  const s = createState(open);
+  const tam = siteById(s, 'tampere');
+  const ham = siteById(s, 'hameenlinna');
+  tam.size = 2;
+  ham.size = 2;
+  const m0 = s.month;
+  while (s.month === m0) step(s);
+  const per = (PAX_RATE * 2).toFixed(2);
+  check(Math.abs((tam.pax.hameenlinna ?? 0) - PAX_RATE * 2) < 1e-9 && Math.abs((tam.mail.hameenlinna ?? 0) - MAIL_RATE * 2) < 1e-9 && tam.pax.lahti === undefined, `a size 2 town makes ${per} loads of travellers a month for the other town with a station, and none for a town without (${tam.pax.hameenlinna})`);
+  for (let k = 0; k < 60 * YEAR_SECONDS * 2; k++) { step(s); if (s.yearEnd) closeYearEnd(s); }
+  check(Math.abs((tam.pax.hameenlinna ?? 0) - PAX_CAP * 2) < 1e-9 && Math.abs((tam.mail.hameenlinna ?? 0) - MAIL_CAP * 2) < 1e-9, `the waiting travellers stop at the cap of ${PAX_CAP} a size (${(tam.pax.hameenlinna ?? 0).toFixed(1)}) and the mail at ${MAIL_CAP}`);
+  // the pay: distance factor on the base, less a share for every second past a fair trip, never below the floor; mail pays more and loses a third as fast
+  const cells = 60;
+  const fair = cells / FARE_SPEED;
+  const on = farePay('pax', cells, fair);
+  const late = farePay('pax', cells, fair + 20);
+  const verylate = farePay('pax', cells, fair + 1000);
+  const mailOn = farePay('mail', cells, fair);
+  const mailLate = farePay('mail', cells, fair + 20);
+  check(on === Math.round(BASE_FARE.pax * distanceFactor(cells)) && late < on && Math.abs(late - Math.round(on * (1 - PAX_DECAY * 20))) <= 1, `a load of travellers delivered late pays less than one on time (${on}, then ${late} twenty seconds late)`);
+  check(verylate === Math.round(on * FARE_FLOOR) && verylate > 0, `and never less than ${FARE_FLOOR * 100} % of the full pay (${verylate})`);
+  check(mailOn > on && mailOn - mailLate < on - late, `mail pays more per load (${mailOn} against ${on}) and loses less when late (${mailOn - mailLate} against ${on - late})`);
+  // a coach carries between two towns and is a waste on a line with one
+  const one = createState(HARJU);
+  one.cash = 9999;
+  const fs = build(one, plan(one, cell(one, 'forest'), cell(one, 'sawmill'))[0])!;
+  const ext = build(one, plan(one, cell(one, 'sawmill'), cell(one, 'hameenlinna'), 1).filter((r) => canExtend(one, r, fs.id))[0], fs.id)!;
+  check(wagonWaste(one, ext, 'coach') && wagonWaste(one, ext, 'mailvan'), 'a coach and a mail van carry nothing on a line with one town');
+  const two = createState(open);
+  two.cash = 9999;
+  const link = build(two, plan(two, cell(two, 'tampere'), cell(two, 'hameenlinna'))[0])!;
+  const rt = wagonRoutes(two, link, 'coach');
+  check(!wagonWaste(two, link, 'coach') && rt.length === 1 && rt[0].good === 'pax' && wagonWaste(two, link, 'flat') && defaultConsist(two, link).join() === 'coach,coach,mailvan', `on a line between two towns a coach carries travellers (${defaultConsist(two, link).join(' ')})`);
+  // a coach train: it takes travellers at a stop whose town lies ahead, and the town they reach counts them
+  const run = (hold: number) => {
+    const g = createState(open);
+    g.cash = 9999;
+    g.sites.filter((x) => x.kind === 'town').forEach((x) => (x.size = 2));
+    const l = build(g, plan(g, cell(g, 'tampere'), cell(g, 'hameenlinna'))[0])!;
+    const tr = buyTrain(g, l.id, ['coach', 'coach', 'mailvan'])!;
+    const dest = siteById(g, 'hameenlinna');
+    siteById(g, 'tampere').pax.hameenlinna = 2;
+    siteById(g, 'tampere').mail.hameenlinna = 1;
+    let held = false;
+    let first = Infinity;
+    for (let k = 0; k < 60 * 110; k++) {
+      step(g);
+      // the late run keeps the train standing at the first stop after its travellers got on
+      if (hold && !held && tr.cargo === 3) {
+        held = true;
+        tr.stopLeft = hold;
+      }
+      if (g.income.pax > 0 && first === Infinity) first = g.time;
+      if (tr.cargo === 0 && first < Infinity && g.income.mail > 0) break;
+    }
+    return { g, tr, dest, income: g.income.pax, mail: g.income.mail };
+  };
+  const quick = run(0);
+  const slow = run(45);
+  check(quick.income > 0 && quick.mail > 0 && Number.isFinite(quick.dest.lastArrival), `the coaches deliver their travellers and the post, and the town counts them (pay ${quick.income} and ${quick.mail})`);
+  check(slow.income < quick.income, `travellers that sat on the platform 45 s longer paid less (${slow.income} against ${quick.income})`);
+  // a passenger line between two size 2 towns pays back inside two years: line, train and all the running costs
+  {
+    const g = createState(open);
+    g.cash = 5000;
+    g.sites.filter((x) => x.kind === 'town').forEach((x) => (x.size = 2));
+    const start = g.cash;
+    const l = build(g, plan(g, cell(g, 'tampere'), cell(g, 'hameenlinna'))[0])!;
+    buyTrain(g, l.id, defaultConsist(g, l));
+    const spent = start - g.cash;
+    for (let k = 0; k < 2 * YEAR_SECONDS * 60 + 60; k++) {
+      step(g);
+      if (g.yearEnd) closeYearEnd(g);
+    }
+    check(g.cash >= start, `a passenger line between two size 2 towns pays back inside two years (spent ${Math.round(spent)}, cash ${Math.round(g.cash)} of ${start} after two years)`);
+  }
+  // a size 2 town with every good but no travellers does not grow; with them it does
+  const grow = (visit: boolean) => {
+    const g = createState(HARJU);
+    const t = siteById(g, 'tampere');
+    t.size = 2;
+    const stop = Math.round(60 * (YEAR_SECONDS / 12) * (GROW_MONTHS + 2));
+    for (let k = 0; k < stop; k++) {
+      t.store.boards = storeCap(t);
+      t.store.flour = storeCap(t);
+      if (visit && k % 60 === 0) t.lastArrival = g.time;
+      step(g);
+      if (g.yearEnd) closeYearEnd(g);
+    }
+    return t;
+  };
+  const without = grow(false);
+  const withFolk = grow(true);
+  check(without.size === 2 && without.growth === 0, `a size 2 town with boards and flour but no travellers does not grow (size ${without.size}, meter ${without.growth})`);
+  check(withFolk.size === 3, `with travellers arriving it grows (size ${withFolk.size})`);
+  const lone = createState(SAWMILL);
+  const lt = siteById(lone, 'town');
+  lt.size = 2;
+  check(!wantsPeople(lone, lt) && wantsPeople(createState(HARJU), (() => { const x = siteById(createState(HARJU), 'tampere'); x.size = 2; return x; })()), 'a map with one town asks for no travellers, so Sawmill is as it was');
+}
+
 // the bot wins both scenarios
 const years: Record<string, YearRecord[]> = {};
 const bots: Record<string, Bot> = {};
@@ -651,6 +761,8 @@ class Watch {
   shared = 0;
   apart = 0;
   longest = 0;
+  /** the longest a train stood ready to leave and was held by a block, in seconds */
+  gate = 0;
   private seen = new Map<number, { mark: string; since: number }>();
 
   check(s: SimState): void {
@@ -711,6 +823,7 @@ class Watch {
     }
     // a train is moving or working, or it is not: the longest it goes without either
     for (const o of s.trains) {
+      this.gate = Math.max(this.gate, o.gate);
       if (o.parked) {
         this.seen.delete(o.id);
         continue;
@@ -760,6 +873,7 @@ class Watch {
   check(watch.overlap === 0, `ten years: no two trains share a cell (${watch.overlap} frames)`);
   check(watch.shared === 0 && watch.apart === 0, `and none stand on one platform or over a station (${watch.shared} and ${watch.apart} frames)`);
   check(watch.longest <= 30, `and no train is stuck: the longest a train went without moving or working is ${watch.longest.toFixed(1)} s`);
+  check(watch.gate <= 40, `and none waits at a shared block more than 40 s: first come, first served (the longest wait is ${watch.gate.toFixed(1)} s)`);
   check(s.trains.every((t) => t.earned > 0), `every train earned (${s.trains.map((t) => Math.round(t.earned)).join(', ')})`);
 }
 
@@ -799,8 +913,8 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
   const lastYear = sc.goal.kind === 'deliver' ? r!.year : r!.year - 1;
   const early = ys.filter((y) => y.year <= lastYear - 2);
   check(early.length > 0 && early.every((y) => y.next > 0 && y.cash <= 1.5 * y.next), `${sc.id}: before the last two years the cash is never more than the next buy plus half (${early.map((y) => `${y.year}: ${y.cash} of ${y.next}`).join(', ')})`);
-  const share = (y: YearRecord) => (100 * y.upkeep) / Math.max(1, GOODS.reduce((a, g) => a + y.income[g], 0));
-  const whole = (100 * ys.reduce((a, y) => a + y.upkeep, 0)) / Math.max(1, ys.reduce((a, y) => a + GOODS.reduce((b, g) => b + y.income[g], 0), 0));
+  const share = (y: YearRecord) => (100 * y.upkeep) / Math.max(1, CARGOS.reduce((a, g) => a + y.income[g], 0));
+  const whole = (100 * ys.reduce((a, y) => a + y.upkeep, 0)) / Math.max(1, ys.reduce((a, y) => a + CARGOS.reduce((b, g) => b + y.income[g], 0), 0));
   check(whole >= 33 && whole <= 46, `${sc.id}: running costs are ${whole.toFixed(0)} % of gross over the game, and ${ys.map((y) => `${y.year} ${share(y).toFixed(0)}`).join(', ')} year by year`);
   check(ys.every((y) => share(y) >= 25 && share(y) <= 60), `${sc.id}: no year's running costs stray outside 25 to 60 % of gross`);
   const offers = bot.years.filter((y) => y.offered);

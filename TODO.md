@@ -3,13 +3,12 @@
 Forward-looking only. Shipped items are deleted; git history is the record.
 The design is in `docs/design.md`; its "first hour" table is the order.
 
-## Now: the economy and the loop
+## Now: play the economy
 
-Vesa on build Terävä Ratavalli, 2026-10-08: "It works. But isnt a game
-yet." `docs/economy.md` is the plan: money that is tight, running costs,
-station capacity in place of the train cap, upgrades bought where the
-bottleneck is, mixed trains and passengers. Nothing is built until Vesa
-says yes.
+All five steps of `docs/economy.md` are built: money that is tight, towns
+that use what they get, the upgrades and the contract, mixed trains, and
+travellers and mail. Vesa plays it on the phone before the next step starts.
+What the plan left out (double track, engines by era) is listed there.
 
 ## Next: the game in the top-down style
 
@@ -27,12 +26,6 @@ at the screen on phone emulation. Scripted checks stay short.
 
 ### Left from slices 1 to 5
 
-- Two trains on shared blocks can starve a third for 150 s (seen with the
-  4-stop line in sim-check). Rule 5 holds (no deadlock), but a starved
-  train reads as a broken one; the fair-turn rule at a shared block needs
-  a look before passengers add more trains.
-- `make touch-check` fails now and then on "Buy puts a train on the
-  line" and passes on a rerun.
 - A mixed train (forest, sawmill, town) earns about a third less per
   engine than two single trains, because each wagon loads on one leg. It
   pays where cash is short. Vesa decides whether that is the right
@@ -57,16 +50,15 @@ at the screen on phone emulation. Scripted checks stay short.
 
 - How many Sonnet subagents run at once. The default is one at a time.
 
-Left in the design for a later build: the crane and the longer platform
-(station upgrades after the loading crew), tunnels, passengers and mail, loans,
+Left in the design for a later build: the longer platform
+(a station upgrade after the loading crew), tunnels, shrinking towns, loans,
 the harbour and the export sink, eras and the coal unlock, industries that
 close, branches and junctions, double track, lines with more than two
 stops, autosave, stars in DynamoDB, the sandbox.
 
 ## After that
 
-- Passengers and mail between the two towns, and the tunnel as a third
-  route choice on a ridge.
+- The tunnel as a third route choice on a ridge.
 - Scenario 4, Harbour: the export sink, loans, an industry that closes, the
   coal era unlock.
 - Branches: a drag from any point on existing track places a junction.

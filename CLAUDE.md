@@ -39,7 +39,7 @@ The Räkkä architecture, copied from `sora` (ADR 0001):
 ```
 src/
   game/               the simulation, no DOM anywhere in here
-    types.ts          ScenarioDef, Site, Station, Line (stops, legs, blocks), Train (wagons and a load each), SimState
+    types.ts          ScenarioDef, Site (a town's store, growth meter and the travellers and mail waiting), Station, Line (stops, legs, blocks), Train (wagons and a load each), SimState
     grid.ts           the grid the player never sees: eight directions, A* routing two ways (the
                         cheapest and the shortest, which bridges water and cuts through a hill),
                         the rail profile (the land clamped to GRADE_MAX, cut and fill paid for),
@@ -49,14 +49,16 @@ src/
                         yards; yardOf, siteAt, stationAt, siteById, goodsOnMap
     sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
                         rule, grades (a climb cuts the speed by the engine's climb share and the load),
-                        loading, the full-load wait, paying, demand, the towns' stores and growth meters,
+                        loading, the full-load wait, paying, demand, the towns' stores and growth meters, the
+                        travellers and mail (made monthly by the towns with a station, carried by coaches and
+                        mail vans, paid by distance and the seconds on board), the turn order at a shared block,
                         the passing siding (two blocks, a loop to wait in), the crane's dwell, the year-end
                         contract (seeded offer, count, reward, deadline);
                         plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/buyPlatform/
                         buyCrew/buyCrane/buySiding/closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
       economy.ts      every number the balance is made of: prices, demand, the tile in metres
-                        (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth
+                        (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth, the travellers and the mail
       scenarios.ts    the hand-made tile maps (Harju 120 by 100, Sawmill 64 by 48): the land as a
                         height function in metres (water below zero), the cover (forest, field,
                         street), sites, start, goal, the engines on sale
@@ -79,7 +81,7 @@ src/
                         that met the lake or the ridge, the line (its trains, buy with wagons and
                         engine), the train (wagon, engine swap, full load, sell), the site (has,
                         wants, pays, growth), the year end, the result
-    Ledger.tsx        the year-end card: income bars, the cash line, the towns that grew, the contract on offer
+    Ledger.tsx        the year-end card: income bars (goods, travellers, mail), the cash line, the towns that grew, the contract on offer
     Screens.tsx       the title and the scenario list
     Update.tsx        the newer-build banner; ErrorBoundary.tsx the crash screen
   styles.css          the chrome: brass and dark green, large round buttons, a ledger page; the HUD
@@ -100,6 +102,12 @@ scripts/
   spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
                         check that every running train sits on its rails and that a frame at play zoom
                         takes 12 ms or less; the check for a change to trains, track or the camera
+  buysheet.mjs        make buy-sheet: the line card and buy sheet on iPhone 16, portrait and landscape, fi and en, with and without a
+                        train; fails when the Buy footer covers the list, an engine card wraps, a wagon type that carries
+                        nothing can be added, or an action that cannot be done looks like a button
+  people.mjs          make people: a town's platform with its travellers and mail, a coach train arriving with its pay float, the
+                        town card with travellers per destination, the buy card with a coach and a mail van, the
+                        ledger's travellers and mail rows; the check for a change to fares, wagons or those cards
   mixed.mjs           make mixed: the card that offers to lengthen a line, a three-stop line, the buy card with a mixed consist
                         and a wagon that carries nothing, a mixed train unloading and loading at its middle stop, the train card
                         with each wagon's load; the check for a change to lines, consists or those cards
@@ -142,7 +150,9 @@ docs/
    ones, so what the bot can do the thumb can do and the other way round.
 5. **No signals, no deadlock.** A block is the cells between two neighbouring stops (a leg);
    one running train on it at a time, and two lines that share cells share
-   the block; trains wait at stations. Nothing in the UI shows a signal. A
+   the block; trains wait at stations, and when several wait for a block the
+   one that has waited longest goes first (first come, first served, with a
+   bound: after `GATE_RESERVE` seconds the others stop starting over its cells). Nothing in the UI shows a signal. A
    free line laid over other lines' track is slow for this reason, and
    that is a choice the player can read on the map. A bought passing siding
    splits its own line's block in two: a train waits in the loop, wholly on

@@ -2,13 +2,20 @@
 export type Good = 'timber' | 'boards' | 'grain' | 'flour';
 export const GOODS: Good[] = ['timber', 'boards', 'grain', 'flour'];
 
+/** What travellers and the post are: carried by coaches and mail vans, paid by distance and time, never stored in a town */
+export type Fare = 'pax' | 'mail';
+export const FARES: Fare[] = ['pax', 'mail'];
+/** everything a wagon can carry */
+export type Cargo = Good | Fare;
+export const CARGOS: Cargo[] = [...GOODS, ...FARES];
+
 /** what a tile shows on top of the land: drawing data only, the sim never reads it */
 export type Cover = 'none' | 'forest' | 'field' | 'street';
 
 export type SiteKind = 'forest' | 'sawmill' | 'farm' | 'mill' | 'town';
 
-/** A wagon carries one family of goods: flat wagons timber, box wagons boards and flour, hoppers grain. */
-export type WagonType = 'flat' | 'box' | 'hopper';
+/** A wagon carries one family of goods: flat wagons timber, box wagons boards and flour, hoppers grain; coaches travellers, mail vans the post. */
+export type WagonType = 'flat' | 'box' | 'hopper' | 'coach' | 'mailvan';
 
 export type EngineId = 'hilma' | 'jyry';
 
@@ -70,6 +77,13 @@ export interface Site extends SiteDef {
   store: Record<Good, number>;
   /** a town's growth meter, 0..1: it grows when the meter is full */
   growth: number;
+  /** travellers and mail waiting at a town's station, by the id of the town they want to reach; whole numbers are loads a coach or a van can take */
+  pax: Record<string, number>;
+  mail: Record<string, number>;
+  /** travellers who arrived at this town in the month so far, for the town card */
+  arrived: number;
+  /** the sim time the last travellers arrived, for the growth rule; minus infinity when none have */
+  lastArrival: number;
   /** loads delivered here, all time */
   delivered: number;
   /** production rate per month, raised by frequent pickups */
@@ -144,10 +158,16 @@ export interface Line {
 
 export type TrainState = 'run' | 'stop';
 
-/** a load on one wagon: the good, and the distance along the line's path where it was loaded, for the pay */
+/**
+ * a load on one wagon: the cargo, and the distance along the line's path where it was loaded, for the
+ * pay. Travellers and mail also keep the sim time they boarded (the pay falls with the trip's time)
+ * and the town they want to reach.
+ */
 export interface Load {
-  good: Good;
+  good: Cargo;
   from: number;
+  at?: number;
+  to?: string;
 }
 
 export interface Train {
@@ -252,7 +272,7 @@ export interface Contract {
 
 export interface YearEnd {
   year: number;
-  income: Record<Good, number>;
+  income: Record<Cargo, number>;
   /** the year's costs: per tile run, engine upkeep, track upkeep, interest */
   running: number;
   engine: number;
@@ -312,8 +332,8 @@ export interface SimState {
   /** 0..1 through the year */
   yearFrac: number;
   month: number;
-  /** income this year by good, and the costs paid so far this year */
-  income: Record<Good, number>;
+  /** income this year by cargo, and the costs paid so far this year */
+  income: Record<Cargo, number>;
   /** running costs this year: tiles run plus engine upkeep (the split is in `running` and `engineUp`) */
   upkeep: number;
   running: number;

@@ -4,7 +4,7 @@
  * the two maps from tile coordinates to pixels. The same code serves the cached chunks, the
  * cached piles and the live frame, because only the View differs.
  */
-import type { EngineId, Good, WagonType } from '../game/types';
+import type { Cargo, EngineId, Good, WagonType } from '../game/types';
 
 export const OUT = '#16120e';
 /** a terrace step on screen, in tiles of height per terrace */
@@ -453,6 +453,44 @@ export function sacks(v: View, x: number, y: number, n: number, col: string, lv:
   }
 }
 
+/** the coats of the travellers: a few colours so a crowd on the platform reads as people */
+export const PEOPLE = ['#c8553d', '#3f7a8a', '#d8a63a', '#6b5ba1', '#4d8a52', '#b8567c'];
+
+/**
+ * Travellers waiting on a platform: n small people in coats of different colours, two rows of
+ * six, the back row first. (x, y) is the left end of the front row on the platform's top.
+ */
+export function waiting(v: View, x: number, y: number, n: number, lv: number): void {
+  const { c, S } = v;
+  c.lineWidth = Math.max(1, S * 0.04);
+  c.strokeStyle = OUT;
+  const shown = Math.min(12, n);
+  // the back row holds what does not fit in the front one, so the front fills first
+  const back = Math.max(0, shown - 6);
+  const person = (px: number, py: number, k: number) => {
+    const X = v.x(px);
+    const Y = v.y(py, lv);
+    shadowEll(c, X + S * 0.05, Y + S * 0.15, S * 0.15, S * 0.06);
+    c.fillStyle = PEOPLE[k % PEOPLE.length];
+    c.beginPath();
+    c.roundRect(X - S * 0.11, Y - S * 0.1, S * 0.22, S * 0.28, S * 0.06);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#e8c39a';
+    c.beginPath();
+    c.arc(X, Y - S * 0.2, S * 0.095, 0, 7);
+    c.fill();
+    c.stroke();
+    c.fillStyle = k % 2 ? '#2a2018' : '#4a3624';
+    c.beginPath();
+    c.arc(X, Y - S * 0.23, S * 0.095, Math.PI, 0);
+    c.fill();
+    c.stroke();
+  };
+  for (let i = 0; i < back; i++) person(x + 0.2 + i * 0.36, y - 0.16, i + 3);
+  for (let i = 0; i < shown - back; i++) person(x + i * 0.36, y, i);
+}
+
 /** the stone platform beside the station track: top left corner and length in tiles, 0.55 deep */
 export function platform(v: View, x: number, y: number, len: number, lv: number): void {
   const { c, S } = v;
@@ -709,7 +747,7 @@ export function drawEngine(c: Ctx, L: number, s: number, id: EngineId): void {
 }
 
 /** a wagon, drawn with its centre at the origin; `fill` is the share of the load aboard, in thirds from 0 to 1 */
-export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: Good | null, fill: number): void {
+export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: Cargo | null, fill: number): void {
   const h = L / 2;
   c.lineWidth = Math.max(1, s * 0.05);
   c.strokeStyle = OUT;
@@ -742,6 +780,66 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: G
       c.beginPath();
       c.arc(h - s * 0.15, yy + s * 0.065, s * 0.055, 0, 7);
       c.fill();
+    }
+    return;
+  }
+  if (type === 'coach') {
+    // a passenger coach seen from above: a cream roof with a ridge, a green skirt, a row of windows along each side
+    c.fillStyle = '#2f6b4f';
+    c.fillRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
+    c.strokeRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
+    c.fillStyle = '#c9d6cf';
+    c.fillRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
+    c.strokeRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
+    c.strokeStyle = 'rgba(40,60,52,.55)';
+    c.beginPath();
+    c.moveTo(-h + s * 0.14, 0);
+    c.lineTo(h - s * 0.14, 0);
+    c.stroke();
+    c.strokeStyle = OUT;
+    // the windows, lit with a traveller in each when the coach is loaded
+    const panes = 4;
+    const seated = Math.round(fill * panes);
+    for (let i = 0; i < panes; i++)
+      for (const side of [-1, 1]) {
+        const X = -h + s * 0.3 + ((L - s * 0.6) * (i + 0.5)) / panes;
+        const Y = side * s * 0.255;
+        const taken = hasLoad && i < seated;
+        c.fillStyle = taken ? '#f2c14e' : '#27333a';
+        c.fillRect(X - s * 0.1, Y - s * 0.045, s * 0.2, s * 0.09);
+        if (taken && side === 1) {
+          c.fillStyle = PEOPLE[i % PEOPLE.length];
+          c.beginPath();
+          c.arc(X, Y, s * 0.05, 0, 7);
+          c.fill();
+        }
+      }
+    return;
+  }
+  if (type === 'mailvan') {
+    // a mail van: a red closed body, a darker roof, a post horn badge, the door ajar with sacks inside when loaded
+    c.fillStyle = '#a8322a';
+    c.fillRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
+    c.strokeRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
+    c.fillStyle = '#6e211b';
+    c.fillRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
+    c.strokeRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
+    c.fillStyle = '#e8b93a';
+    c.beginPath();
+    c.arc(-L * 0.18, 0, s * 0.1, 0, 7);
+    c.fill();
+    c.stroke();
+    c.strokeStyle = 'rgba(0,0,0,.4)';
+    c.strokeRect(-h + L * 0.52, -s * 0.2, L * 0.34, s * 0.4);
+    c.strokeStyle = OUT;
+    if (hasLoad) {
+      c.fillStyle = '#d6c08a';
+      for (const [dx, dy] of [[0.58, -0.06], [0.72, 0.06], [0.7, -0.1]]) {
+        c.beginPath();
+        c.ellipse(-h + L * dx, s * dy, s * 0.11, s * 0.08, 0, 0, 7);
+        c.fill();
+        c.stroke();
+      }
     }
     return;
   }

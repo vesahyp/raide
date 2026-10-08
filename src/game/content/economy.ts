@@ -2,7 +2,7 @@
  * Every number the balance is made of. Starting values from docs/design.md,
  * tuned by the bot (tools/balance.ts). Money has no unit on screen.
  */
-import type { EngineId, Good, SiteKind, Text, WagonType } from '../types';
+import type { Cargo, EngineId, Fare, Good, SiteKind, Text, WagonType } from '../types';
 
 /** sim seconds in a year at normal speed; the year-end card is the natural stop */
 export const YEAR_SECONDS = 90;
@@ -36,6 +36,8 @@ export const SERVED_MEMORY = 2;
 export const TOWN_STORE_CAP = 4;
 /** loads of each good a town eats a month for every size it has, taken continuously from its store */
 export const TOWN_EATS = 0.25;
+/** a town of size n eats TOWN_EATS times (1 + EAT_GROWTH times (n - 1)): twice the size is not twice the appetite */
+export const EAT_GROWTH = 0.25;
 /** a refinery keeps its own input model: loads taken in lately set the price, and they decay this much a month */
 export const MILL_EATS = 1.5;
 /** supplied months (every good the town wants had stock at the month's start) that fill the growth meter */
@@ -45,12 +47,48 @@ export const GROW_LOSS = 1 / 24;
 export const TOWN_MAX = 5;
 
 /** what a wagon carries */
-export const WAGON_GOODS: Record<WagonType, Good[]> = { flat: ['timber'], box: ['boards', 'flour'], hopper: ['grain'] };
-export const WAGON_NAME: Record<WagonType, Text> = { flat: { fi: 'Lavavaunut', en: 'Flat wagons' }, box: { fi: 'Umpivaunut', en: 'Box wagons' }, hopper: { fi: 'Viljavaunut', en: 'Grain wagons' } };
-export const GOOD_NAME: Record<Good, Text> = { timber: { fi: 'tukit', en: 'timber' }, boards: { fi: 'laudat', en: 'boards' }, grain: { fi: 'vilja', en: 'grain' }, flour: { fi: 'jauhot', en: 'flour' } };
+export const WAGON_GOODS: Record<WagonType, Good[]> = { flat: ['timber'], box: ['boards', 'flour'], hopper: ['grain'], coach: [], mailvan: [] };
+/** the fare a coach or a mail van carries, null for the goods wagons */
+export const WAGON_FARE: Record<WagonType, Fare | null> = { flat: null, box: null, hopper: null, coach: 'pax', mailvan: 'mail' };
+export const WAGON_NAME: Record<WagonType, Text> = {
+  flat: { fi: 'Lavavaunut', en: 'Flat wagons' },
+  box: { fi: 'Umpivaunut', en: 'Box wagons' },
+  hopper: { fi: 'Viljavaunut', en: 'Grain wagons' },
+  coach: { fi: 'Henkilövaunut', en: 'Coaches' },
+  mailvan: { fi: 'Postivaunut', en: 'Mail vans' },
+};
+export const GOOD_NAME: Record<Cargo, Text> = {
+  timber: { fi: 'tukit', en: 'timber' },
+  boards: { fi: 'laudat', en: 'boards' },
+  grain: { fi: 'vilja', en: 'grain' },
+  flour: { fi: 'jauhot', en: 'flour' },
+  pax: { fi: 'matkustajat', en: 'travellers' },
+  mail: { fi: 'posti', en: 'mail' },
+};
 export function wagonFor(good: Good): WagonType {
   return (Object.keys(WAGON_GOODS) as WagonType[]).find((w) => WAGON_GOODS[w].includes(good))!;
 }
+
+/**
+ * Travellers and mail. A town with a station makes PAX_RATE and MAIL_RATE loads a month for every size,
+ * shared among the other towns with a station by their size, and holds at most PAX_CAP and MAIL_CAP per
+ * size for each of them. A load pays BASE_FARE with the distance factor, less FARE_DECAY of the full pay
+ * for every second past a fair trip (the distance at FARE_SPEED cells a second), never below FARE_FLOOR.
+ * Mail pays more and loses a third as fast.
+ */
+export const PAX_RATE = 0.5;
+export const MAIL_RATE = 0.25;
+export const PAX_CAP = 2;
+export const MAIL_CAP = 2;
+export const BASE_FARE: Record<Fare, number> = { pax: 3.5, mail: 5 };
+export const FARE_SPEED = 1.2;
+export const PAX_DECAY = 0.02;
+export const FARE_DECAY: Record<Fare, number> = { pax: PAX_DECAY, mail: PAX_DECAY / 3 };
+export const FARE_FLOOR = 0.25;
+/** a town from this size on wants travellers to arrive, besides its goods, to count a month as supplied */
+export const PAX_GROW_SIZE = 2;
+/** travellers who arrived within this many months keep a town supplied: a train calls once a round trip, which is several months on a long line */
+export const PAX_MEMORY = 12;
 
 export interface EngineDef {
   id: EngineId;
@@ -89,7 +127,7 @@ export const GRADE_LOAD = 0.07;
 /** a wagon's price; twice the first prices, so money is tight (docs/economy.md) */
 export const WAGON_PRICE = 20;
 /** every wagon on a train adds this to the cost of a tile run: a longer train burns more */
-export const WAGON_RUN = 0.10;
+export const WAGON_RUN = 0.095;
 export const WAGONS_DEFAULT = 2;
 export const WAGONS_MAX = 4;
 /** the most stops a line has: a line is extended by a drag from its end station */
@@ -114,8 +152,8 @@ export const PLATFORM_PRICE = [80, 160];
 /** tiles of clear track between a waiting train and the train on the platform */
 export const QUEUE_GAP = 0.4;
 
-/** seconds longer than another a train must have stood ready to leave before the other lets it go first, on lines that share a block */
-export const GATE_YIELD = 0.5;
+/** seconds a train has stood ready to leave and been held by a block before the trains that would run over its legs hold back for it: first come, first served, kept to a bounded wait */
+export const GATE_RESERVE = 30;
 
 /** seconds a train waits for a platform before it takes a siding track instead, so a ring of busy stations never freezes */
 export const PATIENCE_SECONDS = 12;

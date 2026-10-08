@@ -24,8 +24,16 @@ const tap = async (x, y) => {
   await page.waitForTimeout(60);
   await touch('touchEnd', []);
 };
+// a card slides in: read the button's box until it stops moving, so the tap lands on the button
 const tapButton = async (locator) => {
-  const b = await locator.boundingBox();
+  await locator.waitFor({ timeout: 3000 });
+  let b = await locator.boundingBox();
+  for (let k = 0; k < 20; k++) {
+    await page.waitForTimeout(50);
+    const n = await locator.boundingBox();
+    if (n && b && Math.abs(n.x - b.x) < 0.5 && Math.abs(n.y - b.y) < 0.5) break;
+    b = n;
+  }
   await tap(b.x + b.width / 2, b.y + b.height / 2);
 };
 const drag = async (a, b) => {

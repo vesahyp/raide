@@ -1,5 +1,5 @@
-import type { Good, ScenarioDef, SimState, Site } from './types';
-import { GOODS } from './types';
+import type { Cargo, Good, ScenarioDef, SimState, Site } from './types';
+import { CARGOS, GOODS } from './types';
 import { idx, inside } from './grid';
 import { PLATFORMS_START, RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
 
@@ -21,6 +21,8 @@ export function yardOf(s: { w: number; h: number }, site: { kind: Site['kind']; 
 
 export const zeroGoods = (): Record<Good, number> => Object.fromEntries(GOODS.map((g) => [g, 0])) as Record<Good, number>;
 
+export const zeroCargo = (): Record<Cargo, number> => Object.fromEntries(CARGOS.map((g) => [g, 0])) as Record<Cargo, number>;
+
 export function createState(sc: ScenarioDef): SimState {
   const n = sc.w * sc.h;
   const water = new Uint8Array(n);
@@ -41,6 +43,10 @@ export function createState(sc: ScenarioDef): SimState {
     delivered: 0,
     store: zeroGoods(),
     growth: 0,
+    pax: {},
+    mail: {},
+    arrived: 0,
+    lastArrival: -Infinity,
     rate: RAW_RATE[d.kind] ?? 0,
     lastPickup: -Infinity,
     size: d.kind === 'town' ? d.size ?? 1 : 0,
@@ -83,7 +89,7 @@ export function createState(sc: ScenarioDef): SimState {
     year: sc.startYear,
     yearFrac: 0,
     month: 0,
-    income: zeroGoods(),
+    income: zeroCargo(),
     upkeep: 0,
     running: 0,
     engineUp: 0,

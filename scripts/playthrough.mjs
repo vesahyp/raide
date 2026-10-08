@@ -387,7 +387,7 @@ async function run(orient) {
           const at = await page.evaluate(({ type, id }) => { const t = window.__sim.trains.find((o) => o.id === id); return t ? t.wagons.lastIndexOf(type) : -1; }, { type: act.type, id: v.cardTrain });
           b = page.locator(`[data-act="drop-wagon"][data-wagon-at="${at}"]`);
         }
-        if (!(await b.count())) { stats.error = `no ${act.what} on the train card`; break; }
+        if (!(await b.count())) { stats.error = `no ${act.what} ${act.type ?? ""} on the train card (${JSON.stringify(act)}, train ${v.cardTrain})`; break; }
         await tapButton(b);
         stats.acts++;
         await page.waitForTimeout(250);

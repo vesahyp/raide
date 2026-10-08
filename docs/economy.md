@@ -1,6 +1,6 @@
 # The economy and the loop
 
-Status: Vesa said yes on 2026-10-08. Steps 1 to 4 are built; step 5 is ahead. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, platforms (one at the start, a second and a third bought) with a queue on the line, for towns a store of 4 loads per size, eating 0.25 loads a month per size, and a growth meter that fills in 8 supplied months, and the three buys of step 3: the passing siding, the crane and the year-end contract. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store; a passing siding has one fixed length (the longest train the game allows), a line with one yields to a waiting neighbour, and a second train starts at the end with fewer of them; the crane is bought at an industry's station only; the perks are gone and the base was made stronger to carry the game without them (prices about 20 % up, grain and flour 12 % up, running cost per tile and engine upkeep up about a fifth, so the cost share stays at 33 to 46 %). The rules of the towns and of the upgrades are in `docs/design.md`, "Stations and towns" and "Money and goals". Step 4 (lines of up to four stops, mixed trains) is in "Engines and carriages". Where the build differs from the plan: a mixed train that carries a different good on each leg runs about a third less per engine than the single-purpose trains, because each wagon type is loaded on one leg only, so it pays where cash, engines or platforms are short (the tutorial) and not where they are not; to keep the cost share at 33 to 46 % and the two scenarios won late, a wagon's running cost fell from 0.12 to 0.10 a tile, Little Hilma's from 0.067 to 0.055 and its upkeep from 9 to 6; Sawmill starts with 200 and asks for 15 boards, and the stars are 120 and 240 for Sawmill and 1200 and 2700 for Harju.
+Status: Vesa said yes on 2026-10-08. All five steps are built; what is left in this file is the plan's reasoning, its checks (which `npm run sim-check` and `npm run balance` hold) and what was not built. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, platforms (one at the start, a second and a third bought) with a queue on the line, for towns a store of 4 loads per size, eating 0.25 loads a month at size 1 and a quarter more for each size above, and a growth meter that fills in 8 supplied months, and the three buys of step 3: the passing siding, the crane and the year-end contract. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store; a passing siding has one fixed length (the longest train the game allows), and a second train starts at the end with fewer of them; the crane is bought at an industry's station only; the perks are gone and the base was made stronger to carry the game without them (prices about 20 % up, grain and flour 12 % up, running cost per tile and engine upkeep up about a fifth, so the cost share stays at 33 to 46 %). The rules of the towns and of the upgrades are in `docs/design.md`, "Stations and towns" and "Money and goals". Step 4 (lines of up to four stops, mixed trains) is in "Engines and carriages". Where the build differs from the plan: a mixed train that carries a different good on each leg runs about a third less per engine than the single-purpose trains, because each wagon type is loaded on one leg only, so it pays where cash, engines or platforms are short (the tutorial) and not where they are not; to keep the cost share at 33 to 46 % and the two scenarios won late, a wagon's running cost fell from 0.12 to 0.10 and then, with step 5, to 0.095 a tile, Little Hilma's from 0.067 to 0.055 and its upkeep from 9 to 6; Sawmill starts with 200 and asks for 15 boards, and the stars are 120 and 240 for Sawmill and 1200 and 2700 for Harju. Step 5 (travellers and mail, coaches and mail vans, pay by time, towns that want people) is in "Engines and carriages", "The goods economy" and "Stations and towns". Where the build differs from the plan: a town counts a month as supplied when travellers arrived in it or in the 11 months before, not in the month alone, because a train calls at a town once a round trip, which on Harju's long lines is five to eight months, so a one-month window could never be met; the turn order at a shared block (first come, first served, with a 30 second bound) replaced the old rule that a siding line yields to its neighbours; a bigger town eats less than its size times the first (0.25 loads a month at size 1, a quarter more for each size above), because with the passenger line added Harju could not be won in 1871 at the old appetite; Harju's bot plan is rebuilt around a coach line between Tampere and Hämeenlinna and no longer buys the cranes early. The two scenarios are won late: Sawmill in 1865 and Harju in 1870, both with two stars.
 
 ## Why this file
 
@@ -96,12 +96,10 @@ and towns".
 
 ## Passengers and mixed trains
 
-- **Passengers and mail** start between towns: each town makes travellers
-  by its size, who want to go to the other towns on the map. They pay by
-  distance and lose pay for every day past a fair trip time (design.md
-  already says so). Coaches carry them. A passenger line is the steady
-  income a town line gives; goods are the bigger money with the falling
-  price.
+Built (steps 4 and 5). The rules are in `docs/design.md`: mixed trains in
+"Engines and carriages", travellers and mail and the pay by time in "The
+goods economy" and "Stations and towns". A passenger line is the steady income
+a town line gives; goods are the bigger money with the falling price.
 ## Checks
 
 The bot proves the loop before Vesa plays it (`npm run balance`):
@@ -120,6 +118,12 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
   the years strays outside 25 to 60 %.
 - No train stands on another: a check in `make spots` that no two
   standing trains share a platform track.
+- A passenger line between two size 2 towns pays back inside two years; a
+  load of travellers delivered late pays less than one on time (mail loses a
+  third as fast); a size 2 town with every good but no travellers does not
+  grow; no train waits at a shared block more than 40 seconds on the four-stop
+  and three-stop lines over ten years; Sawmill, with one town, asks for no
+  travellers.
 
 ## Build order, once Vesa says yes
 
@@ -134,7 +138,7 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
    `docs/design.md`, "Stations and towns" and "Money and goals". Double track
    and new engines by era, from the plan's table of upgrades, are not built.
 4. **Mixed trains and lines with up to four stops** (built): the rules are in `docs/design.md`, "Engines and carriages". A drag from the end station of a line offers to lengthen it or to start a new line; the buy card builds the consist wagon by wagon; a wagon that carries nothing on the line is marked on both cards.
-5. **Passengers and mail** between the three towns.
+5. **Passengers and mail** between the towns (built): coaches and mail vans, loads with a destination, pay by distance and time, towns that want people from size 2, and the fair turn order at a shared block.
 
 Each step ships on its own and is played before the next starts.
 

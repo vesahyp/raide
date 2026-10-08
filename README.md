@@ -36,14 +36,14 @@ joka on halpa ja pitkä, tai **silta** tai **leikkaus**, joka on kallis ja
 lyhyt. Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt
 veturi ryömii, ja kuorma hidastaa sitä lisää.
 
-**Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan.
+**Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan. Kortin yläosassa on radan oma tilanne (tuotto, kulut, tulos, radan nosto ja ohitusraide, joka on teksti, kun sitä ei voi ostaa), sen alla **Osta juna** vierittyy, ja Osta-nappi on kortin alareunassa kiinteänä, joten se ei peitä mitään. Vaunut ovat paikkoja veturin perässä: tyhjä paikka on katkoviivalla, ja vaunun poistat napauttamalla sitä. Vaunulajin rivillä on + ja hinta; lajia, joka ei kuljeta tällä radalla mitään, ei voi lisätä tästä.
 Osta-napista valitset veturin ja rakennat junan vaunu kerrallaan: napautat vaunulajia, niin yksi vaunu lisätään, ja napautat vaunua nauhassa, niin se poistetaan. Jokaisen lajin kohdalla kortti kertoo, mitä se kuljettaa juuri tällä radalla, esimerkiksi "kuljettaa tukkeja Kuusikko → Koskensaha", tai punaisella, ettei se kuljeta mitään. Alussa kortti ehdottaa sen, mitä radan asemat tekevät ja ottavat (metsä, saha, kaupunki: kaksi lavavaunua ja kaksi umpivaunua). Kortti kertoo,
 montako kierrosta kumpikin veturi ajaa vuodessa juuri tällä radalla,
 paljonko tämä juna lisäisi linjan kierroksiin ja mitä se maksaisi ajaa
 vuodessa. Jos asema tai rataosuus on jo täynnä, luku näyttää sen: toinen
 juna samalla linjalla ei lisää kierroksia, vaan odottaa sivuraiteella.
 Lavavaunut kuljettavat tukkeja, umpivaunut lautoja ja jauhoja, viljavaunut
-viljaa. Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva: se vetää mäen
+viljaa, henkilövaunut matkustajia ja postivaunut postia. Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva: se vetää mäen
 yli. Juna lähtee heti ja ajaa linjaansa edestakaisin itsekseen.
 
 **Jatka rataa.** Vedä radan päätyasemalta uuteen paikkaan, niin nosto-kortti tarjoaa kahta: "Jatka rataa Kuusikko–Koskensaha → Hämeenlinna" tai "Uusi rata". Jatkettu rata on yksi rata, jossa on enintään neljä pysäkkiä. Juna ajaa päästä päähän ja pysähtyy välissä: **sekajuna** purkaa jokaisella pysäkillä sen, minkä pysäkki ottaa vastaan (kaupunki lautoja ja jauhoja, saha tukkeja, mylly viljaa), ja lastaa sen, minkä pysäkki tekee, jos jokin toinen pysäkki ottaa sen vastaan. Lavavaunut purkavat tukit sahalla, ja umpivaunut lastaavat samalla pysäkillä laudat. Vaunu, joka ei kuljeta radalla mitään, on turha ja saa punaisen merkin. Jatkettu radan kortin otsikko on päiden nimet, ja pysäkit näkyvät kortissa järjestyksessä nuolin. Sekajuna tienaa vähemmän per veturi kuin kaksi omaa junaa, koska jokainen vaunulaji on kuormattu vain yhdellä osuudella: se kannattaa, kun rahaa, vetureita tai laitureita on vähän. Jatkettu rata ei saa ohitusraidetta. Tämän radan jo ajavat junat ajavat koko rataa.
@@ -89,9 +89,10 @@ pisimmän suoran keskeltä. Ohitusraide vaatii suoran osuuden, jonka päässä
 kumpaankin asemaan on yli kuusi ruutua, eikä se mahdu sillalle. Kun kaksi
 junaa kohtaa, toinen odottaa raiteella ja toinen ajaa ohi. Linjalla voi olla
 yksi. Kun asemilla on kaksi laituria, kaksi junaa ajaa noin 1,8-kertaisesti
-yhden junan kierrokset, ja linjakortti ja Osta-kortti näyttävät luvun. Ohitusraiteen
-linja ajaa kaksi junaa kerrallaan, joten sen kanssa samaa rataa käyttävät
-linjat odottavat sitä vuorollaan.
+yhden junan kierrokset, ja linjakortti ja Osta-kortti näyttävät luvun. Kun useampi
+juna odottaa samaa rataosuutta, vuoron saa se, joka on odottanut kauimmin
+(ensin tullut, ensin palveltu), eikä yksikään juna jää jonon jatkoksi
+loputtomiin.
 
 **Napauta junaa**, niin sen kortti aukeaa: kuorma, matka-aika täynnä ja
 tyhjänä, tämän ja viime vuoden tulot, jokaisen vaunun kuorma ja se, mitä vaunu kuljettaa tällä radalla (turha vaunu on merkitty), vaunu lisää minkä tahansa lajin tai poista vaunu (puolet hinnasta takaisin), veturin vaihto,
@@ -120,7 +121,28 @@ heti, kesken vuoden: talot nousevat ja ruudulle tulee teksti. Huono kuukausi
 syö mittaria vähän. Mittari näkyy kaupungin nimen alla (koko kartalla
 kehänä nimikilven ympärillä), ja jos varasto on tyhjä, sen tavaran kuvake on
 punainen ja siinä on huutomerkki. Kaupungin kortti kertoo, kauanko kasvuun
-menee tällä tarjonnalla tai mitä puuttuu.
+menee tällä tarjonnalla tai mitä puuttuu. **Koosta 2 alkaen kaupunki haluaa
+myös väkeä:** kuukausi kelpaa vain, jos tavaroiden lisäksi kaupunkiin on
+saapunut matkustajia (kortti: "matkustajia: 4 saapui tässä kuussa", ja kun
+niitä ei ole tullut, "ei matkustajia: ei kasva"). Koko 1 tarvitsee vain
+tavaraa, ja kartta, jolla on vain yksi kaupunki, ei vaadi matkustajia.
+
+**Matkustajat ja posti.** Jokainen kaupunki, jolla on asema, tuottaa joka
+kuukausi matkustajia ja postia kokonsa mukaan, ja ne haluavat toiseen
+kaupunkiin, jolla on asema (isompaan useammin). He odottavat asemalla
+laiturilla pieninä ihmisinä ja posti harmaansinisinä säkkeinä. Kaupungin
+nimilapussa on pieni ihmiskuva ja odottajien määrä. Kaupungin kortti
+kertoo kohteittain, montako matkustajaa ja postikuormaa odottaa. **Henkilövaunu**
+kuljettaa matkustajia ja **postivaunu** postia: osta-kortissa ne ovat omat
+rivinsä, ja kortti kertoo "kuljettaa matkustajia Hämeenlinna ↔ Tampere". Radalla,
+jolla on vain yksi kaupunki, vaunulla ei ole mitään kuljetettavaa, ja se on
+turha. Matkustajat nousevat kyytiin pysäkillä, jonka jälkeen junan tiellä on
+kaupunki, jonne he menevät, ja jäävät pois siellä. Sekajuna vie heitä tavaran
+mukana. Matkustajakuorma maksaa matkan pituuden mukaan kuten tavara, mutta
+siitä vähenee joka sekunnilta, minkä matka vie yli kohtuullisen ajan (2 % täydestä
+maksusta sekunnilta; posti kolmanneksen hitaammin, ja se maksaa enemmän
+kuormalta). Maksu ei laske alle neljäsosan täydestä. Asemalle saapuvan junan
+yllä näkyy maksu lukuna.
 
 **Vuosi on puolitoista minuuttia.** Vuoden lopussa tilikirja näyttää
 tulot, kulut jaettuna ajoon, veturien ylläpitoon, radan ylläpitoon ja korkoon,
@@ -140,13 +162,13 @@ kaksi sopimusta.
 ## Kentät
 
 - **Saha:** metsä, saha ja kaupunki joen takana. Opettaa vedon, sillan ja
-  junan. Tavoite: 15 lautakuormaa kaupunkiin ennen vuotta 1866. Saha opettaa myös radan jatkamisen ja sekajunan.
+  junan. Tavoite: 15 lautakuormaa kaupunkiin ennen vuotta 1866. Saha opettaa myös radan jatkamisen ja sekajunan. Siellä on vain yksi kaupunki, joten matkustajia ei tarvita.
 - **Harju:** kaksi metsää ja saha, kaksi maatilaa ja mylly, kolme kaupunkia,
   harju ja järvi kaiken keskellä. Alussa sinulla on asema kummassakin
   metsässä, joten ensimmäinen valinta on kummasta aloitat, ja sen jälkeen
   mitkä kaupungit palvelet. Tavoite: kaksi kaupunkia kokoon 3 ennen vuotta
-  1872. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
-  tulot tavaroittain ja nettovarallisuuden vuosi vuodelta.
+  1872, ja se vaatii tavaran lisäksi matkustajia. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
+  tulot tavaroittain, matkustajittain ja postin mukaan sekä nettovarallisuuden vuosi vuodelta. Kaupunkien kasvuun tarvitaan matkustajarata kahden kaupungin välille.
 
 Nettovarallisuus lopussa antaa yhdestä kolmeen tähteä: kassa, junat ja
 asemat sekä radat puoleen hintaan, miinus laina. Taukovalikko näyttää

@@ -138,6 +138,11 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .chip.cost { background: rgba(27, 42, 30, 0.94); color: #8be08f; border: 1.5px solid #4fbf5a; padding: 2px 5px 2px 3px; }
 .chip.cost.dear { color: #ff9c8c; border-color: #f0a020; }
 /* a contract aimed at this site: the good, the loads so far over the count, the year it ends */
+.chip.folk { background: rgba(27, 42, 30, 0.92); color: #cfe6ee; border: 1.5px solid #5a8f9f; padding: 2px 5px 2px 3px; }
+.chip.folk.none { opacity: 0.55; }
+.badge .folk { display: inline-flex; align-items: center; gap: 1px; padding: 1px 4px 1px 2px; border-radius: 9px; background: rgba(27, 42, 30, 0.92); border: 1.5px solid #5a8f9f; color: #cfe6ee; font: 800 11px/14px var(--f-body); }
+.badge .folk .gi { width: 13px; height: 13px; }
+.badge .folk.none { opacity: 0.55; }
 .chip.contract { background: rgba(72, 34, 18, 0.95); color: #ffd9a0; border: 1.5px solid #e08a3a; padding: 2px 5px 2px 3px; }
 .chip.contract small { font-size: 10px; font-weight: 700; opacity: 0.85; }
 .badge .ct { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 2px; border-radius: 9px; background: rgba(72, 34, 18, 0.95); border: 1.5px solid #e08a3a; color: #ffd9a0; font: 800 11px/14px var(--f-body); }
@@ -206,7 +211,7 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .ledger-charts .grown { display: inline-flex; align-items: center; gap: 4px; }
 .ledger-charts .house { width: 18px; height: 18px; }
 .ledger-nums { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.ledger-table { flex: 1 1 0; min-height: 150px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ledger-table { flex: 1 1 0; min-height: 64px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .ledger-pick { flex: none; text-align: center; }
 .ledger-pick .small { margin: 2px 0 4px; }
 .card.ledger h2 { color: var(--ink); font-size: 26px; text-align: center; }
@@ -296,6 +301,8 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .pic.flat { background: linear-gradient(#c69a62 0 30%, #7b5a3a 30%); }
 .pic.box { background: #8f3b2e; }
 .pic.hopper { background: #6f6a5a; }
+.pic.coach { background: linear-gradient(#c9d6cf 0 40%, #2f6b4f 40%); }
+.pic.mailvan { background: linear-gradient(#e8b93a 0 25%, #a8322a 25%); }
 .pic.loaded.box { background: linear-gradient(#e8d2a0 0 50%, #8f3b2e 50%); }
 .pic.loaded.hopper { background: linear-gradient(#e2c04a 0 50%, #6f6a5a 50%); }
 .wagon .pic { width: 56px; height: 20px; }
@@ -327,6 +334,10 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .site-card .sc small, .store-row small { font-size: 12px; font-weight: 600; color: var(--bone-dim); line-height: 1.3; }
 .site-card .sc small.red, .store-row small.red { color: #ff9c8c; }
 .gline .bar.grow { max-width: 160px; }
+.folk-row { min-height: 26px; font-size: 15px; }
+.folk-row .dest { font-weight: 800; min-width: 92px; }
+.folk-row .gi { width: 20px; height: 20px; }
+.folk-row b[data-pax], .folk-row b[data-mail] { min-width: 14px; }
 .gline small { font-weight: 600; font-size: 13px; color: var(--bone-dim); white-space: nowrap; }
 .gline.buyer .bn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .gline .link { width: 16px; height: 16px; color: var(--brass); flex: none; }
@@ -453,3 +464,46 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .wagon.row small.carry { color: var(--bone); }
 .wagon-row small.carry { color: var(--bone-dim); }
 .consist-build .wchip { flex: none; }
+
+/* --- the line card and the buy sheet: a scroll area over a fixed footer --- */
+.card.sheet.buy-card { display: flex; flex-direction: column; overflow: hidden; padding-bottom: calc(10px + var(--sab)); }
+.buy-card .buy-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 8px; }
+.buy-card .buy-foot { flex: none; padding-top: 8px; border-top: 1px solid var(--hair); }
+.buy-card .buy-foot .btn.primary.wide { position: static; width: 100%; min-height: 56px; flex-direction: column; gap: 0; margin: 0; }
+.buy-card .buy-foot .btn.primary.wide small { font-size: 12px; font-weight: 700; opacity: 0.8; }
+.line-biz { padding-bottom: 6px; border-bottom: 1px solid var(--hair); }
+.line-biz .note { margin: 6px 0 0; font-size: 13px; font-weight: 600; color: var(--bone-dim); line-height: 1.3; }
+.line-biz .note .bought { color: #8be08f; }
+.line-biz .siding-buy { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 13px; font-weight: 600; }
+.line-biz .siding-buy > span { flex: 1; }
+.line-biz .siding-buy .btn.act { flex: none; min-width: 72px; margin: 0; }
+.buy-title { margin: 10px 0 0; font-size: 18px; color: var(--gold); }
+.buy-card .wagons.engines { gap: 8px; margin-top: 4px; }
+.buy-card .wagon.engine { min-width: 0; align-items: flex-start; gap: 2px; padding: 8px 10px; text-align: left; }
+.buy-card .wagon.engine .pic.eng { align-self: center; }
+.buy-card .wagon.engine .ename { display: flex; flex-wrap: nowrap; gap: 6px; align-items: baseline; font-size: 15px; white-space: nowrap; }
+.buy-card .wagon.engine small { white-space: nowrap; font-size: 12px; }
+.buy-card .wagon.engine .trips-line { font-size: 13px; font-weight: 900; white-space: nowrap; color: var(--bone); }
+.strip { flex-wrap: nowrap; }
+.strip .wchip { flex: 1 1 0; width: auto; min-width: 0; max-width: 64px; height: 48px; min-height: 48px; box-sizing: border-box; }
+.strip .wchip.engine-slot { cursor: default; }
+.strip .wchip.engine-slot .pic.eng { width: 100%; max-width: 38px; height: 16px; }
+.strip .wchip.empty { background: transparent; border: 2px dashed var(--hair); cursor: default; }
+.consist-build { flex-direction: column; align-items: stretch; gap: 4px; }
+.consist-build .hint { flex-basis: auto; }
+.picker .wagon.row { cursor: default; flex: none; flex-direction: row; background: var(--pine); }
+.picker .wagon.row .pic { width: 44px; height: 18px; }
+.picker .wagon.row .who { flex: 1; min-width: 0; gap: 2px; align-items: flex-start; }
+.picker .wagon.row .who .carry, .picker .wagon.row .who .nothing { flex: none; }
+.picker .wagon.row.dim { opacity: 0.5; }
+.picker .addcol { flex: none; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 44px; }
+.picker .addcol small { font-size: 11px; font-weight: 700; color: var(--gold); line-height: 1; }
+.plus-btn { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--brass); background: var(--brass); color: #2a2010; font-size: 26px; font-weight: 900; line-height: 1; cursor: pointer; padding: 0; }
+.plus-btn:disabled { background: transparent; border-color: var(--hair); color: var(--bone-dim); cursor: default; }
+@media (orientation: landscape) {
+  .card.sheet.buy-card { max-height: calc(100% - 8px); }
+}
+@media (orientation: landscape) {
+  .buy-card .buy-foot .btn.primary.wide { min-height: 46px; }
+  .card.sheet.buy-card { padding-top: 8px; padding-bottom: calc(6px + var(--sab)); }
+}

@@ -87,17 +87,16 @@ try {
     const consist = () => page.locator('[data-sec="consist"] [data-consist]').evaluateAll((els) => els.map((e) => e.dataset.type));
     if ((await consist()).join() !== 'flat,flat,box,box') errors.push(`${orient}: the default consist is not two flat and two box (${(await consist()).join(' ')})`);
     await page.locator('[data-consist="3"]').tap();
-    await page.locator('[data-add="hopper"]').tap();
     await page.waitForTimeout(300);
-    if ((await consist()).join() !== 'flat,flat,box,hopper') errors.push(`${orient}: the consist after the swap is ${(await consist()).join(' ')}`);
-    if (!(await page.locator('[data-add="hopper"] [data-carries="nothing"]').count())) errors.push(`${orient}: the hopper row does not say it carries nothing`);
-    if (!(await page.locator('[data-consist="3"].waste').count())) errors.push(`${orient}: the hopper wagon in the strip is not marked`);
-    await page.locator('[data-sec="consist"]').scrollIntoViewIfNeeded();
-    await page.evaluate(() => { const c = document.querySelector('.buy-card'); const t = document.querySelector('[data-sec="consist"]'); if (c && t) c.scrollTop = t.offsetTop - 70; });
+    if ((await consist()).join() !== 'flat,flat,box') errors.push(`${orient}: the consist after taking a wagon off is ${(await consist()).join(' ')}`);
+    // a type that carries nothing on this line is dimmed, says so, shows no price and cannot be added from the sheet
+    if (!(await page.locator('.picker [data-wagon="hopper"].dim [data-carries="nothing"]').count())) errors.push(`${orient}: the hopper row is not dimmed with "carries nothing here"`);
+    if (!(await page.locator('.picker [data-add="hopper"]').isDisabled())) errors.push(`${orient}: the hopper + is not disabled`);
+    if (await page.locator('.picker [data-wagon="hopper"] .addcol small').count()) errors.push(`${orient}: the dimmed hopper row shows a price`);
+    await page.evaluate(() => { const c = document.querySelector('.buy-scroll'); const t = document.querySelector('[data-sec="consist"]'); if (c && t) c.scrollTop = t.offsetTop - 30; });
     await page.waitForTimeout(300);
     await shot('buy-card');
     // put it right and buy
-    await page.locator('[data-consist="3"]').tap();
     await page.locator('[data-add="box"]').tap();
     await page.locator('[data-act="buy"]').tap();
     await page.waitForTimeout(500);
