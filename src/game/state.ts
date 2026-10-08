@@ -94,7 +94,9 @@ export function createState(sc: ScenarioDef): SimState {
     broke: 0,
     yearEnd: null,
     history: [],
-    perks: [],
+    offer: null,
+    contracts: [],
+    bonus: 0,
     goalCount: 0,
     result: null,
     grewYear: [],
@@ -106,7 +108,7 @@ export function createState(sc: ScenarioDef): SimState {
   };
   for (const id of [sc.startStation, ...(sc.startStations ?? [])]) {
     const d = sc.sites.find((o) => o.id === id)!;
-    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id, crew: false, platforms: PLATFORMS_START });
+    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id, crew: false, platforms: PLATFORMS_START, crane: false });
   }
   return s;
 }

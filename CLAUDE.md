@@ -49,9 +49,11 @@ src/
                         yards; yardOf, siteAt, stationAt, siteById, goodsOnMap
     sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
                         rule, grades (a climb cuts the speed by the engine's climb share and the load),
-                        loading, the full-load wait, paying, demand, the towns' stores and growth meters;
-                        plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/
-                        closeYearEnd are the player's moves, the UI and the bot call the same ones
+                        loading, the full-load wait, paying, demand, the towns' stores and growth meters,
+                        the passing siding (two blocks, a loop to wait in), the crane's dwell, the year-end
+                        contract (seeded offer, count, reward, deadline);
+                        plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/buyPlatform/
+                        buyCrew/buyCrane/buySiding/closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
       economy.ts      every number the balance is made of: prices, demand, the tile in metres
                         (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth
@@ -77,7 +79,7 @@ src/
                         that met the lake or the ridge, the line (its trains, buy with wagons and
                         engine), the train (wagon, engine swap, full load, sell), the site (has,
                         wants, pays, growth), the year end, the result
-    Ledger.tsx        the year-end card: income bars, the cash line, the towns that grew, the choice
+    Ledger.tsx        the year-end card: income bars, the cash line, the towns that grew, the contract on offer
     Screens.tsx       the title and the scenario list
     Update.tsx        the newer-build banner; ErrorBoundary.tsx the crash screen
   styles.css          the chrome: brass and dark green, large round buttons, a ledger page; the HUD
@@ -98,6 +100,9 @@ scripts/
   spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
                         check that every running train sits on its rails and that a frame at play zoom
                         takes 12 ms or less; the check for a change to trains, track or the camera
+  upgrades.mjs        make upgrades: the passing siding in pick mode and bought, two trains passing at it, the
+                        crane loading, the site card rows, the contract offer and its chip and HUD line;
+                        the check for a change to the siding, the crane or the contracts
   drag-look.mjs       make drag-look: a drag held mid-way and at the site, the lift and the route
                         choice card; the check for a change to the route plate or the ghost route
   shots.mjs           phone screenshots with Playwright, the bot playing
@@ -136,7 +141,9 @@ docs/
    one running train on it at a time, and two lines that share cells share
    the block; trains wait at stations. Nothing in the UI shows a signal. A
    free line laid over other lines' track is slow for this reason, and
-   that is a choice the player can read on the map.
+   that is a choice the player can read on the map. A bought passing siding
+   splits its own line's block in two: a train waits in the loop, wholly on
+   it, while the other passes. Against other lines the old rule stands.
 6. **Both orientations.** Every screen works in portrait and in landscape,
    and a turn of the phone mid-game keeps the state. `make rotate-check`
    holds this.

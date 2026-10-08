@@ -6,13 +6,13 @@
  * over. The player's moves are the exported functions below; the UI and
  * the bot call the same ones.
  */
-import type { EngineId, Good, Line, SimState, Site, Train, WagonType, YearEndChoice, Float } from './types';
+import type { Contract, EngineId, Good, Line, SimState, Site, Train, WagonType, Float } from './types';
 import { GOODS } from './types';
 import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, STATION_COST, type Route } from './grid';
 import { siteAt, stationAt, siteById, goodsOnMap, zeroGoods } from './state';
 import {
   BANKRUPT_YEARS, BASE_PRICE, BRIDGE_UPKEEP, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, CREW_CUT, CREW_PRICE, GROW_LOSS, GROW_MONTHS, LIFT_BACK, LOAN_BASE, LOAN_RATE, LOAN_SHARE, MAKES, MILL_EATS, MONTHS,
-  PERK_FOREST, PERK_SPEED, PLATFORM_PRICE, PLATFORMS_START, QUEUE_GAP, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, PATIENCE_SECONDS, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, TOWN_STORE_CAP, TRACK_UPKEEP, UNDO_SECONDS,
+  CONTRACT_MAX, CONTRACT_MIN, CONTRACT_MONTHS, CONTRACT_PACE, CONTRACT_SHARE, CRANE_CUT, CRANE_GOODS, CRANE_PRICE, CRANE_SITES, SIDING_FROM_STATION, GATE_YIELD, SIDING_GAP, SIDING_LEN, SIDING_MEET, SIDING_PRICE, SIDING_WAIT, SIDING_OFFSET, PLATFORM_PRICE, PLATFORMS_START, QUEUE_GAP, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, PATIENCE_SECONDS, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, TOWN_STORE_CAP, TRACK_UPKEEP, UNDO_SECONDS,
   WAGON_DWELL, WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGON_RUN, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
 
@@ -76,8 +76,8 @@ export function tripTime(s: SimState, line: Line, engine: EngineId, cargo: numbe
 }
 
 /** the seconds over a rail profile: every step at the engine's speed on its grade, shared by built lines and planned routes */
-function railTime(s: SimState, rail: number[], dist: number[], engine: EngineId, cargo: number, dir: 1 | -1): number {
-  const base = ENGINES[engine].speed * (s.perks.includes('speed') ? PERK_SPEED : 1);
+function railTime(_s: SimState, rail: number[], dist: number[], engine: EngineId, cargo: number, dir: 1 | -1): number {
+  const base = ENGINES[engine].speed;
   let t = 0;
   for (let k = 1; k < rail.length; k++) {
     const seg = dist[k] - dist[k - 1];
@@ -108,7 +108,7 @@ export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons = WA
   const t = (cargo: number, dir: 1 | -1) => tripTime(s, line, engine, cargo, dir);
   const loaded = Math.max(t(wagons, 1) + t(0, -1), t(wagons, -1) + t(0, 1));
   // at one end the wagons come off, at the other they go on, each at its station's pace
-  const stands = line.stops.map((id) => dwellAt(s, s.stations.find((st) => st.id === id)?.cell ?? -1));
+  const stands = [endDwell(s, line, 0), endDwell(s, line, 1)];
   return YEAR_SECONDS / (loaded + 2 * STOP_SECONDS + wagons * (stands[0] + stands[1]));
 }
 
@@ -116,8 +116,8 @@ export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons = WA
 function roundTrip(s: SimState, line: Line, engine: EngineId, wagons: number): { run: number; stand: [number, number] } {
   const t = (cargo: number, dir: 1 | -1) => tripTime(s, line, engine, cargo, dir);
   const run = Math.max(t(wagons, 1) + t(0, -1), t(wagons, -1) + t(0, 1));
-  const at = (cell: number) => STOP_SECONDS + wagons * dwellAt(s, cell);
-  return { run, stand: [at(line.path[0]), at(line.path[line.path.length - 1])] };
+  const at = (end: 0 | 1) => STOP_SECONDS + wagons * endDwell(s, line, end);
+  return { run, stand: [at(0), at(1)] };
 }
 
 /**
@@ -127,18 +127,25 @@ function roundTrip(s: SimState, line: Line, engine: EngineId, wagons: number): {
  * platform for makes none. This is the number the buy card shows, so an extra train that only
  * queues shows as nothing added.
  */
-export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wagons: number }): { trips: number; each: number[]; limit: 'free' | 'block' | 'platform' | 'parked'; /** the station that holds the line back, for the platform and parked limits */ at: number } {
+export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wagons: number }, withSiding = false): { trips: number; each: number[]; limit: 'free' | 'block' | 'platform' | 'parked'; /** the station that holds the line back, for the platform and parked limits */ at: number } {
   const mine = s.trains.filter((o) => o.lineId === line.id).map((o) => ({ t: o as Train | null, engine: o.engine, wagons: o.nWagons, parked: o.parked }));
   if (extra) mine.push({ t: null, engine: extra.engine, wagons: extra.wagons, parked: mine.filter((m) => !m.parked).length >= lineCapacity(s, line) });
+  // a passing siding: the block is two blocks, split where the loop lies, and two trains meet there, one waiting while the other passes
+  const siding = !!line.siding || withSiding;
+  const split = line.siding ? (line.siding.s0 + line.siding.s1) / 2 / line.dist[line.dist.length - 1] : 0.5;
+  const meets = siding && mine.filter((m) => !m.parked).length > 1;
   const free = (l: Line, e: EngineId, w: number) => {
     const r = roundTrip(s, l, e, w);
-    return { ...r, f: YEAR_SECONDS / (r.run + r.stand[0] + r.stand[1]) };
+    // the meeting costs the train that waits for the other to pass the points
+    const wait = meets && l === line ? SIDING_MEET : 0;
+    return { ...r, f: YEAR_SECONDS / (r.run + r.stand[0] + r.stand[1] + wait) };
   };
   const active = mine.filter((m) => !m.parked).map((m) => ({ ...m, ...free(line, m.engine, m.wagons) }));
   // the other trains that use the same block, and the same stations, at their free pace
   const others = s.trains.filter((o) => o.lineId !== line.id && !o.parked).map((o) => ({ line: lineOf(s, o), ...free(lineOf(s, o), o.engine, o.nWagons) }));
   const ends = [line.path[0], line.path[line.path.length - 1]];
-  const blockLoad = active.reduce((a, m) => a + m.f * m.run, 0) + others.filter((o) => sharesBlock(o.line, line)).reduce((a, o) => a + o.f * o.run, 0);
+  const own = active.reduce((a, m) => a + m.f * m.run, 0);
+  const blockLoad = (siding ? Math.max(split, 1 - split) * own : own) + others.filter((o) => sharesBlock(o.line, line)).reduce((a, o) => a + o.f * o.run, 0);
   const berth = ends.map((cell, e) => {
     const load = active.reduce((a, m) => a + m.f * m.stand[e], 0) + others.reduce((a, o) => a + (o.line.path[0] === cell ? o.f * o.stand[0] : o.line.path[o.line.path.length - 1] === cell ? o.f * o.stand[1] : 0), 0);
     return load > 0 ? (platformsAt(s, cell) * YEAR_SECONDS) / load : Infinity;
@@ -166,10 +173,144 @@ export function runPerTile(engine: EngineId, wagons: number): number {
   return ENGINES[engine].runCost + WAGON_RUN * wagons;
 }
 
-/** seconds one wagon takes to unload or to load at a station: a loading crew takes a third off */
-export function dwellAt(s: SimState, cell: number): number {
+/**
+ * Seconds one wagon takes to unload or to load at a station: a loading crew takes a third off, and
+ * a crane halves what is left for timber, boards and grain. `good` is the good being moved; without
+ * it only the crew counts.
+ */
+export function dwellAt(s: SimState, cell: number, good?: Good | null): number {
   const st = s.stations.find((o) => o.cell === cell);
-  return WAGON_DWELL * (st?.crew ? 1 - CREW_CUT : 1);
+  const crane = !!st?.crane && !!good && CRANE_GOODS.includes(good);
+  return WAGON_DWELL * (st?.crew ? 1 - CREW_CUT : 1) * (crane ? 1 - CRANE_CUT : 1);
+}
+
+/** the good that moves at one end of a line: what the end loads for the other end, or what it unloads from it */
+export function endGood(s: SimState, line: Line, end: 0 | 1): Good | null {
+  const [a, b] = line.stops.map((id) => siteById(s, s.stations.find((st) => st.id === id)!.siteId));
+  const mine = end === 0 ? a : b;
+  const other = end === 0 ? b : a;
+  const makes = MAKES[mine.kind];
+  if (makes && TAKES[other.kind].includes(makes)) return makes;
+  const theirs = MAKES[other.kind];
+  return theirs && TAKES[mine.kind].includes(theirs) ? theirs : null;
+}
+
+/** seconds one wagon takes at the end of a line, for the good that moves there */
+function endDwell(s: SimState, line: Line, end: 0 | 1): number {
+  return dwellAt(s, end === 0 ? line.path[0] : line.path[line.path.length - 1], endGood(s, line, end));
+}
+
+/** the stations that can have a crane: an industry's, with the loading crew bought */
+export function craneSite(s: SimState, stationId: number): boolean {
+  const st = s.stations.find((o) => o.id === stationId);
+  return !!st && CRANE_SITES.includes(siteById(s, st.siteId).kind);
+}
+
+/** Buy the crane at an industry's station that has the crew: timber, boards and grain take half the time there. */
+export function buyCrane(s: SimState, stationId: number): boolean {
+  const st = s.stations.find((o) => o.id === stationId);
+  if (!st || st.crane || !st.crew || !craneSite(s, stationId) || s.cash < CRANE_PRICE) return false;
+  s.cash -= CRANE_PRICE;
+  s.assets += CRANE_PRICE;
+  st.crane = true;
+  const p = centre(s, st.cell);
+  s.floats.push({ x: p.x, y: p.y, text: `-${CRANE_PRICE}`, age: 0, kind: 'cost' });
+  s.sounds.push('buy');
+  return true;
+}
+
+/**
+ * The stretches of a line where a passing siding can lie: straight, dry, not a junction, with room
+ * for the loop beside the track, and SIDING_FROM_STATION tiles from either station. Each is a span of
+ * distances along the path that the whole loop must lie inside, and the side of the track it lies on.
+ */
+export function sidingSpans(s: SimState, line: Line): { d0: number; d1: number; nx: number; ny: number }[] {
+  const n = line.path.length;
+  const end = line.dist[n - 1];
+  const out: { d0: number; d1: number; nx: number; ny: number }[] = [];
+  const step = (k: number): [number, number] => [cx(s, line.path[k + 1]) - cx(s, line.path[k]), cy(s, line.path[k + 1]) - cy(s, line.path[k])];
+  const links = (c: number): number => {
+    let m = s.track[c];
+    let k = 0;
+    while (m) {
+      k += m & 1;
+      m >>= 1;
+    }
+    return k;
+  };
+  let k = 0;
+  while (k < n - 1) {
+    const [dx, dy] = step(k);
+    let j = k;
+    while (j + 1 < n - 1 && step(j + 1)[0] === dx && step(j + 1)[1] === dy) j++;
+    // the cells k..j+1 run in one direction
+    const len = Math.hypot(dx, dy);
+    const base: [number, number] = [-dy / len, dx / len];
+    const sides: [number, number][] = base[1] > 1e-9 || (Math.abs(base[1]) < 1e-9 && base[0] > 0) ? [base, [-base[0], -base[1]]] : [[-base[0], -base[1]], base];
+    for (const [nx, ny] of sides) {
+      let from = -1;
+      for (let m = k; m <= j + 2; m++) {
+        let ok = m <= j + 1;
+        if (ok) {
+          const c = line.path[m];
+          const sx = Math.floor(cx(s, c) + 0.5 + nx * SIDING_OFFSET);
+          const sy = Math.floor(cy(s, c) + 0.5 + ny * SIDING_OFFSET);
+          ok = !s.water[c] && s.yardMask[c] === 0 && links(c) <= 2 && !stationAt(s, c) && sx >= 0 && sy >= 0 && sx < s.w && sy < s.h && !s.water[idx(s, sx, sy)] && s.track[idx(s, sx, sy)] === 0 && s.yardMask[idx(s, sx, sy)] === 0;
+        }
+        if (ok && from < 0) from = m;
+        if (!ok && from >= 0) {
+          const d0 = Math.max(line.dist[from], SIDING_FROM_STATION);
+          const d1 = Math.min(line.dist[m - 1], end - SIDING_FROM_STATION);
+          if (d1 - d0 >= SIDING_LEN) out.push({ d0, d1, nx, ny });
+          from = -1;
+        }
+      }
+    }
+    k = j + 1;
+  }
+  return out;
+}
+
+/** the span a tap at a cell of the line falls in, or the longest span without one: where the loop goes, as its two points and the side */
+export function sidingAt(s: SimState, line: Line, cell?: number): { s0: number; s1: number; nx: number; ny: number } | null {
+  const spans = sidingSpans(s, line);
+  if (!spans.length) return null;
+  let span = spans.reduce((a, b) => (b.d1 - b.d0 > a.d1 - a.d0 ? b : a));
+  let c = (span.d0 + span.d1) / 2;
+  if (cell !== undefined) {
+    const k = line.path.indexOf(cell);
+    if (k >= 0) {
+      // the span nearest the tap, and the loop centred on it as far as the span allows
+      const d = line.dist[k];
+      span = spans.reduce((a, b) => (Math.abs(Math.max(b.d0, Math.min(b.d1, d)) - d) < Math.abs(Math.max(a.d0, Math.min(a.d1, d)) - d) ? b : a));
+      c = d;
+    }
+  }
+  const s0 = Math.max(span.d0, Math.min(span.d1 - SIDING_LEN, c - SIDING_LEN / 2));
+  return { s0, s1: s0 + SIDING_LEN, nx: span.nx, ny: span.ny };
+}
+
+/** Buy the passing siding for a line, one a line: the loop lies at the tapped cell or, without one, in the middle of the longest straight. False when none fits, cash is short, or a train is running over the place. */
+export function buySiding(s: SimState, lineId: number, cell?: number): boolean {
+  const line = s.lines.find((l) => l.id === lineId);
+  if (!line || line.siding || s.cash < SIDING_PRICE) return false;
+  const at = sidingAt(s, line, cell);
+  if (!at) return false;
+  // a running train over the place would be caught half way through the points
+  const clear = !s.trains.some((o) => o.lineId === line.id && o.state === 'run' && o.s + drawnLength(o) / 2 > at.s0 - 1 && o.s - drawnLength(o) / 2 < at.s1 + 1);
+  if (!clear) {
+    const p = centre(s, cell ?? line.path[Math.floor(line.path.length / 2)]);
+    s.floats.push({ x: p.x, y: p.y, text: '', age: 0, kind: 'note', busy: true });
+    return false;
+  }
+  s.cash -= SIDING_PRICE;
+  s.assets += SIDING_PRICE;
+  s.lastBuild = null;
+  line.siding = at;
+  const p = along(line, (at.s0 + at.s1) / 2, s.w);
+  s.floats.push({ x: p.x, y: p.y, text: `-${SIDING_PRICE}`, age: 0, kind: 'cost' });
+  s.sounds.push('buy');
+  return true;
 }
 
 /** what the next platform at a station costs, or null when it has the most it can have */
@@ -207,7 +348,8 @@ export function buyCrew(s: SimState, stationId: number): boolean {
 /** the wagon a standing train is working on, counted from the front, and how far its load has come, 0 to 1; null when none is */
 export function workingWagon(s: SimState, t: Train): { wagon: number; progress: number } | null {
   if (!t.dock || t.at === null) return null;
-  const dwell = dwellAt(s, t.at);
+  const site = dockSite(s, t);
+  const dwell = dwellAt(s, t.at, t.dock === 'unload' ? t.good : site ? MAKES[site.kind] : null);
   const progress = 1 - Math.max(0, Math.min(1, t.work / dwell));
   return { wagon: t.dock === 'unload' ? t.unloaded : t.cargo, progress };
 }
@@ -351,7 +493,7 @@ export function build(s: SimState, r: Route): Line | null {
   let station = stationAt(s, to);
   let newStation: number | null = null;
   if (!station) {
-    station = { id: s.nextId++, cell: to, siteId: siteAt(s, to)!.id, crew: false, platforms: PLATFORMS_START };
+    station = { id: s.nextId++, cell: to, siteId: siteAt(s, to)!.id, crew: false, platforms: PLATFORMS_START, crane: false };
     s.stations.push(station);
     newStation = station.id;
   }
@@ -359,7 +501,7 @@ export function build(s: SimState, r: Route): Line | null {
   let line = s.lines.find((l) => (l.stops[0] === a.id && l.stops[1] === station!.id) || (l.stops[0] === station!.id && l.stops[1] === a.id));
   let newLine: number | null = null;
   if (!line) {
-    line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), rail: r.rail, worst: r.worst, block: new Set(r.cells.slice(1, -1)), earnedYear: 0, runYear: 0 };
+    line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), rail: r.rail, worst: r.worst, block: new Set(r.cells.slice(1, -1)), siding: null, earnedYear: 0, runYear: 0 };
     s.lines.push(line);
     newLine = line.id;
   }
@@ -394,13 +536,13 @@ export function undo(s: SimState): boolean {
   return true;
 }
 
-function engineSpeed(s: SimState, t: Train): number {
-  return ENGINES[t.engine].speed * (s.perks.includes('speed') ? PERK_SPEED : 1);
+function engineSpeed(t: Train): number {
+  return ENGINES[t.engine].speed;
 }
 
-/** how many wagons a new train gets when the player does not say: the default, and the year-end wagon */
-export function defaultWagons(s: SimState): number {
-  return Math.min(WAGONS_MAX, WAGONS_DEFAULT + (s.perks.includes('wagon') ? 1 : 0));
+/** how many wagons a new train gets when the player does not say */
+export function defaultWagons(): number {
+  return WAGONS_DEFAULT;
 }
 
 /**
@@ -412,13 +554,18 @@ export function defaultWagons(s: SimState): number {
 export function trainSpot(s: SimState, line: Line, nWagons: number): { cell: number; slot: number; parked: boolean } | null {
   const len = ENGINE_LEN + nWagons * (WAGON_LEN + 0.08);
   const cell = line.path[0];
-  if (activeOn(s, line) < lineCapacity(s, line))
-    for (const c of [cell, line.path[line.path.length - 1]]) {
+  if (activeOn(s, line) < lineCapacity(s, line)) {
+    // on a line with a passing siding the trains do best at opposite ends, so a new one goes to the end with fewer of the line's trains
+    const ends = [cell, line.path[line.path.length - 1]];
+    const here = (c: number) => s.trains.filter((o) => o.lineId === line.id && !o.parked && o.state === 'stop' && o.at === c).length;
+    if (line.siding && here(ends[1]) < here(ends[0])) ends.reverse();
+    for (const c of ends) {
       // a train set down on a platform that another runs in to over the same track would be in that one's way: it parks until that one has arrived
       if (arriving(s, null, c, line)) continue;
       const taken = takenSlots(s, c, null, len);
       for (let k = 0; k < platformsAt(s, c); k++) if (!taken.has(k)) return { cell: c, slot: k, parked: false };
     }
+  }
   const used = new Set(s.trains.filter((o) => o.state === 'stop' && o.at === cell).map((o) => o.slot));
   for (let k = platformsAt(s, cell); k < SLOTS_MAX; k++) if (!used.has(k)) return { cell, slot: k, parked: true };
   return null;
@@ -428,7 +575,7 @@ export function trainSpot(s: SimState, line: Line, nWagons: number): { cell: num
 export function buyTrain(s: SimState, lineId: number, wagons: WagonType, engine: EngineId = 'hilma', count?: number): Train | null {
   const line = s.lines.find((l) => l.id === lineId);
   if (!line) return null;
-  const nWagons = count === undefined ? defaultWagons(s) : Math.max(1, Math.min(WAGONS_MAX, Math.round(count)));
+  const nWagons = count === undefined ? defaultWagons() : Math.max(1, Math.min(WAGONS_MAX, Math.round(count)));
   const cost = trainPrice(engine, nWagons);
   if (cost > s.cash) return null;
   const spot = trainSpot(s, line, nWagons);
@@ -468,8 +615,10 @@ export function buyTrain(s: SimState, lineId: number, wagons: WagonType, engine:
     unitPay: 0,
     paid: 0,
     unloaded: 0,
+    loop: 0,
+    gate: 0,
   };
-  t.speed = engineSpeed(s, t);
+  t.speed = engineSpeed(t);
   s.trains.push(t);
   const p = centre(s, spot.cell);
   s.floats.push({ x: p.x, y: p.y, text: `-${cost}`, age: 0, kind: 'cost' });
@@ -517,6 +666,7 @@ export function moveTrain(s: SimState, trainId: number, lineId: number): boolean
   t.work = 0;
   t.unloaded = 0;
   t.unitPay = 0;
+  t.loop = 0;
   t.stopLeft = Math.max(t.stopLeft, STOP_SECONDS / 2);
   s.sounds.push('buy');
   return true;
@@ -540,7 +690,7 @@ export function setEngine(s: SimState, trainId: number, engine: EngineId): boole
   if (cost > s.cash) return false;
   s.cash -= cost;
   t.engine = engine;
-  t.speed = engineSpeed(s, t);
+  t.speed = engineSpeed(t);
   s.sounds.push('buy');
   return true;
 }
@@ -687,13 +837,93 @@ export function bodyCells(s: SimState, o: Train, margin = 0.5): Set<number> {
 }
 
 /**
+ * The pieces of the main track a running train covers, as distances along the path: its body, less
+ * the part that lies in the loop of the passing siding. A train that passes straight through the
+ * points keeps the track through them for itself until its tail is clear.
+ */
+export function mainPieces(line: Line, o: Train): [number, number][] {
+  const half = drawnLength(o) / 2;
+  let lo = o.s - half;
+  let hi = o.s + half;
+  const sd = line.siding;
+  if (!sd) return [[lo, hi]];
+  if (o.loop === 1) {
+    if (o.dir === 1) hi = Math.max(hi, sd.s1);
+    else lo = Math.min(lo, sd.s0);
+  }
+  if (o.loop !== 2) return [[lo, hi]];
+  const out: [number, number][] = [];
+  if (lo < sd.s0) out.push([lo, Math.min(hi, sd.s0)]);
+  if (hi > sd.s1) out.push([Math.max(lo, sd.s1), hi]);
+  return out;
+}
+
+/** whether a train of the line other than this one covers any of the main track between two distances */
+function mainBusy(s: SimState, line: Line, self: Train | null, lo: number, hi: number): boolean {
+  for (const o of s.trains) {
+    if (o === self || o.lineId !== line.id || o.state !== 'run') continue;
+    for (const [a, b] of mainPieces(line, o)) if (a < hi - 1e-6 && b > lo + 1e-6) return true;
+  }
+  return false;
+}
+
+/**
+ * Where a train of a line with a passing siding may go, as the length it may move this tick. At the
+ * near points it passes straight when no other train covers the track from there to the far station;
+ * otherwise it takes the loop, when no other train is in it, and waits there at the far points until
+ * the track beyond them is clear. When the loop is taken it waits before the points.
+ */
+function sidingStep(s: SimState, t: Train, line: Line, step: number): number {
+  const sd = line.siding!;
+  const end = line.dist[line.dist.length - 1];
+  const half = drawnLength(t) / 2;
+  const fwd = t.dir === 1;
+  // the front of the train, and the two points, along its way
+  const u = (fwd ? t.s : end - t.s) + half;
+  const ue = fwd ? sd.s0 : end - sd.s1;
+  const ux = fwd ? sd.s1 : end - sd.s0;
+  const ahead: [number, number] = fwd ? [sd.s0, end] : [0, sd.s1];
+  const beyond: [number, number] = fwd ? [sd.s1, end] : [0, sd.s0];
+  if (t.loop === 2 && u - 2 * half >= ux) t.loop = 3;
+  if (t.loop === 0) {
+    if (u >= ue) {
+      t.loop = u >= ux ? 3 : 1;
+      return step;
+    }
+    if (u + step < ue - SIDING_WAIT) return step;
+    if (!mainBusy(s, line, t, ahead[0], ahead[1])) t.loop = 1;
+    else if (!s.trains.some((o) => o !== t && o.lineId === line.id && o.loop === 2)) t.loop = 2;
+    else return Math.max(0, Math.min(step, ue - SIDING_WAIT - u));
+    return step;
+  }
+  if (t.loop === 2) {
+    const hold = ux - SIDING_GAP;
+    if (u + step <= hold) return step;
+    if (mainBusy(s, line, t, beyond[0], beyond[1])) return Math.max(0, Math.min(step, hold - u));
+  }
+  return step;
+}
+
+/** whether a train may not set out on a line with a passing siding: it needs the track from its station to the far points, and at most one other train runs */
+function sidingBusy(s: SimState, t: Train, line: Line, dir: 1 | -1): boolean {
+  const sd = line.siding!;
+  const end = line.dist[line.dist.length - 1];
+  if (s.trains.filter((o) => o !== t && o.lineId === line.id && o.state === 'run').length >= 2) return true;
+  return dir === 1 ? mainBusy(s, line, t, 0, sd.s1) : mainBusy(s, line, t, sd.s0, end);
+}
+
+/**
  * Whether the line's block has a running train on any of its cells, other than this one. A train
  * waiting on its line for a platform stands still, so it is in the way of the lines that run over
  * the cells it covers and of no others.
  */
 function blockBusy(s: SimState, t: Train | null, line: Line): boolean {
+  // a line with a passing siding runs two trains at once and would starve its neighbours: it lets a train of a line that shares the block, ready to leave and held up, go first
+  if (t && line.siding) for (const o of s.trains) if (o !== t && o.state === 'stop' && !o.parked && o.lineId !== line.id && o.gate > GATE_YIELD && sharesBlock(lineOf(s, o), line)) return true;
   for (const o of s.trains) {
     if (o === t || o.state !== 'run') continue;
+    // the trains of a line with a passing siding share its track by the rules of the siding
+    if (line.siding && o.lineId === line.id) continue;
     if (!o.queued) {
       if (sharesBlock(lineOf(s, o), line)) return true;
       continue;
@@ -705,16 +935,74 @@ function blockBusy(s: SimState, t: Train | null, line: Line): boolean {
   return false;
 }
 
-/** The year-end choice, applied once, and the sim runs again; then the goal is judged. */
-export function closeYearEnd(s: SimState, choice: YearEndChoice): void {
-  if (!s.yearEnd) return;
-  s.yearEnd.choice = choice;
-  if (!s.perks.includes(choice)) {
-    s.perks.push(choice);
-    if (choice === 'wagon') for (const t of s.trains) t.nWagons = Math.min(WAGONS_MAX, t.nWagons + 1);
-    if (choice === 'speed') for (const t of s.trains) t.speed = engineSpeed(s, t);
-    if (choice === 'forest') for (const site of s.sites) if (RAW_RATE[site.kind]) site.rate *= PERK_FOREST;
+/** a small seeded generator, so a run offers the same contracts every time */
+function seeded(text: string): () => number {
+  let h = 1779033703 ^ text.length;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 3432918353) << 13 | h >>> 19;
+  let a = h >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let x = Math.imul(a ^ (a >>> 15), 1 | a);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** loads of this good that a site is short of: a town's store under a quarter full, a refinery that took next to nothing lately */
+function servedPoorly(site: Site, good: Good): boolean {
+  return site.kind === 'town' ? site.store[good] < 0.25 * storeCap(site) : site.taken[good] < 1;
+}
+
+/**
+ * The contract for the coming year: a site the player serves poorly, a good it takes that the map
+ * makes, about what one train on a sensible line carries in CONTRACT_MONTHS, and a reward of
+ * CONTRACT_SHARE of what those loads pay. The site is picked by a seeded draw from the year and the
+ * scenario. Null when no site qualifies or the player already holds as many as allowed.
+ */
+export function makeOffer(s: SimState): Contract | null {
+  if (s.contracts.length >= CONTRACT_MAX) return null;
+  const made = new Set(goodsOnMap(s));
+  const all: { site: Site; good: Good }[] = [];
+  for (const site of s.sites)
+    for (const good of TAKES[site.kind])
+      if (made.has(good) && !s.contracts.some((c) => c.site === site.id && c.good === good)) all.push({ site, good });
+  if (!all.length) return null;
+  const poor = all.filter((c) => servedPoorly(c.site, c.good));
+  const pool = poor.length ? poor : all;
+  const rnd = seeded(`${s.scenario.id}:${s.year}`);
+  const pick = pool[Math.floor(rnd() * pool.length)];
+  // the nearest site that makes the good sets the trip
+  const makers = s.sites.filter((o) => MAKES[o.kind] === pick.good);
+  const tiles = Math.min(...makers.map((o) => Math.hypot(o.cx - pick.site.cx, o.cy - pick.site.cy)));
+  const wagons = WAGONS_DEFAULT + 1;
+  const cycle = (2 * tiles * 1.25) / ENGINES.hilma.speed + 2 * (STOP_SECONDS + wagons * WAGON_DWELL);
+  // a train on a busy map makes about three trips in four of the free-running ones
+  const loads = ((YEAR_SECONDS / cycle) * wagons) * CONTRACT_PACE;
+  const count = Math.max(CONTRACT_MIN, Math.min(12, Math.round((loads * CONTRACT_MONTHS) / MONTHS)));
+  const each = BASE_PRICE[pick.good] * distanceFactor(tiles);
+  const reward = Math.round((CONTRACT_SHARE * count * each) / 5) * 5;
+  return { id: s.nextId++, site: pick.site.id, good: pick.good, count, got: 0, deadline: s.year, reward };
+}
+
+/** a delivered load counts towards the contracts for that site and good; the one that reaches its count pays its reward */
+function contractLoad(s: SimState, site: Site, good: Good): void {
+  for (const c of s.contracts) {
+    if (c.site !== site.id || c.good !== good) continue;
+    c.got += 1;
+    if (c.got < c.count) continue;
+    s.cash += c.reward;
+    s.bonus += c.reward;
+    s.contracts = s.contracts.filter((o) => o !== c);
+    s.floats.push({ x: site.cx + 0.5, y: site.cy - 1.5, text: `+${c.reward}`, age: 0, kind: 'pay', life: 2.6 });
+    s.sounds.push('bell');
   }
+}
+
+/** The year end card closes: the contract on offer is taken or skipped, and the sim runs again; then the goal is judged. */
+export function closeYearEnd(s: SimState, take = false): void {
+  if (!s.yearEnd) return;
+  if (take && s.offer && s.contracts.length < CONTRACT_MAX) s.contracts.push(s.offer);
+  s.offer = null;
   s.yearEnd = null;
   if (s.result) return;
   const goal = s.scenario.goal;
@@ -823,6 +1111,11 @@ export function liftLine(s: SimState, lineId: number): boolean {
       s.assets -= s.paid[c];
       s.paid[c] = 0;
     }
+  // the passing siding goes with the line and half its price comes back
+  if (line.siding) {
+    back += SIDING_PRICE * LIFT_BACK;
+    s.assets -= SIDING_PRICE;
+  }
   s.cash += back;
   s.lines = s.lines.filter((l) => l !== line);
   if (s.lastBuild && s.lastBuild.line === lineId) s.lastBuild = null;
@@ -849,7 +1142,7 @@ function monthTick(s: SimState): void {
     const raw = RAW_RATE[site.kind];
     if (raw) {
       // a served site makes more: the rate climbs while pickups keep coming and falls back after
-      const base = raw * (s.perks.includes('forest') ? PERK_FOREST : 1);
+      const base = raw;
       const recent = s.time - site.lastPickup < SERVED_MEMORY * (YEAR_SECONDS / MONTHS);
       const target = recent ? base * SERVED_RATE : base;
       site.rate += (target - site.rate) * 0.5;
@@ -890,6 +1183,8 @@ function eatStores(s: SimState): void {
 }
 
 function arrive(t: Train, cell: number): void {
+  t.loop = 0;
+  t.gate = 0;
   t.state = 'stop';
   t.queued = false;
   t.siding = false;
@@ -941,7 +1236,7 @@ function tickDock(s: SimState, t: Train): boolean {
     t.unloaded = 0;
     return false;
   }
-  const dwell = dwellAt(s, t.at!);
+  const dwell = dwellAt(s, t.at!, unloading ? t.good : MAKES[site.kind]);
   if (was !== t.dock) t.work = dwell;
   t.work -= DT;
   if (t.work > 0) return true;
@@ -959,6 +1254,7 @@ function tickDock(s: SimState, t: Train): boolean {
     if (site.kind === 'town') site.store[good] = Math.min(storeCap(site), site.store[good] + 1);
     else site.taken[good] += 1;
     site.delivered += 1;
+    contractLoad(s, site, good);
     t.cargo -= 1;
     t.unloaded += 1;
     if (t.cargo === 0) {
@@ -995,9 +1291,13 @@ function waitingForLoad(s: SimState, t: Train): boolean {
 }
 
 function depart(s: SimState, t: Train, line: Line, turn: boolean): boolean {
-  if (blockBusy(s, t, line)) return false;
   const end = line.dist[line.dist.length - 1];
   const dir = turn ? (t.dir === 1 ? -1 : 1) : t.dir;
+  if (blockBusy(s, t, line) || (line.siding && sidingBusy(s, t, line, dir))) {
+    t.gate += DT;
+    return false;
+  }
+  t.gate = 0;
   // a train does not set out for a station whose platforms a train holds that needs this track to leave
   if (!t.siding && destBlocked(s, t, line, dir)) {
     // a train that has waited this long for the platforms ahead sets out and takes a siding there: waiting longer could freeze a ring of stations
@@ -1006,6 +1306,7 @@ function depart(s: SimState, t: Train, line: Line, turn: boolean): boolean {
     t.siding = true;
   }
   t.waited = 0;
+  t.loop = 0;
   // the train turns: the leading end is the old tail, the engine draws at the front again. The
   // engine starts at the station; the wagons stand behind it on the siding the renderer draws
   t.dir = dir;
@@ -1050,7 +1351,7 @@ function runTrain(s: SimState, t: Train): void {
     return;
   }
   // the speed under the leading end: a climb cuts it, more with a load
-  const base = engineSpeed(s, t);
+  const base = engineSpeed(t);
   t.speed = base * gradeFactor(t.engine, gradeAlong(line, t.s, t.dir), t.cargo);
   let step = t.speed * DT;
   if (!t.claimed) {
@@ -1076,6 +1377,7 @@ function runTrain(s: SimState, t: Train): void {
       }
     }
   }
+  if (line.siding) step = sidingStep(s, t, line, step);
   if (step <= 0) t.speed = 0;
   t.s += t.dir * step;
   t.odometer += step;
@@ -1111,11 +1413,12 @@ function yearEnd(s: SimState): void {
   const engine = Math.round(s.engineUp);
   const track = Math.round(s.trackUp);
   const owed = Math.round(interest);
-  const profit = total - running - engine - track - owed;
+  const bonus = Math.round(s.bonus);
+  const profit = total + bonus - running - engine - track - owed;
   // broke: cash below zero with the loan at its ceiling; two year ends in a row end the scenario
   s.broke = s.cash < 0 && s.loan >= loanCeiling(s) - 0.5 ? s.broke + 1 : 0;
   const worth = Math.round(netWorth(s));
-  s.yearEnd = { year: s.year, income, running, engine, track, interest: owed, upkeep: running + engine, profit, cash: s.cash, loan: s.loan, worth, choice: null, grew, growth };
+  s.yearEnd = { year: s.year, income, running, engine, track, interest: owed, upkeep: running + engine, profit, cash: s.cash, loan: s.loan, worth, lost: [], bonus, grew, growth };
   s.history.push({ year: s.year, cash: s.cash, profit, worth, loan: s.loan });
   for (const t of s.trains) {
     t.earnedLast = t.earnedYear;
@@ -1127,14 +1430,24 @@ function yearEnd(s: SimState): void {
     l.earnedYear = 0;
     l.runYear = 0;
   }
+  s.bonus = 0;
   s.income = zeroGoods();
   s.upkeep = 0;
   s.running = 0;
   s.engineUp = 0;
   s.trackUp = 0;
+  // a contract past its year is lost, at no cost but the contract
+  const lost = s.contracts.filter((c) => c.deadline <= s.year);
+  s.contracts = s.contracts.filter((c) => !lost.includes(c));
+  s.yearEnd.lost = lost;
+  for (const c of lost) {
+    const site = siteById(s, c.site);
+    s.floats.push({ x: site.cx + 0.5, y: site.cy - 1.5, text: '', age: 0, kind: 'note', life: 2.6, lost: { site: c.site, good: c.good } });
+  }
   s.year++;
   s.yearFrac = 0;
   s.month = 0;
+  s.offer = s.year < s.scenario.goal.beforeYear ? makeOffer(s) : null;
   s.sounds.push('bell');
 }
 

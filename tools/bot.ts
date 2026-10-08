@@ -6,10 +6,10 @@
  * end choices in order. sim-check and balance run it headless; the hand
  * in tools/hand.ts makes the same moves by touch.
  */
-import type { EngineId, SimState, WagonType, YearEndChoice } from '../src/game/types';
+import type { Contract, EngineId, Good, SimState, WagonType } from '../src/game/types';
 import type { Route, RouteMode } from '../src/game/grid';
-import { build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, buyCrew, buyPlatform, platformPrice, borrow, repay, loanCeiling, netWorth } from '../src/game/sim';
-import { CREW_PRICE, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
+import { build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, buyCrew, buyCrane, buyPlatform, buySiding, platformPrice, borrow, repay, loanCeiling, netWorth } from '../src/game/sim';
+import { WAGONS_DEFAULT, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, MAKES, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
 import type { YearEnd } from '../src/game/types';
 import { idx } from '../src/game/grid';
 import { stationAt } from '../src/game/state';
@@ -31,12 +31,14 @@ export type Step =
   /** the loading crew at a site's station */
   | { kind: 'crew'; site: string }
   /** one more platform at a site's station */
-  | { kind: 'platform'; site: string };
+  | { kind: 'platform'; site: string }
+  /** the passing siding of a line, in the middle of its longest straight */
+  | { kind: 'siding'; line: [string, string] }
+  /** the crane at a site's station, which has the loading crew */
+  | { kind: 'crane'; site: string };
 
 export interface BotPlan {
   steps: Step[];
-  /** the year-end choices in order; the last repeats */
-  perks: YearEndChoice[];
 }
 
 export const PLANS: Record<string, BotPlan> = {
@@ -54,7 +56,6 @@ export const PLANS: Record<string, BotPlan> = {
       { kind: 'wagon', train: 0 },
       { kind: 'crew', site: 'town' },
     ],
-    perks: ['wagon', 'speed', 'forest'],
   },
   // the boards chain to both towns first, then the mill by the lake and the grain from behind
   // the ridge (the way round through the saddle, with the strong engine), then flour to both
@@ -65,41 +66,64 @@ export const PLANS: Record<string, BotPlan> = {
       { kind: 'crew', site: 'forest' },
       { kind: 'line', from: 'sawmill', to: 'hameenlinna', mode: 'cheap', after: { site: 'sawmill', delivered: 6 } },
       { kind: 'train', line: ['sawmill', 'hameenlinna'], wagons: 'box' },
+      { kind: 'wagon', train: 1 },
       { kind: 'line', from: 'hameenlinna', to: 'mill', mode: 'short' },
-      { kind: 'line', from: 'mill', to: 'farm', mode: 'short' },
-      { kind: 'train', line: ['mill', 'farm'], wagons: 'hopper', engine: 'jyry', fullLoad: true },
+      { kind: 'line', from: 'mill', to: 'farm', mode: 'cheap' },
+      { kind: 'train', line: ['mill', 'farm'], wagons: 'hopper', fullLoad: true },
+      { kind: 'wagon', train: 2 },
       { kind: 'train', line: ['hameenlinna', 'mill'], wagons: 'box' },
+      { kind: 'wagon', train: 3 },
+      { kind: 'platform', site: 'mill' },
       { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
+      { kind: 'wagon', train: 4 },
       { kind: 'line', from: 'tampere', to: 'mill', mode: 'short' },
       { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
-      { kind: 'platform', site: 'sawmill' },
-      { kind: 'wagon', train: 3 },
-      { kind: 'wagon', train: 3 },
+      { kind: 'wagon', train: 5 },
+      { kind: 'wagon', train: 0 },
       { kind: 'wagon', train: 1 },
       { kind: 'wagon', train: 2 },
-      { kind: 'wagon', train: 0 },
-      // then the money goes into what moves more flour: the second farm, crews at the busy stations, longer trains
-      { kind: 'line', from: 'niittyla', to: 'mill', mode: 'cheap' },
-      { kind: 'train', line: ['niittyla', 'mill'], wagons: 'hopper' },
-      { kind: 'crew', site: 'mill' },
+      { kind: 'wagon', train: 3 },
       { kind: 'wagon', train: 4 },
       { kind: 'wagon', train: 5 },
+      { kind: 'platform', site: 'sawmill' },
+      // the flour line to Hämeenlinna is long: a second train on it needs a platform at each end and the passing siding
+      { kind: 'platform', site: 'hameenlinna' },
+      { kind: 'platform', site: 'mill' },
+      { kind: 'train', line: ['hameenlinna', 'mill'], wagons: 'box' },
+      { kind: 'wagon', train: 6 },
+      { kind: 'siding', line: ['hameenlinna', 'mill'] },
       { kind: 'crew', site: 'sawmill' },
-      { kind: 'wagon', train: 6 },
-      { kind: 'wagon', train: 6 },
+      { kind: 'crane', site: 'forest' },
+      { kind: 'crew', site: 'mill' },
+      { kind: 'crane', site: 'sawmill' },
       { kind: 'crew', site: 'farm' },
-      { kind: 'wagon', train: 1 },
-      { kind: 'wagon', train: 2 },
       { kind: 'crew', site: 'tampere' },
       { kind: 'crew', site: 'hameenlinna' },
-      { kind: 'wagon', train: 4 },
-      { kind: 'wagon', train: 5 },
-      { kind: 'wagon', train: 0 },
+      // and for Tampere, fed by one train on the long boards line, the same: a platform, a second train, a siding
+      { kind: 'platform', site: 'tampere' },
+      { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
+      { kind: 'wagon', train: 7 },
+      { kind: 'siding', line: ['sawmill', 'tampere'] },
+      // and the cranes where grain and boards are moved: the mill and the farm, then a third platform at the busy sawmill
+      { kind: 'crane', site: 'mill' },
+      { kind: 'crane', site: 'farm' },
+      { kind: 'platform', site: 'sawmill' },
     ],
-    perks: ['forest', 'wagon', 'speed'],
   },
 };
+
+/**
+ * Whether a plan serves a contract: one of its lines joins the site to another that makes the good.
+ * The bot and the hand take only what their network will carry anyway.
+ */
+export function planServes(steps: Step[], c: { site: string; good: Good }, makes: (site: string) => Good | null): boolean {
+  return steps.some((st) => {
+    if (st.kind !== 'line') return false;
+    const other = st.from === c.site ? st.to : st.to === c.site ? st.from : null;
+    return !!other && makes(other) === c.good;
+  });
+}
 
 /** cash the bot keeps in hand after a buy, so running costs do not push it below zero: a quarter of the price */
 const reserveFor = (price: number): number => Math.max(10, Math.round(price / 4));
@@ -107,6 +131,9 @@ const reserveFor = (price: number): number => Math.max(10, Math.round(price / 4)
 const BORROW_SHARE = 0.85;
 
 export interface YearRecord extends YearEnd {
+  /** the contract on offer at the year end, and whether the bot took it */
+  offered: Contract | null;
+  took: boolean;
   trains: number;
   /** what the bot's next step costs at the year end (0 when the plan is done), and the loan ceiling then */
   next: number;
@@ -118,8 +145,8 @@ export interface YearRecord extends YearEnd {
  * forest and one sawmill and builds nothing else; sim-check holds it under the planned network.
  */
 export const GREEDY: Record<string, BotPlan> = {
-  sawmill: { steps: [{ kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' }, ...Array.from({ length: 8 }, () => ({ kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat', anyway: true }) as Step)], perks: ['wagon', 'speed', 'forest'] },
-  harju: { steps: [{ kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' }, ...Array.from({ length: 8 }, () => ({ kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat', anyway: true }) as Step)], perks: ['forest', 'wagon', 'speed'] },
+  sawmill: { steps: [{ kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' }, ...Array.from({ length: 8 }, () => ({ kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat', anyway: true }) as Step)] },
+  harju: { steps: [{ kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' }, ...Array.from({ length: 8 }, () => ({ kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat', anyway: true }) as Step)] },
 };
 
 export class Bot {
@@ -128,6 +155,10 @@ export class Bot {
   /** one record per year end, for balance and sim-check */
   years: YearRecord[] = [];
   maxLoan = 0;
+  /** the contracts the bot holds, and how many it finished and lost */
+  held: Contract[] = [];
+  contractsDone = 0;
+  contractsLost = 0;
   /** the routes of the line step being waited on: a search is too dear to repeat every frame */
   private routes: { step: number; lines: number; options: Route[] } | null = null;
   constructor(
@@ -137,6 +168,14 @@ export class Bot {
 
   static for(s: SimState, greedy = false): Bot {
     return new Bot(greedy ? GREEDY[s.scenario.id] : PLANS[s.scenario.id]);
+  }
+
+  /**
+   * Whether the bot's plan serves the contract's site with the good: a line of the plan joins the
+   * site to one that makes the good. The bot takes only what its network will carry anyway.
+   */
+  serves(s: SimState, c: Contract): boolean {
+    return planServes(this.plan.steps, c, (id) => MAKES[siteById(s, id).kind]);
   }
 
   lineBetween(s: SimState, a: string, b: string) {
@@ -165,11 +204,13 @@ export class Bot {
     if (step.kind === 'train') {
       // the bot waits for a platform and a clear block, as a player would, rather than park a train it paid for
       const line = this.lineBetween(s, step.line[0], step.line[1]);
-      const spot = line ? trainSpot(s, line, 2) : null;
+      const spot = line ? trainSpot(s, line, WAGONS_DEFAULT) : null;
       return { price: trainPrice(step.engine), productive: !!spot && (!spot.parked || !!step.anyway) };
     }
     if (step.kind === 'wagon') return { price: WAGON_PRICE, productive: true };
     if (step.kind === 'crew') return { price: CREW_PRICE, productive: true };
+    if (step.kind === 'siding') return { price: SIDING_PRICE, productive: true };
+    if (step.kind === 'crane') return { price: CRANE_PRICE, productive: true };
     if (step.kind === 'platform') {
       const st = stationAt(s, idx(s, siteById(s, step.site).cx, siteById(s, step.site).cy));
       return { price: (st && platformPrice(s, st.id)) || 0, productive: true };
@@ -191,11 +232,19 @@ export class Bot {
   act(s: SimState): void {
     if (s.result) return;
     if (s.yearEnd) {
-      const choice = this.plan.perks.find((p) => !s.perks.includes(p)) ?? this.plan.perks[this.plan.perks.length - 1];
-      this.years.push({ ...s.yearEnd, trains: s.trains.length, next: this.nextBuy(s), ceiling: loanCeiling(s) });
-      this.log.push(`${s.yearEnd.year}: profit ${s.yearEnd.profit}, cash ${s.yearEnd.cash}, loan ${s.yearEnd.loan}, worth ${s.yearEnd.worth}, grew ${s.yearEnd.grew.join(' ') || '-'}, choice ${choice}`);
-      closeYearEnd(s, choice);
+      const offer = s.offer;
+      const take = !!offer && this.serves(s, offer);
+      this.years.push({ ...s.yearEnd, trains: s.trains.length, next: this.nextBuy(s), ceiling: loanCeiling(s), offered: offer, took: take });
+      this.log.push(`${s.yearEnd.year}: profit ${s.yearEnd.profit}, cash ${s.yearEnd.cash}, loan ${s.yearEnd.loan}, worth ${s.yearEnd.worth}, grew ${s.yearEnd.grew.join(' ') || '-'}, contract ${offer ? `${offer.count} ${offer.good} to ${offer.site} for ${offer.reward}, ${take ? 'taken' : 'skipped'}` : 'none'}`);
+      closeYearEnd(s, take);
+      if (take && offer) this.held.push(offer);
       return;
+    }
+    // a contract the bot holds is done when it leaves the list full, lost when it leaves short
+    for (const c of this.held.filter((o) => !s.contracts.includes(o))) {
+      this.held = this.held.filter((o) => o !== c);
+      if (c.got >= c.count) this.contractsDone++;
+      else this.contractsLost++;
     }
     const step = this.plan.steps[this.done];
     // a gated step waits for its loads, and so does the borrowing for it
@@ -252,6 +301,18 @@ export class Bot {
       if (!st || !buyPlatform(s, st.id)) return;
       this.done++;
       this.log.push(`${t}: platform at ${step.site}, cash ${s.cash.toFixed(0)}`);
+    } else if (step.kind === 'siding') {
+      const line = this.lineBetween(s, step.line[0], step.line[1]);
+      if (!line) throw new Error(`no line ${step.line.join('-')}`);
+      if (!buySiding(s, line.id)) return;
+      this.done++;
+      this.log.push(`${t}: passing siding on ${step.line.join('-')}, cash ${s.cash.toFixed(0)}`);
+    } else if (step.kind === 'crane') {
+      const site = siteById(s, step.site);
+      const st = stationAt(s, idx(s, site.cx, site.cy));
+      if (!st || !buyCrane(s, st.id)) return;
+      this.done++;
+      this.log.push(`${t}: crane at ${step.site}, cash ${s.cash.toFixed(0)}`);
     } else if (step.kind === 'move') {
       const tr = s.trains[step.train];
       const line = this.lineBetween(s, step.line[0], step.line[1]);

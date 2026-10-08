@@ -8,8 +8,8 @@
  * page and turns what it asks for into touch events. It asks in screen
  * coordinates, so the same hand plays portrait and landscape.
  */
-import { PLANS, type Step } from './bot';
-import { PLATFORM_PRICE, CREW_PRICE, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
+import { PLANS, planServes, type Step } from './bot';
+import { PLATFORM_PRICE, CREW_PRICE, CRANE_PRICE, SIDING_PRICE, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
 
 export { PLANS };
 
@@ -30,6 +30,12 @@ export interface HandView {
   crews: string[];
   /** the platforms each site's station has */
   platforms: Record<string, number>;
+  /** the lines that have a passing siding, each as its two site ids, and the sites whose station has the crane */
+  sidings: [string, string][];
+  cranes: string[];
+  /** the contract on the year-end card, and the good each site makes (null for a town), to tell whether the plan serves it */
+  offer: { site: string; good: string } | null;
+  makes: Record<string, string | null>;
   /** the next line's cost by mode, when the next step is a line: what the thumb would read off the glass */
   nextCost: { cheap: number; short: number | null } | null;
   trainPrice: { hilma: number; jyry: number };
@@ -51,12 +57,16 @@ export type HandAction =
   | { kind: 'openSite'; site: string }
   | { kind: 'crew' }
   | { kind: 'platform' }
+  /** the line card's siding Buy, then the pick mode's Best place */
+  | { kind: 'siding' }
+  | { kind: 'crane' }
   | { kind: 'act'; what: string }
   | { kind: 'close' }
   | { kind: 'openMoney' }
   | { kind: 'borrow' }
   | { kind: 'repay' }
-  | { kind: 'choose' }
+  /** the year-end card: Take the contract, or Skip it (and Continue when none is offered) */
+  | { kind: 'choose'; take: boolean }
   | { kind: 'wait' }
   | { kind: 'done' };
 
@@ -115,6 +125,8 @@ export class Hand {
     if (step.kind === 'train') return v.trainPrice[step.engine ?? 'hilma'];
     if (step.kind === 'crew') return CREW_PRICE;
     if (step.kind === 'platform') return PLATFORM_PRICE[0];
+    if (step.kind === 'siding') return SIDING_PRICE;
+    if (step.kind === 'crane') return CRANE_PRICE;
     if (step.kind === 'wagon') return WAGON_PRICE;
     if (step.kind === 'engine') return ENGINES[step.engine].price - Math.round(ENGINES.hilma.price * RESALE);
     return 0;
@@ -139,7 +151,7 @@ export class Hand {
   /** what to do next, given what the thumb sees on the screen */
   next(v: HandView): HandAction {
     if (v.result) return { kind: 'done' };
-    if (v.yearEnd || v.card === 'yearEnd') return { kind: 'choose' };
+    if (v.yearEnd || v.card === 'yearEnd') return { kind: 'choose', take: !!v.offer && planServes(this.steps, { site: v.offer.site, good: v.offer.good as never }, (id) => (v.makes[id] ?? null) as never) };
     const step = this.steps[this.done];
     const m = this.money(step, v);
     if (m) return m;
@@ -192,6 +204,27 @@ export class Hand {
       }
       if (v.cash < PLATFORM_PRICE[0]) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
       if (v.card === 'site' && v.cardSite === step.site) return { kind: 'platform' };
+      if (v.card !== 'none') return { kind: 'close' };
+      return { kind: 'openSite', site: step.site };
+    }
+    if (step.kind === 'siding') {
+      if (v.sidings.some((l) => same(l, step.line))) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      if (v.cash < SIDING_PRICE) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.card === 'line' && v.cardLine && same(v.cardLine, step.line)) return { kind: 'siding' };
+      if (v.card !== 'none') return { kind: 'close' };
+      // a train running over the place keeps the siding from being laid: the thumb tries again
+      return { kind: 'openLine', line: step.line };
+    }
+    if (step.kind === 'crane') {
+      if (v.cranes.includes(step.site)) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      if (v.cash < CRANE_PRICE || !v.crews.includes(step.site)) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      if (v.card === 'site' && v.cardSite === step.site) return { kind: 'crane' };
       if (v.card !== 'none') return { kind: 'close' };
       return { kind: 'openSite', site: step.site };
     }

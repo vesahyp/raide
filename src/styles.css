@@ -82,6 +82,13 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .hud-goal .bar { flex: 1; height: 10px; border-radius: 5px; background: rgba(239, 230, 207, 0.2); overflow: hidden; min-width: 24px; }
 .hud-goal .bar i { display: block; height: 100%; background: var(--gold); }
 .hud-goal .until { font-size: 12px; font-weight: 600; color: var(--bone-dim); white-space: nowrap; }
+.hud-goal .goal-row { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+/* the contracts taken: a slim second row under the HUD bar, one pill each, never cut */
+.hud-contracts { position: absolute; left: 0; right: 0; top: 54px; display: flex; flex-wrap: wrap; gap: 4px 6px; pointer-events: none; z-index: 1; }
+.hud-contracts .ct { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px 2px 5px; border-radius: 12px; background: rgba(72, 34, 18, 0.95); border: 1.5px solid #e08a3a; color: #ffd9a0; font-size: 13px; font-weight: 800; white-space: nowrap; box-shadow: 0 2px 0 #0e1710; }
+.hud-contracts .gi { width: 15px; height: 15px; }
+.hud-contracts .who { font-weight: 700; color: var(--bone); }
+.hud-contracts small { font-size: 11px; color: #e8c9a0; font-weight: 700; }
 .hud-cash { color: var(--gold); }
 .hud-cash.red { color: #ff8a7a; }
 button.hud-cash { font-family: inherit; cursor: pointer; }
@@ -130,6 +137,11 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .site-tag .rail svg { width: 14px; height: 14px; }
 .chip.cost { background: rgba(27, 42, 30, 0.94); color: #8be08f; border: 1.5px solid #4fbf5a; padding: 2px 5px 2px 3px; }
 .chip.cost.dear { color: #ff9c8c; border-color: #f0a020; }
+/* a contract aimed at this site: the good, the loads so far over the count, the year it ends */
+.chip.contract { background: rgba(72, 34, 18, 0.95); color: #ffd9a0; border: 1.5px solid #e08a3a; padding: 2px 5px 2px 3px; }
+.chip.contract small { font-size: 10px; font-weight: 700; opacity: 0.85; }
+.badge .ct { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 2px; border-radius: 9px; background: rgba(72, 34, 18, 0.95); border: 1.5px solid #e08a3a; color: #ffd9a0; font: 800 11px/14px var(--f-body); }
+.badge .ct .gi { width: 13px; height: 13px; }
 .badge { translate: -50% -19px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .badge .c { width: 34px; height: 34px; border-radius: 50%; background: #f1e7cc; border: 2px solid #16120e; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgba(22, 18, 14, 0.5); }
 .badge .gi { width: 22px; height: 22px; }
@@ -142,6 +154,7 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .float.pay { color: var(--gold); }
 .float.cost { color: #ff9c8c; }
 .float.note { color: #fff; }
+.float.lost { color: #ff9c8c; white-space: nowrap; padding: 3px 9px; border-radius: 10px; background: rgba(27, 42, 30, 0.94); border: 1.5px solid #c0392b; }
 .float.grow { color: var(--gold); font-size: 17px; white-space: nowrap; padding: 4px 10px; border-radius: 12px; background: rgba(27, 42, 30, 0.94); border: 1.5px solid var(--brass); }
 .hand { width: 34px; height: 34px; translate: -50% -50%; border-radius: 50%; border: 3px solid #fff; background: rgba(255, 255, 255, 0.25); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3); transition: opacity 0.2s; }
 .hand::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #fff; translate: -50% -50%; }
@@ -193,7 +206,7 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .ledger-charts .grown { display: inline-flex; align-items: center; gap: 4px; }
 .ledger-charts .house { width: 18px; height: 18px; }
 .ledger-nums { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.ledger-table { flex: 1 1 0; min-height: 190px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ledger-table { flex: 1 1 0; min-height: 150px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .ledger-pick { flex: none; text-align: center; }
 .ledger-pick .small { margin: 2px 0 4px; }
 .card.ledger h2 { color: var(--ink); font-size: 26px; text-align: center; }
@@ -206,6 +219,12 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .btn.choice { flex-direction: column; gap: 0; width: 100%; min-width: 0; min-height: 52px; padding: 6px 4px; font-size: 14px; margin: 0; background: #e3d6b4; border-color: #b9a06a; color: var(--ink); box-shadow: 0 3px 0 #b9a06a; }
 .btn.choice small { font-weight: 500; font-size: 13px; opacity: 0.8; }
 .btn.choice:disabled { opacity: 0.45; box-shadow: none; }
+.choices.two { grid-template-columns: 2fr 1fr; }
+.btn.choice.take { background: var(--brass); border-color: #7a5a14; box-shadow: 0 3px 0 #7a5a14; color: #2a2010; }
+.ledger-pick .offer { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 6px; padding: 6px 8px; border-radius: 10px; background: rgba(224, 138, 58, 0.18); border: 1.5px solid #e08a3a; font-weight: 700; font-size: 15px; line-height: 1.25; text-align: left; }
+.ledger-pick .offer .gi { width: 26px; height: 26px; flex: none; }
+.card.ledger .lost .grown { color: #8a2a1e; }
+.card.ledger .lost .gi, .card.ledger .grow .gi { width: 18px; height: 18px; }
 .card.result .stars { font-size: 44px; color: var(--gold); letter-spacing: 6px; margin: 2px 0 6px; }
 .card.result p { margin: 0 0 12px; color: var(--bone-dim); }
 
@@ -233,6 +252,12 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
   .hud { flex-direction: column; align-items: stretch; width: 150px; right: auto; height: auto; top: calc(var(--sat) + 8px); bottom: calc(var(--sab) + 8px); left: calc(var(--sal) + 8px); }
   .hud-year, .hud-goal, .hud-cash { justify-content: center; padding: 0 10px; }
   .hud-goal { flex: none; flex-wrap: wrap; height: auto; padding: 8px 10px; row-gap: 4px; }
+  .hud-goal .goal-row { flex-wrap: wrap; row-gap: 4px; justify-content: center; }
+  .hud-year { order: 0; } .hud-goal { order: 1; } .hud-contracts { order: 2; } .hud-cash { order: 3; } .hud .pause { order: 4; }
+  .hud-contracts { position: static; flex-direction: column; align-items: stretch; }
+  .hud-contracts .ct { justify-content: center; font-size: 12px; gap: 3px; padding: 2px 6px 2px 4px; }
+  .hud-contracts .gi { width: 13px; height: 13px; }
+  .hud-contracts small { font-size: 10px; }
   .hud-goal .bar { flex: 1 0 100%; }
   .hud-goal .until { display: none; }
   .hud .pause { align-self: center; margin-top: auto; }
@@ -288,8 +313,8 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 /* --- the site card: has, wants, why it is stuck, buyers, and the button that lays track --- */
 .card.sheet.site-card { max-height: calc(100% - var(--sat) - 64px); overflow-y: auto; }
 .site-card .card-head { margin-bottom: 4px; }
-.srow { display: grid; grid-template-columns: 62px 1fr; align-items: start; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hair); }
-.srow .sl { font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.04em; padding-top: 7px; }
+.srow { display: grid; grid-template-columns: 76px 1fr; align-items: start; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hair); }
+.srow .sl { font-size: 12px; font-weight: 700; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.02em; padding-top: 7px; min-width: 0; overflow-wrap: anywhere; }
 .srow .sc { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gline { display: flex; align-items: center; gap: 7px; min-height: 30px; font-weight: 800; font-size: 17px; min-width: 0; }
 .gline .gi { width: 22px; height: 22px; flex: none; }
@@ -315,8 +340,12 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 }
 
 /* pick mode: the banner at the top, with its Cancel */
-.pick-banner { position: absolute; left: 50%; top: calc(var(--sat) + 64px); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 14px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; font-weight: 800; font-size: 16px; white-space: nowrap; z-index: 5; }
+.pick-banner { position: absolute; left: 50%; top: calc(var(--sat) + 64px); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: calc(100% - 16px); padding: 6px 8px 6px 14px; border-radius: 14px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; font-weight: 800; font-size: 16px; white-space: nowrap; z-index: 5; }
 .pick-banner .btn { min-width: 0; min-height: 40px; margin: 0; padding: 6px 14px; font-size: 16px; }
+@media (max-width: 420px) {
+  .pick-banner { gap: 6px; padding: 5px 6px 5px 10px; font-size: 14px; }
+  .pick-banner .btn { padding: 6px 9px; font-size: 14px; }
+}
 @media (orientation: landscape) and (max-height: 520px) {
   .pick-banner { top: calc(var(--sat) + 8px); }
 }

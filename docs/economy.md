@@ -1,6 +1,6 @@
 # The economy and the loop
 
-Status: Vesa said yes on 2026-10-08. Steps 1 and 2 are built; steps 3 to 5 are ahead. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, one platform per station with a queue on the line, and for towns a store of 4 loads per size, eating 0.25 loads a month per size, and a growth meter that fills in 8 supplied months. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store. The rules of the towns are in `docs/design.md`, "Stations and towns".
+Status: Vesa said yes on 2026-10-08. Steps 1 to 3 are built; steps 4 and 5 are ahead. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, platforms (one at the start, a second and a third bought) with a queue on the line, for towns a store of 4 loads per size, eating 0.25 loads a month per size, and a growth meter that fills in 8 supplied months, and the three buys of step 3: the passing siding, the crane and the year-end contract. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store; a passing siding has one fixed length (the longest train the game allows), a line with one yields to a waiting neighbour, and a second train starts at the end with fewer of them; the crane is bought at an industry's station only; the perks are gone and the base was made stronger to carry the game without them (prices about 20 % up, grain and flour 12 % up, running cost per tile and engine upkeep up about a fifth, so the cost share stays at 33 to 46 %). The rules of the towns and of the upgrades are in `docs/design.md`, "Stations and towns" and "Money and goals".
 
 ## Why this file
 
@@ -45,7 +45,7 @@ decisions come from a **bottleneck that moves**:
    platform, a passing siding half way, or a second line on another route?
 4. **A town grows.** It wants more and it wants passengers. A new line
    opens between two towns.
-5. **The year ends.** One contract is offered (see below): take it or not.
+5. **The year ends.** One contract is offered: take it or not.
 
 Every one of these is a choice between two or three things the player
 cannot all afford this year. That is the target, and the bot proves it
@@ -86,27 +86,6 @@ scarcity is the whole game.
   their resale value, minus the loan. A player who builds well is
   rewarded, not one who hoards.
 
-## Upgrades that fit
-
-The year-end perks (an extra wagon on every train, faster engines, richer
-land) go. They were free, global and taken in any order, so they were not
-choices. In their place, everything the player can improve is **bought
-with money at one place on the map**, where the bottleneck is:
-
-| Upgrade | Where | What it solves |
-|---------|-------|----------------|
-| Second and third platform | A station | Trains queue at a busy station |
-| Passing siding | A point on a line | Two trains on one single track |
-| Loading crew (built) | A station | Long stops |
-| Crane | An industry's station | Long stops for heavy goods; needs the crew |
-| Double track | A whole line | The busiest line, late |
-| New engines | The buy card | Arrive by year (era), not by perk |
-
-The **year-end card** becomes the report plus one **contract**: "Lahti
-wants 8 loads of flour in 1866: 150 on delivery." Take it or not. A
-contract points the player at a part of the map they have not used, and
-taking one is a promise with a cost. This replaces the perk choice.
-
 ## What delivered goods do at a town
 
 Built (step 2). Vesa, 2026-10-08: "What happens to goods at stations? They
@@ -132,21 +111,6 @@ and towns".
   per wagon, what it carries on this line, and a wagon that carries
   nothing on this line is marked so the player can see the waste.
 
-## Station capacity, and why there is no train cap
-
-- A station starts with **one platform track**. A train that arrives
-  while it is taken **waits on the line before the station**, in plain
-  view, until the platform is free. No train is ever drawn on another.
-- **Single track blocks** stay as they are (one train between two
-  stations), so the second train on a line waits at the station.
-- A busy station buys a **second and a third platform**; a busy line buys
-  a **passing siding** or double track.
-- **The cap of 6 trains goes.** The limit is the money (each train's
-  running cost) and the track (platforms and blocks). Adding a train to a
-  full line adds a queue and a cost, not trips, and the player sees it:
-  the buy card shows the trips a year the line gives with one more train,
-  so "this train adds 0.3 trips" is the honest answer.
-
 ## Checks
 
 The bot proves the loop before Vesa plays it (`npm run balance`):
@@ -155,9 +119,14 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
   winnable by a thumb at a normal pace.
 - At no year end before the last two years is the bot's cash more than
   the price of its next useful buy plus 50 %. Money is always spent.
+- The bot completes at least one contract in a Harju run, and every offer is
+  for a good the map makes and a site that takes it.
+- Two trains on a line with a siding and two platforms at each end make 1.6
+  to 2.0 times the trips of one, and never meet on the main track.
 - A greedy plan (every coin into trains on the first line) earns less by
   1868 than the planned network. Flooding one town does not pay.
-- Running costs are 35 to 45 % of gross income in every year.
+- Running costs are 33 to 46 % of gross income over the game, and none of
+  the years strays outside 25 to 60 %.
 - No train stands on another: a check in `make spots` that no two
   standing trains share a platform track.
 
@@ -169,8 +138,10 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
    on the line.
 2. **Towns use what they get** (built): the store, the price from the
    store, the growth meter, the starved good marked.
-3. **Where the money goes**: platforms, passing sidings, the crane; the
-   year-end contract replaces the perks.
+3. **Where the money goes** (built): platforms, the passing siding, the
+   crane, and the year-end contract in place of the perks. The rules are in
+   `docs/design.md`, "Stations and towns" and "Money and goals". Double track
+   and new engines by era, from the plan's table of upgrades, are not built.
 4. **Mixed trains and lines with up to four stops.**
 5. **Passengers and mail** between the three towns.
 

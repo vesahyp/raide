@@ -9,7 +9,7 @@ export const YEAR_SECONDS = 90;
 export const MONTHS = 12;
 
 /** what a delivery pays before demand and distance */
-export const BASE_PRICE: Record<Good, number> = { timber: 6.8, boards: 5.6, grain: 5.6, flour: 5 };
+export const BASE_PRICE: Record<Good, number> = { timber: 8, boards: 6.5, grain: 7.3, flour: 6.5 };
 
 /** demand falls towards this as a site fills with recent deliveries of a good */
 export const DEMAND_FLOOR = 0.4;
@@ -68,8 +68,8 @@ export interface EngineDef {
 }
 /** the engines of the wood era: a light wood burner, and a slow strong one for grades */
 export const ENGINES: Record<EngineId, EngineDef> = {
-  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 100, upkeep: 5, runCost: 0.052, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
-  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 180, upkeep: 8, runCost: 0.18, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
+  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 100, upkeep: 9, runCost: 0.067, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
+  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 180, upkeep: 14, runCost: 0.2, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
 };
 /** a cell's side in metres: grades and the distance factor are read in these */
 export const CELL_M = 100;
@@ -89,7 +89,7 @@ export const GRADE_LOAD = 0.07;
 /** a wagon's price; twice the first prices, so money is tight (docs/economy.md) */
 export const WAGON_PRICE = 20;
 /** every wagon on a train adds this to the cost of a tile run: a longer train burns more */
-export const WAGON_RUN = 0.104;
+export const WAGON_RUN = 0.12;
 export const WAGONS_DEFAULT = 2;
 export const WAGONS_MAX = 4;
 /** what a sold train or engine returns */
@@ -112,6 +112,9 @@ export const PLATFORM_PRICE = [80, 160];
 /** tiles of clear track between a waiting train and the train on the platform */
 export const QUEUE_GAP = 0.4;
 
+/** seconds longer than another a train must have stood ready to leave before the other lets it go first, on lines that share a block */
+export const GATE_YIELD = 0.5;
+
 /** seconds a train waits for a platform before it takes a siding track instead, so a ring of busy stations never freezes */
 export const PATIENCE_SECONDS = 12;
 
@@ -130,9 +133,38 @@ export const LOAN_STEP = 100;
 /** year ends in a row with cash below zero and the loan at its ceiling that end the scenario */
 export const BANKRUPT_YEARS = 2;
 
-/** the year-end choices, once each */
-export const PERK_SPEED = 1.25;
-export const PERK_FOREST = 1.5;
+/**
+ * The passing siding: its price, the tiles of main line it keeps clear of a station at each end, and
+ * how it is laid out. The loop lies beside the track, SIDING_OFFSET tiles away; the track leaves the
+ * main line over SIDING_RAMP tiles at each end (the points). A train held in the loop stops
+ * SIDING_GAP short of the far points so the whole of it lies on the loop; one that waits before the
+ * near points stops SIDING_WAIT short of them. The loop is as long as the longest train (an engine
+ * and four wagons) plus the two gaps.
+ */
+export const SIDING_PRICE = 120;
+export const SIDING_FROM_STATION = 6;
+export const SIDING_RAMP = 1;
+export const SIDING_OFFSET = 0.9;
+export const SIDING_GAP = SIDING_RAMP + 0.15;
+export const SIDING_WAIT = 0.4;
+/** seconds a round trip gains when two trains meet at the siding: the one that waits stands for the other to pass the points */
+export const SIDING_MEET = 3;
+export const SIDING_LEN = ENGINE_LEN + WAGONS_MAX * (WAGON_LEN + 0.08) + 2 * SIDING_GAP;
+
+/** the crane: its price, the share of the dwell it takes off (it halves it), and the goods it lifts */
+export const CRANE_PRICE = 150;
+export const CRANE_CUT = 0.5;
+export const CRANE_GOODS: Good[] = ['timber', 'boards', 'grain'];
+/** the sites whose station can have a crane */
+export const CRANE_SITES: SiteKind[] = ['forest', 'sawmill', 'farm', 'mill'];
+
+/** contracts: how many a player holds at once, the months of one train's loads a contract asks for, and the share of those loads' pay paid on top */
+export const CONTRACT_MAX = 2;
+export const CONTRACT_MONTHS = 8;
+export const CONTRACT_SHARE = 0.4;
+export const CONTRACT_MIN = 3;
+/** the share of its free-running trips a train makes on a busy map, for the count a contract asks */
+export const CONTRACT_PACE = 0.75;
 
 /** seconds the Cancel button stays under the thumb after a build */
 export const UNDO_SECONDS = 1.5;

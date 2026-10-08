@@ -86,6 +86,9 @@ try {
   await turn(portrait);
   await page.locator('[data-track="title-play"]').first().tap();
   await page.waitForFunction(() => window.__sim && window.__sim.trains.length >= 1 && window.__sim.time > 3, null, { timeout: 20000 });
+  // two contracts held, so the HUD's contract pills are in the turn too
+  await page.evaluate(() => { const s = window.__sim; s.contracts.push({ id: 91, site: 'sawmill', good: 'timber', count: 8, got: 3, deadline: 1864, reward: 80 }, { id: 92, site: 'town', good: 'boards', count: 5, got: 1, deadline: 1864, reward: 60 }); });
+  await page.waitForSelector('.hud-contracts .ct');
   const a = await state();
   judge(a, 'game, portrait');
   await turn(landscape);

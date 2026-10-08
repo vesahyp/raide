@@ -91,6 +91,18 @@ export interface Station {
   crew: boolean;
   /** the platform tracks: trains at the station at once; more arrive and wait on their line */
   platforms: number;
+  /** the crane is bought: timber, boards and grain load and unload twice as fast here; it needs the crew */
+  crane: boolean;
+}
+
+/** a passing siding on a line: a loop beside the track between two distances along the path */
+export interface Siding {
+  /** where the loop's points are, as distances along the line's path in cells; s0 < s1 */
+  s0: number;
+  s1: number;
+  /** the side of the track the loop lies on, a unit vector in cells */
+  nx: number;
+  ny: number;
 }
 
 export interface Line {
@@ -107,6 +119,8 @@ export interface Line {
   worst: number;
   /** the block: the cells between the two stations. One running train at a time on any of them */
   block: Set<number>;
+  /** the passing siding, when the line has one: it splits the block in two */
+  siding: Siding | null;
   /** pay earned and running cost paid by this line's trains this year, for the line card */
   earnedYear: number;
   runYear: number;
@@ -141,6 +155,13 @@ export interface Train {
   parked: boolean;
   /** the train may take a siding track at the station it runs to when every platform is taken: the dispatcher's way out of a standstill */
   siding: boolean;
+  /**
+   * where the train is at the line's passing siding: 0 not yet there, 1 passing straight through,
+   * 2 in the loop (moving in, held there, or moving out), 3 past it
+   */
+  loop: 0 | 1 | 2 | 3;
+  /** seconds the train has stood ready to leave and been held by the block: the longest waiter goes first */
+  gate: number;
   /** seconds the train has waited for a platform ahead of it */
   waited: number;
   /** the train has been given the platform it runs to; before that it may have to wait */
@@ -183,9 +204,25 @@ export interface Float {
   life?: number;
   /** a town that grew: the renderer words it in the player's language */
   grew?: { site: string; size: number };
+  /** a siding could not be laid because a train runs over the place: the renderer words it */
+  busy?: boolean;
+  /** a contract that was lost: the renderer words it in the player's language */
+  lost?: { site: string; good: Good };
 }
 
-export type YearEndChoice = 'wagon' | 'speed' | 'forest';
+/** A contract: loads of a good to a site by the end of a year, for a reward on top of the loads' own pay. */
+export interface Contract {
+  id: number;
+  site: string;
+  good: Good;
+  count: number;
+  /** loads delivered since it was taken */
+  got: number;
+  /** the contract ends with this year */
+  deadline: number;
+  /** paid when the count is reached */
+  reward: number;
+}
 
 export interface YearEnd {
   year: number;
@@ -201,7 +238,10 @@ export interface YearEnd {
   cash: number;
   loan: number;
   worth: number;
-  choice: YearEndChoice | null;
+  /** the contracts that ran out unfulfilled at this year end */
+  lost: Contract[];
+  /** the rewards paid this year */
+  bonus: number;
   /** towns that grew during the year */
   grew: string[];
   /** every town's growth meter at the year end, 0..1, by site id */
@@ -262,8 +302,12 @@ export interface SimState {
   yearEnd: YearEnd | null;
   /** every closed year: the cash at its end and its profit, for the ledger's chart */
   history: { year: number; cash: number; profit: number; worth: number; loan: number }[];
-  /** choices taken, each once */
-  perks: YearEndChoice[];
+  /** the contract on offer at the year end card, taken or skipped when the card closes */
+  offer: Contract | null;
+  /** contracts taken and not yet done or lost, two at most */
+  contracts: Contract[];
+  /** rewards of finished contracts this year, paid into cash */
+  bonus: number;
   /** loads of the goal good delivered at the goal site, for a deliver goal */
   goalCount: number;
   /** the scenario's end, set once */

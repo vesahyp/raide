@@ -944,3 +944,106 @@ export function handcart(v: View, x: number, y: number, dir: number, up: number,
   c.fill();
   c.stroke();
 }
+
+/**
+ * The crane at an industry's platform: a timber derrick. (X, Y) is its foot in px, (tx, ty) the end
+ * of its boom, `hang` the rope below the boom in tiles and `load` the good on the hook, if any. The
+ * mast is an A-frame of two legs and a brace; the boom is one beam from the top with a stay back to
+ * the foot; the rope ends in a hook.
+ */
+export function derrick(c: Ctx, S: number, X: number, Y: number, tx: number, ty: number, hang: number, load: Good | null): void {
+  const top: [number, number] = [X, Y - S * 1.45];
+  const lw = Math.max(1, S * 0.05);
+  const beam = (ax: number, ay: number, bx: number, by: number, w: number, col: string) => {
+    c.lineCap = 'round';
+    c.strokeStyle = OUT;
+    c.lineWidth = w + lw * 2;
+    c.beginPath();
+    c.moveTo(ax, ay);
+    c.lineTo(bx, by);
+    c.stroke();
+    c.strokeStyle = col;
+    c.lineWidth = w;
+    c.beginPath();
+    c.moveTo(ax, ay);
+    c.lineTo(bx, by);
+    c.stroke();
+  };
+  shadowEll(c, X + S * 0.1, Y + S * 0.06, S * 0.34, S * 0.1);
+  // the stay from the boom's end back to the foot, behind the mast
+  c.strokeStyle = 'rgba(40,30,20,.7)';
+  c.lineWidth = Math.max(1, S * 0.025);
+  c.beginPath();
+  c.moveTo(tx, ty);
+  c.lineTo(X - Math.sign(tx - X || 1) * S * 0.3, Y);
+  c.stroke();
+  // the A-frame: two legs and the brace between them
+  beam(X - S * 0.26, Y, top[0], top[1], S * 0.1, '#8a5a2b');
+  beam(X + S * 0.26, Y, top[0], top[1], S * 0.1, '#7a4c24');
+  beam(X - S * 0.17, Y - S * 0.5, X + S * 0.17, Y - S * 0.5, S * 0.06, '#6a4220');
+  // the boom, from the top to its end
+  beam(top[0], top[1], tx, ty, S * 0.1, '#a67132');
+  // the sheave at the top and the rope with its hook
+  c.fillStyle = '#2a2018';
+  c.beginPath();
+  c.arc(top[0], top[1], S * 0.07, 0, 7);
+  c.fill();
+  const hy = ty + hang * S;
+  c.strokeStyle = '#e5d9b4';
+  c.lineWidth = Math.max(1, S * 0.03);
+  c.beginPath();
+  c.moveTo(tx, ty);
+  c.lineTo(tx, hy);
+  c.stroke();
+  c.strokeStyle = OUT;
+  c.lineWidth = Math.max(1, S * 0.045);
+  c.beginPath();
+  c.arc(tx, hy + S * 0.05, S * 0.055, 0, Math.PI * 1.4);
+  c.stroke();
+  if (load) {
+    c.save();
+    c.translate(tx, hy + S * 0.14);
+    c.strokeStyle = OUT;
+    c.lineWidth = Math.max(1, S * 0.04);
+    if (load === 'timber') {
+      c.fillStyle = '#8a5a2b';
+      c.beginPath();
+      c.roundRect(-S * 0.3, -S * 0.07, S * 0.6, S * 0.14, S * 0.07);
+    } else if (load === 'boards') {
+      c.fillStyle = '#e6cf98';
+      c.beginPath();
+      c.rect(-S * 0.27, -S * 0.07, S * 0.54, S * 0.14);
+    } else {
+      c.fillStyle = load === 'flour' ? '#f4f0e4' : '#e2c04a';
+      c.beginPath();
+      c.ellipse(0, 0, S * 0.17, S * 0.12, 0, 0, 7);
+    }
+    c.fill();
+    c.stroke();
+    c.restore();
+  }
+}
+
+/** the points of a passing siding: a small switch stand beside the track and the lamp on it, at (x, y) tile, lit toward `ang` */
+export function switchStand(v: View, x: number, y: number, lv: number, ang: number): void {
+  const { c, S } = v;
+  const X = v.x(x);
+  const Y = v.y(y, lv);
+  c.lineWidth = Math.max(1, S * 0.04);
+  c.strokeStyle = OUT;
+  shadowEll(c, X + S * 0.04, Y + S * 0.08, S * 0.12, S * 0.05);
+  c.fillStyle = '#4a3a2a';
+  c.beginPath();
+  c.roundRect(X - S * 0.04, Y - S * 0.26, S * 0.08, S * 0.3, S * 0.02);
+  c.fill();
+  c.stroke();
+  c.fillStyle = '#d8a63a';
+  c.beginPath();
+  c.arc(X, Y - S * 0.3, S * 0.1, 0, 7);
+  c.fill();
+  c.stroke();
+  c.fillStyle = Math.cos(ang) >= 0 ? '#b5382c' : '#e9e2c9';
+  c.beginPath();
+  c.arc(X, Y - S * 0.3, S * 0.045, 0, 7);
+  c.fill();
+}

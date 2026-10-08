@@ -82,6 +82,10 @@ const look = (page) =>
     const cardSite = card === 'site' ? s.sites.find((o) => head.includes(o.name.fi))?.id ?? null : null;
     const crews = s.stations.filter((st) => st.crew).map((st) => st.siteId);
     const platforms = Object.fromEntries(s.stations.map((st) => [st.siteId, st.platforms]));
+    const sidings = s.lines.filter((l) => l.siding).map(pair);
+    const cranes = s.stations.filter((st) => st.crane).map((st) => st.siteId);
+    const offer = s.offer ? { site: s.offer.site, good: s.offer.good } : null;
+    const makes = Object.fromEntries(s.sites.map((o) => [o.id, { forest: 'timber', sawmill: 'boards', farm: 'grain', mill: 'flour', town: null }[o.kind]]));
     let cardTrain = null;
     if (card === 'train') {
       const earned = (el('.train-row.still .row-text')?.textContent ?? '').match(/(\d+)\s*$/)?.[1];
@@ -100,7 +104,7 @@ const look = (page) =>
     // the middle of each line on the glass, two points to try, to tap the track
     const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
     return {
-      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, cardSite, crews, platforms, nextCost, trainPrice: (() => { const n = Math.min(4, 2 + (s.perks.includes('wagon') ? 1 : 0)); return { hilma: window.__act.price('hilma', n), jyry: window.__act.price('jyry', n) }; })(), lineTaps,
+      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, cardSite, crews, platforms, sidings, cranes, offer, makes, nextCost, trainPrice: (() => { const n = 2; return { hilma: window.__act.price('hilma', n), jyry: window.__act.price('jyry', n) }; })(), lineTaps,
       loan: s.loan, ceiling: window.__act.ceiling(), delivered: Object.fromEntries(s.sites.map((o) => [o.id, o.delivered])),
       // whether a train bought now for the line the hand wants would stand on a platform and not park
       spotFree: (() => { const st = hand && hand.steps[hand.done]; if (!st || st.kind !== 'train') return true; const l = s.lines.find((o) => { const p = pair(o); return (p[0] === st.line[0] && p[1] === st.line[1]) || (p[0] === st.line[1] && p[1] === st.line[0]); }); return l ? window.__act.spotFree(l.id, 2) : true; })(),
@@ -328,6 +332,22 @@ async function run(orient) {
       } else if (act.kind === 'borrow' || act.kind === 'repay') {
         if (await tapButton(page.locator(`[data-act="${act.kind}"]:not([disabled])`))) stats.acts++;
         await page.waitForTimeout(200);
+      } else if (act.kind === 'siding') {
+        // Buy on the line card puts the line in pick mode; the banner's Best place lays the loop in the middle of the longest straight
+        if (await tapButton(page.locator('[data-act="siding"]:not([disabled])'))) {
+          await page.waitForTimeout(900);
+          if (await tapButton(page.locator('[data-act="siding-best"]'))) stats.acts++;
+          await page.waitForTimeout(400);
+          await tapButton(page.locator('[data-act="siding-cancel"]'));
+          await page.waitForTimeout(200);
+        }
+        await tapButton(page.locator('.round.close'));
+        await page.waitForTimeout(200);
+      } else if (act.kind === 'crane') {
+        if (await tapButton(page.locator('[data-act="crane"]:not([disabled])'))) stats.acts++;
+        await page.waitForTimeout(250);
+        await tapButton(page.locator('.round.close'));
+        await page.waitForTimeout(200);
       } else if (act.kind === 'platform') {
         if (await tapButton(page.locator('[data-act="platform"]'))) stats.acts++;
         await page.waitForTimeout(250);
@@ -353,9 +373,11 @@ async function run(orient) {
       } else if (act.kind === 'choose') {
         await page.locator('.card.ledger').waitFor({ timeout: 5000 }).catch(() => undefined);
         await page.waitForTimeout(700);
-        if (await tapButton(page.locator('.btn.choice:not([disabled])'))) stats.choices++;
-        await page.waitForTimeout(400);
-        await tapButton(page.locator('.btn.choice.continue'));
+        // the contract on offer is taken when the plan serves it, skipped when not
+        if (await tapButton(page.locator(act.take ? '[data-act="take"]' : '[data-act="skip"], .btn.choice.continue'))) {
+          stats.choices++;
+          if (act.take) stats.contracts = (stats.contracts ?? 0) + 1;
+        }
         await page.waitForTimeout(400);
       }
     }

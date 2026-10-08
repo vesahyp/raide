@@ -71,8 +71,25 @@ savuten, kunnes laituri vapautuu; koskaan juna ei aja toisen päälle. Jos jono
 venyy pitkäksi, juna siirtyy sivuraiteelle. Vaunut
 puretaan ja lastataan yksi kerrallaan, ja tavara siirtyy näkyvästi
 vaunun ja pinon välillä. Pitkä juna tienaa enemmän, mutta seisoo kauemmin.
-Aseman kortista voi ostaa **lastausporukan**, jolloin jokainen vaunu
-lastautuu kolmanneksen nopeammin.
+Aseman kortista voi ostaa **lastausväen**, jolloin jokainen vaunu
+lastautuu kolmanneksen nopeammin, sekä toisen ja kolmannen **laiturin**,
+jolloin useampi juna mahtuu asemalle yhtä aikaa. Metsän, sahan, maatilan ja
+myllyn asemalle voi ostaa lisäksi **nosturin**, kun lastausväki on jo
+ostettu: tukit, laudat ja vilja lastautuvat ja purkautuvat kaksi kertaa
+nopeammin. Nosturi seisoo laiturilla, ja sen puomi kääntyy sen vaunun
+puoleen, jota se lastaa.
+
+**Ohitusraide.** Rataosuudella ajaa vain yksi juna kerrallaan, joten toinen
+juna samalla linjalla odottaa asemalla. Linjakortin **Ohitusraide**-rivin
+Osta-napista linja menee valintatilaan: radan vihreä osuus näyttää, minne
+ohitusraiteen voi rakentaa, ja napautus asettaa sen. **Paras paikka** valitsee
+pisimmän suoran keskeltä. Ohitusraide vaatii suoran osuuden, jonka päässä
+kumpaankin asemaan on yli kuusi ruutua, eikä se mahdu sillalle. Kun kaksi
+junaa kohtaa, toinen odottaa raiteella ja toinen ajaa ohi. Linjalla voi olla
+yksi. Kun asemilla on kaksi laituria, kaksi junaa ajaa noin 1,8-kertaisesti
+yhden junan kierrokset, ja linjakortti ja Osta-kortti näyttävät luvun. Ohitusraiteen
+linja ajaa kaksi junaa kerrallaan, joten sen kanssa samaa rataa käyttävät
+linjat odottavat sitä vuorollaan.
 
 **Napauta junaa**, niin sen kortti aukeaa: kuorma, matka-aika täynnä ja
 tyhjänä, tämän ja viime vuoden tulot, vaunu lisää, veturin vaihto,
@@ -106,8 +123,17 @@ menee tällä tarjonnalla tai mitä puuttuu.
 **Vuosi on puolitoista minuuttia.** Vuoden lopussa tilikirja näyttää
 tulot, kulut jaettuna ajoon, veturien ylläpitoon, radan ylläpitoon ja korkoon,
 voiton, kassan, lainan ja nettovarallisuuden, kertoo mitkä kaupungit
-kasvoivat ja kunkin kasvumittarin, ja annat yhden valinnan: vaunu lisää jokaiseen junaan,
-nopeammat veturit tai tuottoisampi maa. Jokaisen voi ottaa kerran.
+kasvoivat ja kunkin kasvumittarin, ja tarjoaa yhden sopimuksen.
+
+**Sopimus.** Tilikirjassa kaupunki tai tehdas, jota et vielä palvele hyvin,
+pyytää tietyn määrän kuormia tiettyä tavaraa ensi vuoden loppuun mennessä:
+esimerkiksi kahdeksan kuormaa jauhoja. Palkkio on noin 40 % kuormien hinnasta,
+ja kuormat maksavat lisäksi tavalliseen tapaan. Valitset **Ota** tai
+**Ohita**. Otettu sopimus näkyy kohteen nimikilvessä (tavaran kuvake, esimerkiksi
+3/8, ja vuosi) ja ruudun yläreunassa tavoitteen alla. Kun määrä täyttyy,
+palkkio maksetaan heti ja luku lentää kohteesta. Jos vuosi loppuu ensin,
+sopimus raukeaa ja ruutuun tulee teksti. Muuta et menetä. Kerralla voi olla
+kaksi sopimusta.
 
 ## Kentät
 

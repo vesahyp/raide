@@ -6,7 +6,7 @@
  * One measure in each chart, so one ink colour: the good is told by its icon and name.
  */
 import { useState } from 'react';
-import type { Good, SimState, YearEndChoice } from '../game/types';
+import type { Contract, Good, SimState } from '../game/types';
 import { GOODS } from '../game/types';
 import { goodsOnMap, siteById } from '../game/state';
 import { GOOD_NAME, TOWN_MAX } from '../game/content/economy';
@@ -150,14 +150,22 @@ function HouseIcon() {
   );
 }
 
-export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEndChoice) => void }) {
+/** the goods in the partitive, for a Finnish sentence about loads of them */
+const PARTITIVE: Record<Good, string> = { timber: 'tukkeja', boards: 'lautoja', grain: 'viljaa', flour: 'jauhoja' };
+
+/** a contract as a sentence: who wants how many loads of what by when, and the reward */
+export function contractText(s: SimState, c: Contract): string {
+  const name = tt(siteById(s, c.site).name);
+  return tr(
+    `${name} haluaa ${c.count} kuormaa ${PARTITIVE[c.good]} vuoden ${c.deadline} loppuun mennessä: ${c.reward} toimituksesta`,
+    `${name} wants ${c.count} loads of ${tt(GOOD_NAME[c.good])} by the end of ${c.deadline}: ${c.reward} on delivery`,
+  );
+}
+
+export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boolean) => void }) {
   const y = s.yearEnd!;
   const goods = GOODS.filter((g) => goodsOnMap(s).includes(g));
-  const choices: { id: YearEndChoice; fi: string; en: string; sub: [string, string] }[] = [
-    { id: 'wagon', fi: 'Vaunu lisää', en: 'An extra wagon', sub: ['jokaiseen junaan', 'on every train'] },
-    { id: 'speed', fi: 'Nopeammat veturit', en: 'Faster engines', sub: ['neljänneksen', 'a quarter faster'] },
-    { id: 'forest', fi: 'Tuottoisa maa', en: 'Richer land', sub: ['puolet enemmän tukkia ja viljaa', 'half again the timber and grain'] },
-  ];
+  const offer = s.offer;
   return (
     <div className="card ledger overlay" data-ui>
       <h2>{y.year}</h2>
@@ -175,6 +183,19 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEn
             <section className="growth">
               <h3>{tr('Kaupunkien kasvu', 'Town growth')}</h3>
               <GrowthBars s={s} growth={y.growth} />
+            </section>
+          )}
+          {y.lost.length > 0 && (
+            <section className="lost" data-sec="lost">
+              <h3>{tr('Sopimus raukesi', 'Contract lost')}</h3>
+              <p>
+                {y.lost.map((c) => (
+                  <span key={c.id} className="grown">
+                    <svg className="gi" viewBox="0 0 24 24"><use href={`#g-${c.good}`} /></svg>
+                    {tt(siteById(s, c.site).name)} <b>{c.got}/{c.count}</b>
+                  </span>
+                ))}
+              </p>
             </section>
           )}
           {y.grew.length > 0 && (
@@ -211,6 +232,12 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEn
                   <td>{tr('Korko', 'Interest')}</td>
                   <td className="num">-{num(y.interest)}</td>
                 </tr>
+                {y.bonus > 0 && (
+                  <tr data-sec="bonus">
+                    <td>{tr('Sopimukset', 'Contracts')}</td>
+                    <td className="num">+{num(y.bonus)}</td>
+                  </tr>
+                )}
                 <tr className="total">
                   <td>{tr('Voitto', 'Profit')}</td>
                   <td className="num">{num(y.profit)}</td>
@@ -231,23 +258,26 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEn
             </table>
           </div>
           <div className="ledger-pick">
-            {choices.every((c) => s.perks.includes(c.id)) ? (
-              <button className="btn choice continue" onClick={() => onChoose('wagon')} data-track="year-continue">
-                <span>{tr('Jatka', 'Continue')}</span>
-                <small>{tr('kaikki valinnat on otettu', 'every choice is taken')}</small>
-              </button>
-            ) : (
+            {offer ? (
               <>
-                <p className="small">{tr('Valitse yksi', 'Pick one')}</p>
-                <div className="choices">
-                  {choices.map((c) => (
-                    <button key={c.id} className="btn choice" disabled={s.perks.includes(c.id)} onClick={() => onChoose(c.id)}>
-                      <span>{tr(c.fi, c.en)}</span>
-                      <small>{s.perks.includes(c.id) ? tr('otettu', 'taken') : tr(c.sub[0], c.sub[1])}</small>
-                    </button>
-                  ))}
+                <p className="offer" data-sec="offer">
+                  <svg className="gi" viewBox="0 0 24 24"><use href={`#g-${offer.good}`} /></svg>
+                  <span>{contractText(s, offer)}</span>
+                </p>
+                <div className="choices two">
+                  <button className="btn choice take" data-act="take" onClick={() => onChoose(true)} data-track="year-take">
+                    <span>{tr('Ota', 'Take')}</span>
+                    <small>{tr(`+${offer.reward} perillä`, `+${offer.reward} on delivery`)}</small>
+                  </button>
+                  <button className="btn choice skip" data-act="skip" onClick={() => onChoose(false)} data-track="year-skip">
+                    <span>{tr('Ohita', 'Skip')}</span>
+                  </button>
                 </div>
               </>
+            ) : (
+              <button className="btn choice continue" onClick={() => onChoose(false)} data-track="year-continue">
+                <span>{tr('Jatka', 'Continue')}</span>
+              </button>
             )}
           </div>
         </div>

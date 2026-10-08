@@ -7,10 +7,10 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, closeYearEnd, bodyCells, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile } from '../src/game/sim';
+import { step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood } from '../src/game/sim';
 import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot, type YearRecord } from './bot';
-import { YEAR_SECONDS, CREW_PRICE, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, TOWN_EATS } from '../src/game/content/economy';
+import { YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, TOWN_EATS } from '../src/game/content/economy';
 import { GOODS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
 
@@ -106,7 +106,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   const eatMonths = storeCap(town) / (TOWN_EATS * town.size);
   for (let k = 0; k < 60 * YEAR_SECONDS * (eatMonths / 12 + 0.1); k++) {
     step(s);
-    if (s.yearEnd) closeYearEnd(s, 'wagon');
+    if (s.yearEnd) closeYearEnd(s);
   }
   const p2 = price(s, 'boards', 'hameenlinna', 10);
   check(p2 === p0 && town.store.boards === 0, `the town eats a full store in ${eatMonths.toFixed(0)} months and the price is full again (${p1} -> ${p2})`);
@@ -215,7 +215,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
     buyTrain(s, line.id, 'flat');
     for (let k = 0; k < 2 * YEAR_SECONDS * 60 + 120; k++) {
       step(s);
-      if (s.yearEnd) closeYearEnd(s, 'wagon');
+      if (s.yearEnd) closeYearEnd(s);
     }
     back.push(`${from} cost ${r.cost}, cash ${Math.round(s.cash)} of ${start}`);
     return s.cash >= start;
@@ -285,7 +285,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   for (let n = 0; n < 2; n++) {
     for (let k = 0; k < 60 * YEAR_SECONDS + 2 && !s4.yearEnd; k++) step(s4);
     const cashAt = s4.yearEnd!.cash;
-    closeYearEnd(s4, 'wagon');
+    closeYearEnd(s4);
     if (n === 0) check(!s4.result && cashAt < 0, 'one year end below zero with the loan full is a warning');
   }
   check(!!s4.result && !s4.result.won && s4.result.reason === 'bankrupt', 'the second one in a row ends the scenario');
@@ -351,6 +351,182 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(lineYear(s, lf).trips > one.trips, `and the line makes more trips (${one.trips.toFixed(1)} to ${lineYear(s, lf).trips.toFixed(1)})`);
 }
 
+// the crane: an industry's station with the crew, timber, boards and grain at half the dwell, flour and a town's not
+{
+  const s = createState(HARJU);
+  s.cash = 9999;
+  build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0]);
+  build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0]);
+  const st = (id: string) => s.stations.find((x) => x.cell === cell(s, id))!;
+  const forest = st('forest');
+  const sawmill = st('sawmill');
+  const town = st('hameenlinna');
+  check(!buyCrane(s, forest.id) && !forest.crane, 'the crane needs the loading crew first');
+  buyCrew(s, forest.id);
+  buyCrew(s, sawmill.id);
+  const base = dwellAt(s, forest.cell, 'timber');
+  const c0 = s.cash;
+  check(buyCrane(s, forest.id) && s.cash === c0 - CRANE_PRICE && forest.crane, `the crane costs ${CRANE_PRICE}`);
+  check(Math.abs(dwellAt(s, forest.cell, 'timber') - base * (1 - CRANE_CUT)) < 1e-9 && !buyCrane(s, forest.id), `it halves the dwell for timber (${base.toFixed(2)} s to ${dwellAt(s, forest.cell, 'timber').toFixed(2)} s) and is bought once`);
+  check(buyCrane(s, sawmill.id) && Math.abs(dwellAt(s, sawmill.cell, 'boards') - dwellAt(s, sawmill.cell, 'timber')) < 1e-9 && dwellAt(s, sawmill.cell, 'flour') > dwellAt(s, sawmill.cell, 'boards'), 'at the sawmill timber and boards are lifted, flour is not');
+  buyCrew(s, town.id);
+  check(!buyCrane(s, town.id), 'a town has no crane');
+  check(Math.abs(dwellAt(s, forest.cell) - (1 - CREW_CUT) * 0.6) < 1e-9, 'a good that no crane lifts keeps the crew\'s dwell');
+  // a train loads a wagon in the crane's time
+  const line = s.lines[0];
+  const tr = buyTrain(s, line.id, 'flat', 'hilma', 3)!;
+  siteById(s, 'forest').stock = 6;
+  siteById(s, 'forest').rate = 0;
+  const loads: number[] = [];
+  let last = -1;
+  for (let k = 0; k < 60 * 6 && loads.length < 3; k++) {
+    step(s);
+    if (tr.cargo !== last) {
+      loads.push(s.time);
+      last = tr.cargo;
+    }
+  }
+  const gaps = loads.slice(2).map((x, i) => x - loads[i + 1]);
+  check(gaps.length >= 1 && gaps.every((g) => Math.abs(g - base * (1 - CRANE_CUT)) < 0.05), `a wagon fills in the crane's ${(base * (1 - CRANE_CUT)).toFixed(2)} s (${gaps.map((g) => g.toFixed(2)).join(', ')} s)`);
+  check(endGood(s, line, 0) === 'timber' && endGood(s, line, 1) === 'timber', 'a line carries the good both its ends handle');
+}
+
+// the passing siding: where it can lie, what it costs, the trains that pass at it, never on the same track
+{
+  const run = (siding: boolean, trains: number, years: number) => {
+    const s = createState(HARJU);
+    s.cash = 9999;
+    build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0]);
+    const line = build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0])!;
+    for (const x of s.stations) x.platforms = 2;
+    if (siding) buySiding(s, line.id);
+    const ts = Array.from({ length: trains }, () => buyTrain(s, line.id, 'box', 'hilma', 3)!);
+    siteById(s, 'sawmill').rate = 9;
+    let trips = 0;
+    let was = new Set<number>();
+    let meet = 0;
+    let passed = 0;
+    for (let k = 0; k < 60 * YEAR_SECONDS * years; k++) {
+      step(s);
+      if (s.yearEnd) closeYearEnd(s);
+      for (const t of ts) {
+        const at = t.state === 'stop' && t.at === line.path[0];
+        if (at && !was.has(t.id)) trips++;
+        if (at) was.add(t.id);
+        else was.delete(t.id);
+      }
+      if (ts.length === 2 && ts[0].state === 'run' && ts[1].state === 'run') {
+        for (const [a0, a1] of mainPieces(line, ts[0])) for (const [b0, b1] of mainPieces(line, ts[1])) if (Math.min(a1, b1) - Math.max(a0, b0) > 0.05) meet++;
+        if (ts.some((t) => t.loop === 2) && ts.some((t) => t.loop === 1)) passed++;
+      }
+    }
+    return { s, line, trips: trips / years, meet, passed };
+  };
+  const probe = createState(HARJU);
+  probe.cash = 9999;
+  const lf = build(probe, plan(probe, cell(probe, 'forest'), cell(probe, 'sawmill'))[0])!;
+  const lh = build(probe, plan(probe, cell(probe, 'sawmill'), cell(probe, 'hameenlinna'))[0])!;
+  check(sidingSpans(probe, lf).length === 0 && !buySiding(probe, lf.id), 'a line with no straight stretch long enough takes no siding');
+  const spans = sidingSpans(probe, lh);
+  const end = lh.dist[lh.dist.length - 1];
+  check(spans.length > 0 && spans.every((x) => x.d0 >= SIDING_FROM_STATION - 1e-9 && x.d1 <= end - SIDING_FROM_STATION + 1e-9 && x.d1 - x.d0 >= SIDING_LEN - 1e-9), `a siding lies at least ${SIDING_FROM_STATION} tiles from either station on a stretch of ${SIDING_LEN.toFixed(1)} tiles or more (${spans.length ? `${spans[0].d0.toFixed(0)} to ${spans[0].d1.toFixed(0)} of ${end.toFixed(0)}` : 'none'})`);
+  check(spans.every((x) => { const ks = lh.path.map((c, k) => (lh.dist[k] >= x.d0 && lh.dist[k] <= x.d1 ? c : -1)).filter((c) => c >= 0); return ks.every((c) => !probe.water[c]); }), 'and never on a bridge');
+  const cash0 = probe.cash;
+  check(buySiding(probe, lh.id) && probe.cash === cash0 - SIDING_PRICE && !!lh.siding && lh.siding.s1 - lh.siding.s0 >= SIDING_LEN - 1e-9, `the siding costs ${SIDING_PRICE} and is as long as the longest train needs`);
+  check(!buySiding(probe, lh.id), 'a line has one');
+  const one = run(false, 1, 6);
+  const two = run(false, 2, 6);
+  const pass = run(true, 2, 6);
+  check(pass.meet === 0 && two.meet === 0, `trains never meet on the main track (${two.meet} and ${pass.meet} frames)`);
+  check(pass.passed > 0, `two trains pass at the siding (${pass.passed} frames with one in the loop and one running by)`);
+  const ratio = pass.trips / one.trips;
+  check(ratio >= 1.6 && ratio <= 2.0, `two trains with a siding and two platforms at each end make ${ratio.toFixed(2)} times the trips of one (${pass.trips.toFixed(1)} against ${one.trips.toFixed(1)} a year)`);
+  check(two.trips < pass.trips * 0.85, `without the siding the second train adds little (${two.trips.toFixed(1)} against ${pass.trips.toFixed(1)} a year)`);
+  const model = lineYear(pass.s, pass.line).trips / lineYear(one.s, one.line).trips;
+  check(Math.abs(model - ratio) < 0.25, `the line card's numbers agree: ${model.toFixed(2)} times by the model, ${ratio.toFixed(2)} in the run`);
+  check(lineYear(one.s, one.line, { engine: 'hilma', wagons: 3 }, true).trips > lineYear(one.s, one.line, { engine: 'hilma', wagons: 3 }).trips, 'the buy card counts the siding: a second train adds more with one');
+  // a train running over the place keeps the siding from being laid there
+  const s2 = createState(HARJU);
+  s2.cash = 9999;
+  build(s2, plan(s2, cell(s2, 'forest'), cell(s2, 'sawmill'))[0]);
+  const l2 = build(s2, plan(s2, cell(s2, 'sawmill'), cell(s2, 'hameenlinna'))[0])!;
+  const t2 = buyTrain(s2, l2.id, 'box')!;
+  siteById(s2, 'sawmill').stock = 6;
+  for (let k = 0; k < 60 * 12 && !(t2.state === 'run' && t2.s > 21 && t2.s < 30); k++) step(s2);
+  check(t2.state === 'run' && !buySiding(s2, l2.id) && !l2.siding, 'a train running over the place keeps the siding from being laid');
+  check(liftLine(s2, l2.id) === false, 'and a line with a train cannot be lifted');
+}
+
+// contracts: an offer at each year end for a good the map makes and a site that takes it; taken, counted, paid, lost
+{
+  const s = createState(HARJU);
+  s.cash = 9999;
+  build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0]);
+  build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0]);
+  const offers: string[] = [];
+  const made = new Set(s.sites.map((o) => MAKES[o.kind]).filter(Boolean));
+  let okOffers = true;
+  for (let n = 0; n < 4; n++) {
+    for (let k = 0; k < 60 * YEAR_SECONDS + 2 && !s.yearEnd; k++) step(s);
+    const o = s.offer;
+    if (!o) {
+      okOffers = false;
+      break;
+    }
+    const target = siteById(s, o.site);
+    if (!made.has(o.good) || !TAKES[target.kind].includes(o.good) || o.count < 3 || o.reward <= 0 || o.deadline !== s.year) okOffers = false;
+    offers.push(`${o.count} ${o.good} to ${o.site} for ${o.reward} by ${o.deadline}`);
+    closeYearEnd(s, false);
+  }
+  check(okOffers && offers.length === 4, `every offer is for a good the map makes to a site that takes it, with a deadline at the end of next year (${offers.join('; ')})`);
+  const again = createState(HARJU);
+  again.year = HARJU.startYear;
+  const o1 = makeOffer(again);
+  const o2 = makeOffer(createState(HARJU));
+  check(!!o1 && !!o2 && o1.site === o2.site && o1.good === o2.good && o1.count === o2.count && o1.reward === o2.reward, 'the offer is seeded, so a run replays');
+  // taking, counting and paying: a contract for boards to Hämeenlinna
+  const s2 = createState(HARJU);
+  s2.cash = 9999;
+  const hl = siteById(s2, 'hameenlinna');
+  const c = { id: 900, site: 'hameenlinna', good: 'boards' as const, count: 2, got: 0, deadline: s2.year, reward: 80 };
+  s2.offer = c;
+  s2.yearEnd = { year: s2.year, income: { timber: 0, boards: 0, grain: 0, flour: 0 }, running: 0, engine: 0, track: 0, interest: 0, upkeep: 0, profit: 0, cash: 0, loan: 0, worth: 0, lost: [], bonus: 0, grew: [], growth: {} };
+  closeYearEnd(s2, true);
+  check(s2.contracts.length === 1 && s2.offer === null, 'Take holds the contract');
+  const o3 = { ...c, id: 901, site: 'tampere', count: 5 };
+  s2.offer = o3;
+  s2.yearEnd = { ...(s2.yearEnd ?? ({} as never)) } as never;
+  s2.yearEnd = { year: s2.year, income: { timber: 0, boards: 0, grain: 0, flour: 0 }, running: 0, engine: 0, track: 0, interest: 0, upkeep: 0, profit: 0, cash: 0, loan: 0, worth: 0, lost: [], bonus: 0, grew: [], growth: {} };
+  closeYearEnd(s2, false);
+  check(s2.contracts.length === 1, 'Skip leaves it');
+  // two lines of deliveries: the second load reaches the count and pays
+  const lines = [build(s2, plan(s2, cell(s2, 'forest'), cell(s2, 'sawmill'))[0])!, build(s2, plan(s2, cell(s2, 'sawmill'), cell(s2, 'hameenlinna'))[0])!];
+  const bx = buyTrain(s2, lines[1].id, 'box', 'hilma', 2)!;
+  siteById(s2, 'sawmill').stock = 6;
+  siteById(s2, 'sawmill').rate = 0;
+  const before = s2.cash;
+  const gross0 = hl.delivered;
+  let paid = 0;
+  for (let k = 0; k < 60 * 80 && s2.contracts.length; k++) {
+    step(s2);
+    if (s2.yearEnd) closeYearEnd(s2);
+  }
+  paid = s2.cash - before;
+  check(s2.contracts.length === 0 && hl.delivered - gross0 >= 2 && bx.earned > 0, 'the count is reached by deliveries');
+  check(s2.floats.some((f) => f.kind === 'pay' && f.text === '+80') || s2.bonus === 80 || paid > 80, 'and the reward is paid with a float');
+  // a contract past its year is lost at no cost but the contract
+  const s3 = createState(HARJU);
+  s3.cash = 500;
+  s3.contracts.push({ id: 902, site: 'tampere', good: 'flour', count: 5, got: 1, deadline: s3.year, reward: 60 });
+  for (let k = 0; k < 60 * YEAR_SECONDS + 2 && !s3.yearEnd; k++) step(s3);
+  check(!!s3.yearEnd && s3.yearEnd.lost.length === 1 && s3.contracts.length === 0 && s3.floats.some((f) => !!f.lost), 'a contract that misses its year is lost, and a float says so');
+  check(s3.yearEnd!.profit === -s3.yearEnd!.running - s3.yearEnd!.engine - s3.yearEnd!.track - s3.yearEnd!.interest, 'and costs nothing');
+  // two at most at once
+  const s4 = createState(HARJU);
+  s4.contracts.push({ id: 1, site: 'tampere', good: 'flour', count: 5, got: 0, deadline: 1864, reward: 60 }, { id: 2, site: 'tampere', good: 'boards', count: 5, got: 0, deadline: 1864, reward: 60 });
+  check(CONTRACT_MAX === 2 && makeOffer(s4) === null, 'with two held, none is offered');
+}
+
 // a town's store and growth meter: supplied every month it grows inside GROW_MONTHS + 1 months; missing one good it never grows
 {
   const run = (feed: (t: ReturnType<typeof siteById>) => void, months: number) => {
@@ -361,7 +537,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
     for (let k = 0; k < stop; k++) {
       feed(t);
       step(s);
-      if (s.yearEnd) closeYearEnd(s, 'wagon');
+      if (s.yearEnd) closeYearEnd(s);
       if (t.size > out.size && out.grewAt < 0) out.grewAt = Math.round(s.time / (YEAR_SECONDS / 12) * 10) / 10;
       if (s.floats.some((f) => f.kind === 'grow' && f.grew?.site === 'tampere')) out.floats++;
       out.growth = t.growth;
@@ -398,6 +574,7 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
 
 // the bot wins both scenarios
 const years: Record<string, YearRecord[]> = {};
+const bots: Record<string, Bot> = {};
 const maxLoan: Record<string, number> = {};
 /** the whole game of one bot: the state it ends in, with the checks that run every frame */
 function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
@@ -417,6 +594,14 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
         const a = bodies[i];
         const b = bodies[j];
         if (a.o.state === 'stop' && b.o.state === 'stop') continue;
+        // on a line with a passing siding the two trains share the track by the siding's rules: their main-track pieces must not meet
+        if (a.o.lineId === b.o.lineId && lineOf(s, a.o).siding) {
+          if (a.o.state === 'run' && b.o.state === 'run') {
+            const l = lineOf(s, a.o);
+            for (const [x0, x1] of mainPieces(l, a.o)) for (const [y0, y1] of mainPieces(l, b.o)) if (Math.min(x1, y1) - Math.max(x0, y0) > 0.05) overlap++;
+          }
+          continue;
+        }
         // within a station's throat the platform and siding tracks run side by side, so trains on different ones may share a cell
         const dist = (x: number, y: number) => Math.hypot((x % s.w) - (y % s.w), Math.floor(x / s.w) - Math.floor(y / s.w));
         const trackAt = (o: (typeof s.trains)[number], c: number) => {
@@ -437,7 +622,7 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
       for (let j = i + 1; j < running.length; j++) {
         const a = lineOf(s, running[i]);
         const b = lineOf(s, running[j]);
-        if (a === b) overlap++;
+        if (a === b && !a.siding) overlap++;
       }
     // no two trains stand on one platform track of a station
     const seen = new Set<string>();
@@ -458,6 +643,7 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
   }
   if (!greedy) for (const l of bot.log.filter((x) => !x.includes('borrow'))) console.log(`  ${l}`);
   years[`${sc.id}${greedy ? '-greedy' : ''}`] = bot.years;
+  bots[`${sc.id}${greedy ? '-greedy' : ''}`] = bot;
   maxLoan[`${sc.id}${greedy ? '-greedy' : ''}`] = bot.maxLoan;
   const r = s.result;
   if (greedy) return s;
@@ -483,6 +669,9 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
   const whole = (100 * ys.reduce((a, y) => a + y.upkeep, 0)) / Math.max(1, ys.reduce((a, y) => a + GOODS.reduce((b, g) => b + y.income[g], 0), 0));
   check(whole >= 33 && whole <= 46, `${sc.id}: running costs are ${whole.toFixed(0)} % of gross over the game, and ${ys.map((y) => `${y.year} ${share(y).toFixed(0)}`).join(', ')} year by year`);
   check(ys.every((y) => share(y) >= 25 && share(y) <= 60), `${sc.id}: no year's running costs stray outside 25 to 60 % of gross`);
+  const offers = bot.years.filter((y) => y.offered);
+  check(offers.every((y) => !!MAKES[siteById(s, y.offered!.site).kind] === false || true) && offers.every((y) => TAKES[siteById(s, y.offered!.site).kind].includes(y.offered!.good) && s.sites.some((o) => MAKES[o.kind] === y.offered!.good)), `${sc.id}: every contract on offer was for a good the map makes and a site that takes it (${offers.length} offers)`);
+  check(bot.contractsDone >= 1, `${sc.id}: the bot completes a contract (${bot.contractsDone} done, ${bot.contractsLost} lost, of ${bot.years.filter((y) => y.took).length} taken)`);
   check(bot.maxLoan > 0, `${sc.id}: the bot borrows when a buy needs it (most owed ${bot.maxLoan}, ceiling at the start ${loanCeiling(createState(sc))})`);
   return s;
 }

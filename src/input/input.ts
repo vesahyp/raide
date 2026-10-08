@@ -48,6 +48,10 @@ export interface InputEvents {
   onAny: () => void;
   /** pick mode is over: a tap built or offered the choice (`kept`, the view stays) or fell on nothing */
   onLayEnd: (kept: boolean) => void;
+  /** pick mode for a passing siding: a tap on the line's cell, which the UI tries to place the loop at */
+  onSiding: (lineId: number, cell: number) => void;
+  /** a tap in the siding's pick mode fell away from the line: the mode is over */
+  onSidingEnd: () => void;
 }
 
 /** how close to a station's centre a finger must land to start a drag, in cells */
@@ -75,6 +79,8 @@ export class Input {
    * where the marked ones are the stations that can reach it and the track runs from the one tapped.
    */
   laying: { cell: number; reverse: boolean } | null = null;
+  /** pick mode for a passing siding: the line whose green stretch takes the tap */
+  siding: { lineId: number } | null = null;
   private fingers: Finger[] = [];
   private mode: 'none' | 'build' | 'pan' = 'none';
   private pinch: { dist: number; ang: number; mx: number; my: number } | null = null;
@@ -145,7 +151,7 @@ export class Input {
       this.moved = 0;
       const at = this.cellAt(e.clientX, e.clientY);
       const from = at ? this.stationNear(at.x, at.y, GRAB) : null;
-      if (from !== null && !this.r.whole && !this.laying) {
+      if (from !== null && !this.r.whole && !this.laying && !this.siding) {
         this.mode = 'build';
         this.dragId = e.pointerId;
         this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
@@ -268,6 +274,25 @@ export class Input {
     if (line) this.ev.onBuild(line, sx, sy);
   }
 
+  /** a tap in the siding's pick mode: the line's cell nearest the finger, or the end of the mode when the finger is far from the line */
+  private tapSiding(sx: number, sy: number): void {
+    const pick = this.siding!;
+    const line = this.s.lines.find((l) => l.id === pick.lineId);
+    const at = this.cellAt(sx, sy);
+    if (!line || !at) return this.ev.onSidingEnd();
+    let best = -1;
+    let bd = 1.8;
+    for (const c of line.path) {
+      const d = Math.hypot((c % this.s.w) + 0.5 - at.x, Math.floor(c / this.s.w) + 0.5 - at.y);
+      if (d < bd) {
+        bd = d;
+        best = c;
+      }
+    }
+    if (best < 0) return this.ev.onSidingEnd();
+    this.ev.onSiding(line.id, best);
+  }
+
   private onUp = (e: PointerEvent): void => {
     const k = this.fingers.findIndex((o) => o.id === e.pointerId);
     if (k < 0) return;
@@ -309,6 +334,7 @@ export class Input {
     }
     if (moved > 12) return;
     if (this.laying) return this.tapLaying(e.clientX, e.clientY);
+    if (this.siding) return this.tapSiding(e.clientX, e.clientY);
     // a tap: a train, a station, a track cell, or a site
     const train = this.r.trainAt(e.clientX, e.clientY);
     if (this.r.whole) {

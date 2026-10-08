@@ -13,19 +13,19 @@
  * Text and chips are HTML in the overlay div, placed each frame by projecting tile points, so
  * they stay crisp at any zoom.
  */
-import type { Good, Line, ScenarioDef, SimState, Site, Train } from '../game/types';
+import type { Contract, Good, Line, ScenarioDef, Siding, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
-import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, SLOTS_MAX, workingWagon } from '../game/sim';
+import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, SLOTS_MAX, workingWagon, sidingSpans, sidingAt } from '../game/sim';
 import { createState } from '../game/state';
 import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
-import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, TERRACE_M, TOWN_MAX, yard } from '../game/content/economy';
+import { ENGINE_LEN, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, TERRACE_M, TOWN_MAX, SIDING_OFFSET, SIDING_RAMP, yard } from '../game/content/economy';
 import { t as tt, tr } from '../i18n';
 import {
   GRASS, LIFT, OUT, boardStack, bridgeDeck, bridgeRails, building, birch, bufferStop, drawEngine, drawWagon, hash, logPile, makeView, pine,
-  crew, handcart, platform, sacks, sails, shade, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
+  crew, derrick, handcart, platform, sacks, sails, shade, switchStand, trackCell, trackLine, windmillBody, type Ctx, type Spoke, type View,
 } from './draw2d';
 
 export const OPTION_COLOUR = ['rgba(239,230,207,0.95)', 'rgba(70,150,230,0.95)'];
@@ -81,6 +81,11 @@ const smooth01 = (t: number): number => {
   const u = Math.max(0, Math.min(1, t));
   return u * u * (3 - 2 * u);
 };
+
+/** how far from the main track the loop of a passing siding lies at a distance d along the line: nothing at the points, the full offset between the ramps */
+export function loopOffset(sd: Siding, d: number): number {
+  return SIDING_OFFSET * smooth01((d - sd.s0) / SIDING_RAMP) * smooth01((sd.s1 - d) / SIDING_RAMP);
+}
 
 /** how far south of the station's row platform track k lies at a distance q along the row from the station's centre */
 export function slotOffset(k: number, q: number): number {
@@ -203,6 +208,8 @@ interface TagRefs {
   /** a town's growth bar under its name, or the ring round its badge, and the growth last written */
   grow: HTMLElement | null;
   gv: number;
+  /** the progress of each contract aimed at this site: the node that shows 3/8, and the contract */
+  cts: { b: HTMLElement; c: Contract }[];
 }
 
 interface TagPlace {
@@ -385,6 +392,18 @@ export class Renderer2D {
       for (let x = 0; x < s.w; x++)
         if (s.track[y * s.w + x])
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (x + dx >= 0 && y + dy >= 0 && x + dx < s.w && y + dy < s.h) this.nearTrack[(y + dy) * s.w + x + dx] = 1;
+    // no tree grows on a passing siding's loop
+    for (const l of s.lines) {
+      const sd = l.siding;
+      if (!sd) continue;
+      for (let d = sd.s0; d <= sd.s1; d += 0.5) {
+        const p = along(l, d, s.w);
+        const o = loopOffset(sd, d);
+        const ix = Math.floor(p.x + sd.nx * o);
+        const iy = Math.floor(p.y + sd.ny * o);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (ix + dx >= 0 && iy + dy >= 0 && ix + dx < s.w && iy + dy < s.h) this.nearTrack[(iy + dy) * s.w + ix + dx] = 1;
+      }
+    }
     // no tree grows on the platform tracks of a station
     for (const a of this.aprons)
       for (let y = a.y - 1; y <= a.y + 3; y++) for (let x = a.x - 6; x <= a.x + 6; x++) if (x >= 0 && y >= 0 && x < s.w && y < s.h) this.nearTrack[y * s.w + x] = 1;
@@ -395,7 +414,8 @@ export class Renderer2D {
     const s = this.s;
     let h = 17;
     for (const l of s.lines) h = (Math.imul(h, 31) + l.id) | 0;
-    for (const st of s.stations) h = (Math.imul(h, 37) + st.id * 8 + this.platformsNeeded(st.cell) + (st.crew ? 1000003 : 0)) | 0;
+    for (const st of s.stations) h = (Math.imul(h, 37) + st.id * 8 + this.platformsNeeded(st.cell) + (st.crew ? 1000003 : 0) + (st.crane ? 7000003 : 0)) | 0;
+    for (const l of s.lines) if (l.siding) h = (Math.imul(h, 43) + l.id * 16 + Math.round(l.siding.s0 * 10)) | 0;
     for (const site of s.sites) h = (Math.imul(h, 41) + (site.kind === 'town' ? this.townState(site).shown : 0)) | 0;
     return h;
   }
@@ -435,12 +455,40 @@ export class Renderer2D {
       if (x1 >= 0) this.dirty(x0 - 1, y0 - 1, x1 + 1, y1 + 1);
     }
     this.lastTrack = s.track.slice();
+    this.syncSidings();
     const oldKeys = new Map(this.looks.map((l) => [l.site.id, l.stationKey]));
     this.layoutYards();
     for (const l of this.looks) if (first || oldKeys.get(l.site.id) !== l.stationKey) this.dirtyYard(l.site);
     this.overviewDirty = true;
   }
   private lastTrack: Uint8Array | null = null;
+  /** the tile box of each passing siding drawn into the chunks, by line, so a change redraws those chunks */
+  private sidingBoxes = new Map<number, { x0: number; y0: number; x1: number; y1: number; key: string }>();
+  /** pick mode for a passing siding: the line whose valid stretch glows, and a tap places the loop */
+  sidingPick: { lineId: number } | null = null;
+  /** each crane's foot along the platform and its boom's angle, eased */
+  private cranes = new Map<number, { bx: number; hx: number; hy: number; reach: number; hang: number }>();
+
+  /** the chunks a passing siding is drawn in are drawn again when it appears or goes */
+  private syncSidings(): void {
+    const now = new Map<number, { x0: number; y0: number; x1: number; y1: number; key: string }>();
+    for (const l of this.s.lines) {
+      const sd = l.siding;
+      if (!sd) continue;
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (let d = sd.s0; d <= sd.s1 + 0.01; d += 0.5) {
+        const p = along(l, d, this.s.w);
+        x0 = Math.min(x0, p.x - 2);
+        x1 = Math.max(x1, p.x + 2);
+        y0 = Math.min(y0, p.y - 2);
+        y1 = Math.max(y1, p.y + 2);
+      }
+      now.set(l.id, { x0, y0, x1, y1, key: `${sd.s0.toFixed(1)}` });
+    }
+    for (const [id, b] of now) if (this.sidingBoxes.get(id)?.key !== b.key) this.dirty(b.x0, b.y0, b.x1, b.y1);
+    for (const [id, b] of this.sidingBoxes) if (!now.has(id)) this.dirty(b.x0, b.y0, b.x1, b.y1);
+    this.sidingBoxes = now;
+  }
 
   private dirtyYard(site: Site): void {
     const r = yard(site.kind);
@@ -750,6 +798,10 @@ export class Renderer2D {
     // the track after all the land, so a cell's ballast that runs past its edge is not covered by the next row's tiles
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) this.drawTrack(v, x, y);
     for (const a of this.aprons) if (a.x + 7 > x0 - SIDE && a.x - 6 < x1 + SIDE && a.y + 4 > y0 - TOPM && a.y - 1 < y1 + BOTM) this.drawApron(v, a);
+    for (const l of this.s.lines) {
+      const b = this.sidingBoxes.get(l.id);
+      if (b && b.x1 > x0 - SIDE && b.x0 < x1 + SIDE && b.y1 > y0 - TOPM && b.y0 < y1 + BOTM) this.drawSiding(v, l);
+    }
     return canvas;
   }
 
@@ -1020,6 +1072,29 @@ export class Renderer2D {
     }
   }
 
+  /**
+   * The loop of a passing siding, drawn into the chunk: a second track beside the line that leaves
+   * it in the points at one end and joins it in the points at the other, with a switch stand at each.
+   */
+  private drawSiding(v: View, line: Line): void {
+    const sd = line.siding!;
+    const { c, S } = v;
+    const n = Math.max(4, Math.ceil((sd.s1 - sd.s0) / 0.25));
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= n; i++) {
+      const d = sd.s0 + ((sd.s1 - sd.s0) * i) / n;
+      const p = this.linePos(line, d);
+      const o = loopOffset(sd, d);
+      pts.push([v.x(p.x + sd.nx * o), v.y(p.y + sd.ny * o, p.lv)]);
+    }
+    trackLine(c, S, pts);
+    // a switch stand on the far side of the main track from the loop, level with each point's start
+    for (const [d, ang] of [[sd.s0 + 0.3, 0], [sd.s1 - 0.3, Math.PI]] as [number, number][]) {
+      const p = this.linePos(line, d);
+      switchStand(v, p.x - sd.nx * 0.62, p.y - sd.ny * 0.62, p.lv, ang);
+    }
+  }
+
   private drawBridge(v: View, x: number, y: number): void {
     const s = this.s;
     const i = y * s.w + x;
@@ -1114,6 +1189,12 @@ export class Renderer2D {
    */
   private trainPos(t: Train, line: Line, d: number): { x: number; y: number; lv: number; dx: number; dy: number } {
     const p = this.linePos(line, d);
+    // a train in the loop of a passing siding lies beside the line
+    if (t.loop === 2 && line.siding) {
+      const o = loopOffset(line.siding, d);
+      p.x += line.siding.nx * o;
+      p.y += line.siding.ny * o;
+    }
     const end = line.dist[line.dist.length - 1];
     const e = d < end / 2 ? 0 : 1;
     const a = this.apronAt.get(e === 0 ? line.path[0] : line.path[line.path.length - 1]);
@@ -1237,6 +1318,123 @@ export class Renderer2D {
     for (const id of this.puffs.keys()) if (!seen.has(id)) this.puffs.delete(id);
   }
 
+  /**
+   * The cranes: a timber derrick on the platform of each station that has one. Its foot rolls along
+   * the platform to the wagon at work; the boom swings from the yard's pile to the wagon while a
+   * load is moved, with the load on the hook, and rests when nothing is.
+   */
+  private drawCranes(dt: number): void {
+    const S = this.cam.s;
+    if (S < LOD_S) return;
+    const c = this.ctx;
+    for (const st of this.s.stations) {
+      if (!st.crane) continue;
+      const site = this.s.sites.find((o) => o.id === st.siteId);
+      if (!site) continue;
+      const x = site.cx + 0.5;
+      const y = site.cy - 0.38;
+      let state = this.cranes.get(st.id);
+      if (!state) this.cranes.set(st.id, (state = { bx: x + 1.4, hx: 0.6, hy: -0.8, reach: 1.2, hang: 0.35 }));
+      // the wagon at work, if a train stands at this station and moves a load
+      let work: { wx: number; wy: number; good: Good; phase: number } | null = null;
+      for (const t of this.s.trains) {
+        if (t.state !== 'stop' || t.at !== st.cell || !t.dock) continue;
+        const w = workingWagon(this.s, t);
+        const veh = w ? this.vehicles(t)[w.wagon + 1] : null;
+        const good = this.wagonGood(t) ?? (t.good as Good | null);
+        if (w && veh && good) {
+          // loading goes from the pile to the wagon, unloading the other way
+          work = { wx: veh.wx, wy: veh.wy, good, phase: t.dock === 'load' ? w.progress : 1 - w.progress };
+          break;
+        }
+      }
+      // where the foot, the boom and the hook want to be: toward the working wagon, or at rest
+      // the boom follows the work at once: a wagon takes the crane a fifth of a second
+      const k = Math.min(1, dt * 40);
+      const wantX = work ? Math.max(site.cx - 0.2, Math.min(site.cx + 2.2, work.wx)) : x + 1.4;
+      state.bx += (wantX - state.bx) * Math.min(1, dt * 6);
+      let wx = 0.6;
+      let wy = -0.8;
+      let reach = 1.2;
+      let hang = 0.35;
+      let load: Good | null = null;
+      if (work) {
+        const dx = work.wx - state.bx;
+        const dy = work.wy - y;
+        const d = Math.hypot(dx, dy) || 1;
+        wx = dx / d;
+        wy = dy / d;
+        reach = Math.max(0.8, Math.min(3.4, d));
+        // the hook is lowered at the wagon and lifted between loads
+        hang = 1.0 - 0.5 * Math.sin(Math.PI * work.phase);
+        load = work.phase > 0.12 && work.phase < 0.88 ? work.good : null;
+      }
+      state.hx += (wx - state.hx) * k;
+      state.hy += (wy - state.hy) * k;
+      state.reach += (reach - state.reach) * k;
+      state.hang += (hang - state.hang) * Math.min(1, dt * 25);
+      const X = this.sx(state.bx);
+      const Y = this.sy(y, this.levelAt(site.cx, site.cy));
+      if (X < -160 || X > this.w + 160 || Y < -160 || Y > this.h + 200) continue;
+      const hl = Math.hypot(state.hx, state.hy) || 1;
+      const tx = X + (state.hx / hl) * state.reach * S;
+      const ty = Y - 1.45 * S + (state.hy / hl) * state.reach * S;
+      c.save();
+      derrick(c, S, X, Y, tx, ty, state.hang, load);
+      c.restore();
+    }
+  }
+
+  /**
+   * Pick mode for a passing siding: the stretches of the line where the loop can lie glow green,
+   * and the loop's best place (the middle of the longest straight) shows as a dashed ghost.
+   */
+  private drawSidingPick(): void {
+    const line = this.s.lines.find((l) => l.id === this.sidingPick!.lineId);
+    if (!line || this.cam.s < LOD_S) return;
+    const c = this.ctx;
+    const S = this.cam.s;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);
+    const trace = (d0: number, d1: number, off: (d: number) => number, nx: number, ny: number): void => {
+      c.beginPath();
+      const n = Math.max(2, Math.ceil((d1 - d0) / 0.3));
+      for (let i = 0; i <= n; i++) {
+        const d = d0 + ((d1 - d0) * i) / n;
+        const p = this.linePos(line, d);
+        const o = off(d);
+        const X = this.sx(p.x + nx * o);
+        const Y = this.sy(p.y + ny * o, p.lv);
+        if (i) c.lineTo(X, Y);
+        else c.moveTo(X, Y);
+      }
+    };
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    const seen = new Set<string>();
+    for (const sp of sidingSpans(this.s, line)) {
+      const key = `${sp.d0.toFixed(1)}:${sp.d1.toFixed(1)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      trace(sp.d0, sp.d1, () => 0, 0, 0);
+      c.strokeStyle = `rgba(157,255,160,${(0.28 + 0.2 * pulse).toFixed(3)})`;
+      c.lineWidth = S * 1.5;
+      c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.8)';
+      c.lineWidth = Math.max(1.5, S * 0.07);
+      c.stroke();
+    }
+    const best = sidingAt(this.s, line);
+    if (best) {
+      const sd = { s0: best.s0, s1: best.s1, nx: best.nx, ny: best.ny };
+      trace(sd.s0, sd.s1, (d) => loopOffset(sd, d), sd.nx, sd.ny);
+      c.setLineDash([S * 0.35, S * 0.25]);
+      c.strokeStyle = '#fff5cc';
+      c.lineWidth = Math.max(2, S * 0.12);
+      c.stroke();
+      c.setLineDash([]);
+    }
+  }
+
   /** where a good's pile stands in a site's yard, in tiles: the stream of goods runs between it and the wagon at work */
   private pileAnchor(site: Site, good: Good): [number, number] {
     const x = site.cx;
@@ -1265,7 +1463,7 @@ export class Renderer2D {
     const veh = list[work.wagon + 1];
     const st = this.s.stations.find((o) => o.cell === t.at);
     const site = st && this.s.sites.find((o) => o.id === st.siteId);
-    if (!veh || !site) return;
+    if (!veh || !site || st?.crane) return;
     const [ax, ay] = this.pileAnchor(site, good);
     const pile = this.project(ax, ay, 0);
     const c = this.ctx;
@@ -1965,8 +2163,23 @@ export class Renderer2D {
     this.pickFitDue = true;
   }
 
+  /** pick mode for a passing siding begins: the view eases to the best place for the loop, close enough to tap the glowing stretch */
+  beginSidingPick(lineId: number): void {
+    const line = this.s.lines.find((l) => l.id === lineId);
+    this.pickView = { x: this.cam.x, y: this.cam.y, s: this.cam.s };
+    this.pickFitDue = false;
+    this.sidingPick = { lineId };
+    const best = line ? sidingAt(this.s, line) : null;
+    if (!line || !best) return;
+    const mid = this.linePos(line, (best.s0 + best.s1) / 2);
+    this.followId = null;
+    this.glide = { x: mid.x, y: mid.y - mid.lv * LIFT };
+    this.zoomTo = Math.max(this.cam.s, PLAY_S);
+  }
+
   /** pick mode is over: the view the player had comes back unless `keep` */
   endPick(keep: boolean): void {
+    this.sidingPick = null;
     this.pickFitDue = false;
     const v = this.pickView;
     this.pickView = null;
@@ -2081,7 +2294,9 @@ export class Renderer2D {
       if (!drag.loose && drag.options && drag.options.length > 1) this.drawRoute(drag.options[1], OPTION_COLOUR[0], true, false);
       this.drawRoute(drag.route, drag.loose ? 'rgba(255,255,255,.85)' : null, false, false);
     }
+    if (this.sidingPick) this.drawSidingPick();
     this.drawTrains(dt);
+    this.drawCranes(dt);
     // clouds and their shadows over land, track and trains, under the pillars and the HTML overlay
     if (!this.fixed) this.clouds.draw(c, this.dpr, this.time, dt, this.cam.s, this.wholeScale(), !!drag || this.picking || !!this.laying,
       (x) => this.sx(x), (y) => this.sy(y), { w: this.w, h: this.h });
@@ -2157,6 +2372,8 @@ export class Renderer2D {
     const badge = this.label(`badge:${site.id}`, 'badge');
     const makes = MAKES[site.kind];
     const takes = TAKES[site.kind].filter((g) => s.sites.some((o) => MAKES[o.kind] === g));
+    const cts = s.contracts.filter((c) => c.site === site.id);
+    const ctKey = cts.map((c) => c.id).join();
     if (lod) {
       el.style.display = 'none';
       const raw = !!RAW_RATE[site.kind];
@@ -2164,16 +2381,18 @@ export class Renderer2D {
       const town = site.kind === 'town';
       const railed = s.stations.some((st) => st.siteId === site.id);
       const starved = town && railed ? takes.filter((g) => site.store[g] <= 0.001) : [];
-      const key = `b|${makes}|${takes.join()}|${raw}|${mk.kind}|${mk.cost}|${floors.join()}|${starved.join()}|${town && railed && site.size < TOWN_MAX}`;
+      const key = `b|${makes}|${takes.join()}|${raw}|${mk.kind}|${mk.cost}|${floors.join()}|${starved.join()}|${town && railed && site.size < TOWN_MAX}|${ctKey}`;
       let refs = this.tags.get(`badge:${site.id}`);
       if (!refs || refs.key !== key) {
         const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
         const ring = town && railed && site.size < TOWN_MAX ? '<i class="ring"></i>' : '';
-        badge.innerHTML = `<span class="c">${ring}${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => `<span class="wg${floors.includes(g) ? ' floor' : ''}${starved.includes(g) ? ' short' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}`;
-        refs = { key, has: null, wants: [], n: badge.querySelector('.n'), grow: badge.querySelector<HTMLElement>('.ring'), gv: -1 };
+        badge.innerHTML = `<span class="c">${ring}${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => `<span class="wg${floors.includes(g) ? ' floor' : ''}${starved.includes(g) ? ' short' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}${cts.map((c) => `<span class="ct">${this.goodIcon(c.good)}<b></b></span>`).join('')}`;
+        const ctNodes = Array.from(badge.querySelectorAll<HTMLElement>('.ct b'));
+        refs = { key, has: null, wants: [], n: badge.querySelector('.n'), grow: badge.querySelector<HTMLElement>('.ring'), gv: -1, cts: cts.map((c, k) => ({ b: ctNodes[k], c })) };
         this.tags.set(`badge:${site.id}`, refs);
       }
       if (refs.n) this.setText(refs.n, String(Math.floor(site.stock)));
+      for (const ct of refs.cts) this.setText(ct.b, `${ct.c.got}/${ct.c.count}`);
       if (refs.grow && Math.abs(site.growth - refs.gv) > 0.004) {
         refs.grow.style.setProperty('--g', String(Math.round(site.growth * 1000) / 1000));
         refs.gv = site.growth;
@@ -2189,13 +2408,15 @@ export class Renderer2D {
     const rail = mk.kind === 'start' ? RAIL_BADGE : '';
     const town = site.kind === 'town';
     const railed = s.stations.some((st) => st.siteId === site.id);
-    const key = `t|${makes}|${takes.join()}|${mk.kind}|${mk.cost}|${site.size}|${town && railed}`;
+    const key = `t|${makes}|${takes.join()}|${mk.kind}|${mk.cost}|${site.size}|${town && railed}|${ctKey}`;
     let refs = this.tags.get(`site:${site.id}`);
     if (!refs || refs.key !== key) {
       let html = `<div class="name">${rail}${tt(site.name)}${town ? ` <small>${site.size}</small>` : ''}${cost}</div>${town && railed && site.size < TOWN_MAX ? '<div class="grow"><i></i></div>' : ''}<div class="chips">`;
       if (makes) html += `<span class="chip has">${this.goodIcon(makes)}<b></b><i></i></span>`;
       for (const g of takes) html += `<span class="chip wants">${this.goodIcon(g)}<b></b><i></i>${town ? '<em>!</em>' : ''}</span>`;
+      for (const c of cts) html += `<span class="chip contract">${this.goodIcon(c.good)}<b></b><small>${c.deadline}</small></span>`;
       el.innerHTML = html + '</div>';
+      const ctNodes = Array.from(el.querySelectorAll<HTMLElement>('.chip.contract b'));
       const chips = Array.from(el.querySelectorAll<HTMLElement>('.chip.wants'));
       const has = el.querySelector<HTMLElement>('.chip.has');
       refs = {
@@ -2205,9 +2426,11 @@ export class Renderer2D {
         n: null,
         grow: el.querySelector<HTMLElement>('.grow i'),
         gv: -1,
+        cts: cts.map((c, k) => ({ b: ctNodes[k], c })),
       };
       this.tags.set(`site:${site.id}`, refs);
     }
+    for (const ct of refs.cts) this.setText(ct.b, `${ct.c.got}/${ct.c.count}`);
     if (refs.has) {
       this.setText(refs.has.b, String(Math.floor(site.stock)));
       refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / RAW_CAP)}%`;
@@ -2389,7 +2612,11 @@ export class Renderer2D {
         if (f.grew) {
           const name = tt(this.s.sites.find((o) => o.id === f.grew!.site)!.name);
           el.textContent = tr(`${name} kasvaa kokoon ${f.grew.size}`, `${name} grows to ${f.grew.size}`);
-        } else el.textContent = f.text;
+        } else if (f.lost) {
+          el.classList.add('lost');
+          el.textContent = tr('Sopimus raukesi', 'Contract lost');
+        } else if (f.busy) el.textContent = tr('Juna on tiellä', 'A train is in the way');
+        else el.textContent = f.text;
         this.overlay.appendChild(el);
         this.floatEls.set(f, el);
       }

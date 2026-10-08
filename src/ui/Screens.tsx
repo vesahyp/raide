@@ -70,7 +70,7 @@ function Backdrop() {
       acc += real;
       for (let n = 0; acc >= DT && n < 8; n++, acc -= DT) {
         s.cash = 1e6;
-        if (s.yearEnd) closeYearEnd(s, 'forest');
+        if (s.yearEnd) closeYearEnd(s);
         s.result = null;
         step(s);
       }

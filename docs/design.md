@@ -200,7 +200,7 @@ nothing. A hand icon shows a drag from the forest station to the sawmill.
    the first boards arrive in town. Cash goes up with a sound and a number
    that floats off the station.
 4. The year ends. The year-end card shows income, upkeep, profit, and one
-   choice: a third train, a longer station, or a new engine. Pick one.
+   contract on offer: take it or skip it.
 
 That is the whole game in miniature: haul, refine, deliver, grow. Target time
 to the first paid delivery: under 90 seconds. The first map cannot be lost.
@@ -341,14 +341,41 @@ The dwell is what a station's upgrades buy down. They are bought on the
 station's card, per station, because a crane belongs at one sawmill and
 not on the whole map:
 
-| Upgrade | Does | Where |
-|---------|------|-------|
-| Loading crew | Every wagon loads and unloads a third faster | Any station |
-| Crane | Timber, boards and grain load and unload twice as fast | Forest, sawmill, farm, mill; needs the crew |
-| Longer platform | One more train can stand at the station, and trains up to six wagons fit | Any station |
+| Upgrade | Does | Where | Price |
+|---------|------|-------|-------|
+| Loading crew | Every wagon loads and unloads a third faster | Any station | 60 |
+| Crane | Timber, boards and grain load and unload twice as fast; flour does not | Forest, sawmill, farm, mill; needs the crew | 150 |
+| Second and third platform | One more train can stand at the station | Any station | 80, 160 |
+| Passing siding | Two trains on one line pass each other | A straight stretch of a line | 120 |
 
-The crew is the first of them; the crane and the platform follow it. The
-numbers are starting values for the bot to tune.
+All four are built, bought on the card of the station or the line they
+belong to. The prices are in `src/game/content/economy.ts`.
+
+The **crane** is a timber derrick on the platform. Its foot rolls along the
+platform to the wagon at work, the boom swings toward that wagon, and the
+load rides on the hook between the wagon and the yard's pile. A wagon takes
+the crane a fifth of a second. It stands only where a crew is bought, and
+only a raw site or a refinery can have one.
+
+A **passing siding** is a loop beside a line with points at both ends. It
+lies on a straight, dry stretch that keeps six tiles of main line clear of
+each station, and it is as long as the longest train the game allows (an
+engine and four wagons) plus the two gaps at the points. A line has one.
+The line card has a "Passing siding" row; Buy puts the line in pick mode,
+the valid stretch glows green and a tap places the loop, or "Best place"
+puts it in the middle of the longest straight. The rule it changes: on a
+line with a siding the block is two blocks. A train that finds the track
+ahead taken goes into the loop and waits there, wholly on it, until the
+other has passed; otherwise it runs straight through. At most two trains of
+the line run at once, and a train bought for the line stands at the end
+that has fewer of them, so two trains start at opposite ends and meet at the
+siding. With two platforms at each end two trains make about 1.8 times the
+trips of one (the sim-check holds it between 1.6 and 2.0); without the siding
+the second train adds a tenth. The line card and the buy card show the
+trips a year with and without it. Lines that share track with a siding line
+keep the old block rule against it, so a siding line yields to a waiting
+train of a neighbour: the siding helps its own line and takes turns with the
+rest.
 
 A **town** has a size from 1 to 5 and keeps a **store** of each good it
 takes (Vesa, 2026-10-08: "What happens to goods at stations? They just
@@ -390,12 +417,31 @@ new work for the player.
 ### Money and goals
 
 The economy and the minute-to-minute loop are planned in
-`docs/economy.md` (2026-10-08); it replaces the year-end perks and the
-train cap described elsewhere in this file once Vesa says yes.
+`docs/economy.md` (2026-10-08). The year-end perks and the train cap are
+gone: everything the player improves is bought with money where the
+bottleneck is, and the year end offers a contract.
 
-- Cash, one loan with 5 % yearly interest, a loan ceiling that rises with
-  net worth. The year-end card is the only report: income by good, upkeep,
-  interest, profit, net worth, and one upgrade choice.
+- Cash, one loan with 8 % yearly interest, a loan ceiling that rises with
+  net worth. The year-end card is the only report: income by good, the
+  costs, interest, profit, net worth, the towns that grew, and one contract.
+- **Contracts** replace the year-end perks. At each year end the sim offers
+  one: a town or industry on the map that the player serves poorly (a
+  town whose store of the good is under a quarter full, a refinery that took
+  next to nothing lately), a good it takes that the map makes, a count of
+  loads, a deadline at the end of next year and a reward. The count is about
+  what one train on a sensible line carries in eight months, with the three
+  trips in four a busy map allows (a few loads on Harju's long lines); the
+  reward is 40 % of what those loads pay at full price, paid on top of the
+  loads' own pay. The card reads "Lahti wants 3 loads of boards by the end
+  of 1863: 65 on delivery" with Take and Skip. The site is picked by a
+  seeded draw from the scenario and the year, so a run replays. At most two
+  are held at once, and none is offered while two are. A taken contract shows
+  on the target's label (the good's icon, loads so far over the count, the
+  year) and as a line under the goal in the HUD. The load that reaches the
+  count pays the reward with a float. A contract that is not done by its
+  year is lost at no cost, with a short "Contract lost" float and a line on
+  the year-end card. The reward is a bonus line in the ledger and counts in
+  the profit, not in the income by good.
 - Scenarios have one goal and a year limit, shown at the top at all times.
   The sandbox has no goal; it shows net worth and the era.
 - Net worth at a scenario's end gives one to three stars. Stars are the
