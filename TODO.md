@@ -67,4 +67,22 @@ stops, autosave, stars in DynamoDB, the sandbox.
 - Scenario stars in DynamoDB behind one Lambda, once there is a records
   screen to show them on.
 - The tracking rollup and the stats board, copied from sora once it has one.
-- The name: Raide, Veturi or Ratapiha.
+- The name: Raide, Veturi or Ratapiha.## Now: the overnight push (2026-10-08 to 09)
+
+Vesa: "I hope to have a good game by morning." Harju was played by touch
+on an iPhone 16 after the economy plan's five steps shipped (build Iloinen
+Satama). What works: the first ten minutes, and tight money in the early
+years. The three things that most stop it being a good game, fixed in this
+order, each deployed and replayed:
+
+1. **The player loses the thread mid-game.** The thumb sat on 1400 to 3000
+   cash from 1868 while Myllykylä held 20 flour with no line out and every
+   town stayed at size 1. Nothing says what is stuck or what to do next;
+   the goal chip "Size 3 0/2" names no town and no missing good.
+2. **Half the map and the first choice do not matter.** Korpela, Niittylä,
+   Peltola and Lahti get no deliveries in the bot's game; which forest to
+   start from changes nothing.
+3. **Dead time.** Long stretches where nothing needs the player, and no
+   way to run the clock faster.
+
+
