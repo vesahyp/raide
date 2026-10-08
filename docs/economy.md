@@ -1,6 +1,6 @@
 # The economy and the loop
 
-Status: a plan for Vesa's yes, 2026-10-08. Nothing here is built yet. When
+Status: Vesa said yes on 2026-10-08; being built in the order below. When
 it is built, the numbers move into `src/game/content/economy.ts` and the
 rules into `docs/design.md`, and this file keeps only what is still ahead.
 
@@ -109,6 +109,32 @@ wants 8 loads of flour in 1866: 150 on delivery." Take it or not. A
 contract points the player at a part of the map they have not used, and
 taking one is a promise with a cost. This replaces the perk choice.
 
+## What delivered goods do at a town
+
+Vesa, 2026-10-08: "What happens to goods at stations? They just seem to
+disappear with no impact. Then suddenly randomly the city grows if 3/3 on
+both?" Today a delivery goes into a hidden counter that sets the price,
+and a second counter that resets every year decides growth in one jump at
+the year end. Both become things on the map:
+
+- **The town keeps a store** of each good it takes, drawn as the pile by
+  its station (board stacks, flour sacks). A delivery adds to it; the
+  town uses it up every month, faster the bigger the town, and the player
+  sees the pile shrink and handcarts carry it into the streets.
+- **The price follows the store.** A full store pays little, an empty one
+  pays full price. The chip says why: its bar is the store, not an
+  abstract demand. A town that is flooded shows a full pile and a low
+  price at the same time.
+- **Growth is a meter, not a jump.** Every month the town is supplied
+  when its store of each good it wants is not empty: a supplied month
+  fills the town's growth meter, a short month drains it a little. The
+  meter is on the town's label at all times, and the town's card says
+  "grows in about 4 months at this supply" or "no flour: not growing".
+  When the meter is full the town grows then, not at the year end, and
+  its new houses rise.
+- **A starved good is marked** on the label in red, so the player sees
+  which good is holding the town back before the year ends.
+
 ## Passengers and mixed trains
 
 - **Passengers and mail** start between towns: each town makes travellers
@@ -157,19 +183,21 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
 
 ## Build order, once Vesa says yes
 
-1. **Money**: running costs per tile, track upkeep, faster price fall,
-   higher prices, the loan, stars from net worth. The cap goes. Bot
-   re-tuned to the checks above. Station queueing with one platform and
-   the waiting train drawn on the line.
-2. **Where the money goes**: platforms, passing sidings, the crane; the
+1. **Money**: running costs per tile, track upkeep, higher prices, the
+   loan, stars from net worth. The cap goes. Bot re-tuned to the checks
+   above. Station queueing with one platform and the waiting train drawn
+   on the line.
+2. **Towns use what they get**: the store, the price from the store, the
+   growth meter, the starved good marked.
+3. **Where the money goes**: platforms, passing sidings, the crane; the
    year-end contract replaces the perks.
-3. **Mixed trains and lines with up to four stops.**
-4. **Passengers and mail** between the three towns.
+4. **Mixed trains and lines with up to four stops.**
+5. **Passengers and mail** between the three towns.
 
 Each step ships on its own and is played before the next starts.
 
-## Open for Vesa
+## Defaults taken
 
-- The loan: in now, or after step 1 is played without it?
-- Contracts at the year end in place of perks: yes, or keep a perk choice?
-- Passengers before mixed trains, or after?
+Vesa said yes without answering three questions; the plan's defaults
+stand until he says otherwise: the loan comes in step 1, the contract
+replaces the year-end perks, mixed trains come before passengers.
