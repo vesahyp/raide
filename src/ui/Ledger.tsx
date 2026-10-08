@@ -9,7 +9,7 @@ import { useState } from 'react';
 import type { Good, SimState, YearEndChoice } from '../game/types';
 import { GOODS } from '../game/types';
 import { goodsOnMap, siteById } from '../game/state';
-import { GOOD_NAME } from '../game/content/economy';
+import { GOOD_NAME, TOWN_MAX } from '../game/content/economy';
 import { tr, t as tt, num } from '../i18n';
 
 const BAR = '#2f4a35';
@@ -80,7 +80,7 @@ function IncomeChart({ income, goods }: { income: Record<Good, number>; goods: G
 function WorthChart({ s }: { s: SimState }) {
   const [tip, setTip] = useState<number | null>(null);
   const pts = [{ label: tr('alku', 'start'), v: s.scenario.cash }, ...s.history.map((h) => ({ label: String(h.year), v: h.worth }))];
-  const H = 104;
+  const H = 90;
   const l = 18;
   const r = 20;
   const top = 20;
@@ -108,6 +108,35 @@ function WorthChart({ s }: { s: SimState }) {
         {num(pts[last].v)}
       </text>
       <TipBox tip={tip !== null ? { x: px(tip), y: py(pts[tip].v), text: `${pts[tip].label}: ${num(pts[tip].v)}` } : null} h={H} />
+    </svg>
+  );
+}
+
+/** each town's growth meter at the year end: a bar from empty to full, the size beside the name */
+function GrowthBars({ s, growth }: { s: SimState; growth: Record<string, number> }) {
+  const towns = s.sites.filter((x) => x.kind === 'town');
+  const row = 15;
+  const h = towns.length * row;
+  const x0 = 96;
+  const room = W - x0 - 40;
+  return (
+    <svg className="chart growth" viewBox={`0 0 ${W} ${h}`} role="img" aria-label={tr('Kaupunkien kasvumittarit', 'Town growth meters')}>
+      {towns.map((t, i) => {
+        const y = i * row;
+        const v = t.size >= TOWN_MAX ? 1 : growth[t.id] ?? t.growth;
+        return (
+          <g key={t.id}>
+            <text x={0} y={y + 11} fontSize={12} fill={INK}>
+              {tt(t.name)} {t.size}
+            </text>
+            <rect x={x0} y={y + 2} width={room} height={row - 5} rx={4} fill={INK} fillOpacity={0.14} />
+            {v > 0 && <rect x={x0} y={y + 2} width={Math.max(8, v * room)} height={row - 5} rx={4} fill="#b8892a" />}
+            <text x={x0 + room + 5} y={y + 11} fontSize={12} fontWeight={800} fill={INK}>
+              {t.size >= TOWN_MAX ? tr('täysi', 'max') : `${Math.round(v * 100)} %`}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -142,6 +171,12 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (c: YearEn
             <h3>{tr('Nettovarallisuus vuosittain', 'Net worth by year')}</h3>
             <WorthChart s={s} />
           </section>
+          {Object.keys(y.growth).length > 0 && (
+            <section className="growth">
+              <h3>{tr('Kaupunkien kasvu', 'Town growth')}</h3>
+              <GrowthBars s={s} growth={y.growth} />
+            </section>
+          )}
           {y.grew.length > 0 && (
             <section className="grew">
               <h3>{tr('Kasvaneet kaupungit', 'Towns that grew')}</h3>

@@ -64,12 +64,14 @@ export interface ScenarioDef {
 export interface Site extends SiteDef {
   /** what the site holds of what it makes (a forest's timber, a sawmill's boards) */
   stock: number;
-  /** what it has taken in over the last months, per good, for the demand curve; decays */
+  /** a refinery's input: what it has taken in over the last months, per good, for the demand curve; decays. Towns use `store` */
   taken: Record<Good, number>;
+  /** a town's store: loads of each good it holds, up to TOWN_STORE_CAP per size, eaten continuously */
+  store: Record<Good, number>;
+  /** a town's growth meter, 0..1: it grows when the meter is full */
+  growth: number;
   /** loads delivered here, all time */
   delivered: number;
-  /** loads delivered this year, per good, for a town's growth */
-  fed: Record<Good, number>;
   /** production rate per month, raised by frequent pickups */
   rate: number;
   /** sim time of the last pickup here, for the served-rate rule */
@@ -176,7 +178,11 @@ export interface Float {
   y: number;
   text: string;
   age: number;
-  kind: 'pay' | 'cost' | 'note';
+  kind: 'pay' | 'cost' | 'note' | 'grow';
+  /** seconds the float stays; 1.6 when missing */
+  life?: number;
+  /** a town that grew: the renderer words it in the player's language */
+  grew?: { site: string; size: number };
 }
 
 export type YearEndChoice = 'wagon' | 'speed' | 'forest';
@@ -196,8 +202,10 @@ export interface YearEnd {
   loan: number;
   worth: number;
   choice: YearEndChoice | null;
-  /** towns that grew this year end */
+  /** towns that grew during the year */
   grew: string[];
+  /** every town's growth meter at the year end, 0..1, by site id */
+  growth: Record<string, number>;
 }
 
 export interface LastBuild {
@@ -260,6 +268,8 @@ export interface SimState {
   goalCount: number;
   /** the scenario's end, set once */
   result: { won: boolean; year: number; cash: number; worth: number; stars: number; reason: 'goal' | 'time' | 'bankrupt' } | null;
+  /** towns that grew since the last year end, site ids */
+  grewYear: string[];
   floats: Float[];
   sounds: string[];
   lastBuild: LastBuild | null;

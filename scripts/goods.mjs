@@ -125,7 +125,7 @@ try {
     for (const [name, v] of Object.entries(states)) {
       await page.evaluate(([id, v]) => {
         const s = window.__sim; const o = s.sites.find((x) => x.id === id); const r = window.__renderer;
-        o.stock = v.stock; o.taken.timber = v.timber; o.taken.grain = v.grain; o.taken.boards = v.boards; o.taken.flour = v.flour;
+        o.stock = v.stock; o.taken.timber = v.timber; o.taken.grain = v.grain; o.taken.boards = v.boards; o.taken.flour = v.flour; if (o.kind === 'town') { const cap = 4 * o.size; o.store.boards = cap * v.boards / 10; o.store.flour = cap * v.flour / 10; }
         r.follow(null); r.setScale(36); r.cam.x = o.cx + 0.5; r.cam.y = o.cy - 2; r.clampCam?.();
       }, [id, v]);
       await page.waitForTimeout(450);

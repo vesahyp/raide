@@ -49,7 +49,7 @@ src/
                         yards; yardOf, siteAt, stationAt, siteById, goodsOnMap
     sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
                         rule, grades (a climb cuts the speed by the engine's climb share and the load),
-                        loading, the full-load wait, paying, demand, town growth at the year end;
+                        loading, the full-load wait, paying, demand, the towns' stores and growth meters;
                         plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/
                         closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
@@ -93,7 +93,8 @@ scripts/
   look.mjs            make look: the bot plays on an emulated iPhone, screenshots in both orientations
                         and one with the camera on a train; the check for a renderer change
   ledger.mjs          make ledger: the nine sites, the year-end charts, a town at sizes 1 to 5 and rising, the chip
-                        price step and the floor, into shots/ledger/
+                        price step and the floor, a town's store, card and growth
+                        meter, a town growing mid-year, the rings on the whole map, into shots/ledger/
   spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
                         check that every running train sits on its rails and that a frame at play zoom
                         takes 12 ms or less; the check for a change to trains, track or the camera

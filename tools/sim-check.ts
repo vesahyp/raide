@@ -7,10 +7,10 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, closeYearEnd, bodyCells, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile } from '../src/game/sim';
+import { step, closeYearEnd, bodyCells, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile } from '../src/game/sim';
 import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot, type YearRecord } from './bot';
-import { YEAR_SECONDS, CREW_PRICE, LOAN_RATE, LIFT_BACK, QUEUE_GAP } from '../src/game/content/economy';
+import { YEAR_SECONDS, CREW_PRICE, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, TOWN_EATS } from '../src/game/content/economy';
 import { GOODS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
 
@@ -92,13 +92,24 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   check(h.cargo === 2 && j.cargo === 2 && j.time < h.time * 0.8, `Jyry takes a full load over the cutting and comes back faster than Hilma (${j.time.toFixed(1)} s against ${h.time.toFixed(1)} s)`);
   // demand falls with deliveries and recovers over months
   const p0 = price(s, 'boards', 'hameenlinna', 10);
-  siteById(s, 'hameenlinna').taken.boards = 4;
+  const town = siteById(s, 'hameenlinna');
+  town.store.boards = storeCap(town);
   const p1 = price(s, 'boards', 'hameenlinna', 10);
-  check(p1 <= p0 * 0.45, `a filled town pays the floor (${p0} -> ${p1})`);
+  check(p1 <= p0 * 0.45, `a full store pays the floor price (${p0} -> ${p1})`);
+  check(Math.abs(siteDemand(town, 'boards') - DEMAND_FLOOR) < 1e-9, 'and the demand is exactly the floor');
+  const half = price(s, 'boards', 'hameenlinna', 10);
+  town.store.boards = storeCap(town) / 2;
+  const pHalf = price(s, 'boards', 'hameenlinna', 10);
+  check(pHalf < p0 && pHalf > half, `a half store pays between full price and the floor (${p0}, ${pHalf}, ${half})`);
+  town.store.boards = storeCap(town);
   s.cash = 9999;
-  for (let k = 0; k < 60 * YEAR_SECONDS * 0.9; k++) step(s);
+  const eatMonths = storeCap(town) / (TOWN_EATS * town.size);
+  for (let k = 0; k < 60 * YEAR_SECONDS * (eatMonths / 12 + 0.1); k++) {
+    step(s);
+    if (s.yearEnd) closeYearEnd(s, 'wagon');
+  }
   const p2 = price(s, 'boards', 'hameenlinna', 10);
-  check(p2 === p0, `the price recovers within the year (${p1} -> ${p2})`);
+  check(p2 === p0 && town.store.boards === 0, `the town eats a full store in ${eatMonths.toFixed(0)} months and the price is full again (${p1} -> ${p2})`);
   // a train set to wait for a full load waits
   const l2 = s.lines.find((l) => l.path[0] === cell(s, 'forest'))!;
   siteById(s, 'forest').stock = 1;
@@ -338,6 +349,51 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
   for (let k = 0; k < 60 * 20 && second.parked; k++) step(s);
   check(!second.parked, 'with two platforms at each end the parked train goes into service');
   check(lineYear(s, lf).trips > one.trips, `and the line makes more trips (${one.trips.toFixed(1)} to ${lineYear(s, lf).trips.toFixed(1)})`);
+}
+
+// a town's store and growth meter: supplied every month it grows inside GROW_MONTHS + 1 months; missing one good it never grows
+{
+  const run = (feed: (t: ReturnType<typeof siteById>) => void, months: number) => {
+    const s = createState(HARJU);
+    const t = siteById(s, 'tampere');
+    const out = { grewAt: -1, size: t.size, growth: 0, floats: 0, sounds: 0, month: 0 };
+    const stop = Math.round(60 * (YEAR_SECONDS / 12) * months);
+    for (let k = 0; k < stop; k++) {
+      feed(t);
+      step(s);
+      if (s.yearEnd) closeYearEnd(s, 'wagon');
+      if (t.size > out.size && out.grewAt < 0) out.grewAt = Math.round(s.time / (YEAR_SECONDS / 12) * 10) / 10;
+      if (s.floats.some((f) => f.kind === 'grow' && f.grew?.site === 'tampere')) out.floats++;
+      out.growth = t.growth;
+    }
+    out.size = t.size;
+    return out;
+  };
+  const fed = run((t) => { t.store.boards = storeCap(t); t.store.flour = storeCap(t); }, GROW_MONTHS + 2);
+  check(fed.size === 2 && fed.grewAt > 0 && fed.grewAt <= GROW_MONTHS + 1 && fed.floats > 0, `a town supplied every month grows inside ${GROW_MONTHS + 1} months, with a float over it (grew at month ${fed.grewAt})`);
+  const half = run((t) => { t.store.boards = storeCap(t); t.store.flour = 0; }, 40);
+  check(half.size === 1 && half.growth === 0, `a town missing one good never grows (size ${half.size} after 40 months, meter ${half.growth})`);
+  // the meter fills in whole steps, a short month drains a smaller one, never below zero
+  const s = createState(HARJU);
+  const t = siteById(s, 'tampere');
+  t.store.boards = 3;
+  t.store.flour = 3;
+  const m0 = s.month;
+  while (s.month === m0) step(s);
+  const up = t.growth;
+  t.store.flour = 0;
+  const m1 = s.month;
+  while (s.month === m1) step(s);
+  check(Math.abs(up - 1 / GROW_MONTHS) < 1e-9 && t.growth < up && t.growth >= 0, `a supplied month fills ${(100 / GROW_MONTHS).toFixed(1)} % of the meter and a short month drains less (${up.toFixed(3)} then ${t.growth.toFixed(3)})`);
+  t.growth = 0.01;
+  t.store.boards = 0;
+  const m2 = s.month;
+  while (s.month === m2) step(s);
+  check(t.growth === 0, 'and the meter never goes below zero');
+  // a delivery adds a load to the store and the store is capped
+  const h = siteById(s, 'hameenlinna');
+  h.store.boards = 0;
+  check(storeCap(h) === 4 * h.size, `the store cap is ${storeCap(h)} loads for size ${h.size}`);
 }
 
 // the bot wins both scenarios

@@ -350,12 +350,37 @@ not on the whole map:
 The crew is the first of them; the crane and the platform follow it. The
 numbers are starting values for the bot to tune.
 
-A **town** has a size from 1 to 5. It grows when goods and passengers are
-delivered to it over a year and shrinks when they stop. Each size adds
-buildings on the map, more passengers, more consumption, and at sizes 3 and
-5 a new demand (first iron, then paper). A size 4 town founds a new industry
-nearby. Growth is the visible reward for a working network and the thing
-that keeps demand moving.
+A **town** has a size from 1 to 5 and keeps a **store** of each good it
+takes (Vesa, 2026-10-08: "What happens to goods at stations? They just
+seem to disappear with no impact."):
+
+- A delivery adds a load to the store. The store holds 4 loads per size.
+  The town eats 0.25 loads a month per size from each store, a little
+  every tick. The pile by the station is the store, and handcarts carry
+  goods from it into the streets while the town eats.
+- The price follows the store: full price when it is empty, the floor
+  price when it is full. The chip's bar is the store and the number beside
+  it is the price. A full store and the floor price show red.
+- Growth is a **meter** from 0 to 1 on the town's label, a ring round its
+  badge on the whole map. At each month's start, if every good the town
+  wants that the map makes has stock in its store, the month is supplied
+  and the meter gains one eighth. A short month takes one 24th off, never
+  below zero. When the meter is full the town grows then, not at the year
+  end: the houses rise, the meter resets, a float names the town and its
+  new size.
+- A good whose store is empty is marked on its chip in red with a "!", so
+  the player sees which good holds the town back. The town's card says
+  "grows in about N months at this supply" or "no flour: not growing".
+- Each size adds buildings, a bigger store and more eating. The year-end
+  ledger lists the towns that grew and every town's meter.
+- Refineries keep their own input model: loads taken in lately set the
+  price and decay each month. A shared store would have changed the
+  mill and sawmill balance for no gain.
+
+Passengers, shrinking, and a new demand at sizes 3 and 5 (first iron,
+then paper) are later steps. A size 4 town founds a new industry nearby.
+Growth is the visible reward for a working network and the thing that
+keeps demand moving.
 
 **Industries** change over time. A raw site that goes unserved for three
 years shows a warning and closes a year later. A served chain spawns a new

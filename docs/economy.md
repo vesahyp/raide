@@ -1,8 +1,6 @@
 # The economy and the loop
 
-Status: Vesa said yes on 2026-10-08; being built in the order below. Step 1 is built (money, loan, net worth stars, running costs, upkeep, lifting, one platform per station with a queue on the line); its numbers are in `economy.ts`. Where it differs from the plan: a second train on a line with one platform per end is parked on a siding and adds no trips, because two trains on one single track cannot swap ends; a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones. When
-it is built, the numbers move into `src/game/content/economy.ts` and the
-rules into `docs/design.md`, and this file keeps only what is still ahead.
+Status: Vesa said yes on 2026-10-08. Steps 1 and 2 are built; steps 3 to 5 are ahead. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, one platform per station with a queue on the line, and for towns a store of 4 loads per size, eating 0.25 loads a month per size, and a growth meter that fills in 8 supplied months. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store. The rules of the towns are in `docs/design.md`, "Stations and towns".
 
 ## Why this file
 
@@ -111,29 +109,11 @@ taking one is a promise with a cost. This replaces the perk choice.
 
 ## What delivered goods do at a town
 
-Vesa, 2026-10-08: "What happens to goods at stations? They just seem to
-disappear with no impact. Then suddenly randomly the city grows if 3/3 on
-both?" Today a delivery goes into a hidden counter that sets the price,
-and a second counter that resets every year decides growth in one jump at
-the year end. Both become things on the map:
-
-- **The town keeps a store** of each good it takes, drawn as the pile by
-  its station (board stacks, flour sacks). A delivery adds to it; the
-  town uses it up every month, faster the bigger the town, and the player
-  sees the pile shrink and handcarts carry it into the streets.
-- **The price follows the store.** A full store pays little, an empty one
-  pays full price. The chip says why: its bar is the store, not an
-  abstract demand. A town that is flooded shows a full pile and a low
-  price at the same time.
-- **Growth is a meter, not a jump.** Every month the town is supplied
-  when its store of each good it wants is not empty: a supplied month
-  fills the town's growth meter, a short month drains it a little. The
-  meter is on the town's label at all times, and the town's card says
-  "grows in about 4 months at this supply" or "no flour: not growing".
-  When the meter is full the town grows then, not at the year end, and
-  its new houses rise.
-- **A starved good is marked** on the label in red, so the player sees
-  which good is holding the town back before the year ends.
+Built (step 2). Vesa, 2026-10-08: "What happens to goods at stations? They
+just seem to disappear with no impact. Then suddenly randomly the city
+grows if 3/3 on both?" The town now keeps a store, the price follows the
+store, and growth is a meter. The rules are in `docs/design.md`, "Stations
+and towns".
 
 ## Passengers and mixed trains
 
@@ -183,12 +163,12 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
 
 ## Build order, once Vesa says yes
 
-1. **Money**: running costs per tile, track upkeep, higher prices, the
+1. **Money** (built): running costs per tile, track upkeep, higher prices, the
    loan, stars from net worth. The cap goes. Bot re-tuned to the checks
    above. Station queueing with one platform and the waiting train drawn
    on the line.
-2. **Towns use what they get**: the store, the price from the store, the
-   growth meter, the starved good marked.
+2. **Towns use what they get** (built): the store, the price from the
+   store, the growth meter, the starved good marked.
 3. **Where the money goes**: platforms, passing sidings, the crane; the
    year-end contract replaces the perks.
 4. **Mixed trains and lines with up to four stops.**

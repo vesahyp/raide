@@ -84,21 +84,29 @@ maksanut tänä vuonna.
 maatila kasvattaa viljaa, mylly jauhaa siitä jauhoja. Kaupungit ostavat
 laudat ja jauhot. Varasto näkyy pinona radan vieressä ja kuorma vaunuissa.
 Jokainen toimitus maksaa heti, ja luku lentää asemalta.
-Hinta laskee, kun kaupunki täyttyy, ja nousee taas kuukausien mittaan, ja
-isompi kaupunki syö enemmän. Napauta mitä tahansa paikkaa, niin näet mitä
+Kaupunki pitää kustakin tavarasta varastoa: toimitus lisää yhden kuorman,
+ja kaupunki syö varastoa koko ajan, isompi enemmän. Varasto näkyy pinona
+aseman vieressä, ja kärryt vievät tavaraa pinosta kaduille. Tyhjän varaston
+hinta on täysi ja täyden varaston hinta on alin, joten ylitarjonta
+halpenee. Hinnan vieressä oleva palkki on varasto. Napauta mitä tahansa paikkaa, niin näet mitä
 sillä on, mitä se haluaa ja mitä se maksaa nyt, keille sen tavara kelpaa
 ja millä hinnalla, ja miksi se seisoo, jos seisoo. Kortin **Vedä rata
 täältä** -napista kartta näyttää, minne radan voi vetää; napauta kohdetta,
 niin rata rakentuu.
 
-**Kaupunki kasvaa**, kun se saa vuodessa tarpeeksi jokaista tavaraa, jota
-kartalla tehdään: kolme kuormaa lautoja ja kolme jauhoja. Talot
-lisääntyvät, ja kirkko nousee koossa kaksi.
+**Kaupunki kasvaa mittarilla.** Jokaisen kuukauden alussa kaupunki saa
+kasvua, jos sen varastossa on kaikkea, mitä kartalla tehdään (laudat ja
+jauhot). Noin kahdeksan hyvää kuukautta täyttää mittarin, ja kaupunki kasvaa
+heti, kesken vuoden: talot nousevat ja ruudulle tulee teksti. Huono kuukausi
+syö mittaria vähän. Mittari näkyy kaupungin nimen alla (koko kartalla
+kehänä nimikilven ympärillä), ja jos varasto on tyhjä, sen tavaran kuvake on
+punainen ja siinä on huutomerkki. Kaupungin kortti kertoo, kauanko kasvuun
+menee tällä tarjonnalla tai mitä puuttuu.
 
 **Vuosi on puolitoista minuuttia.** Vuoden lopussa tilikirja näyttää
 tulot, kulut jaettuna ajoon, veturien ylläpitoon, radan ylläpitoon ja korkoon,
 voiton, kassan, lainan ja nettovarallisuuden, kertoo mitkä kaupungit
-kasvoivat, ja annat yhden valinnan: vaunu lisää jokaiseen junaan,
+kasvoivat ja kunkin kasvumittarin, ja annat yhden valinnan: vaunu lisää jokaiseen junaan,
 nopeammat veturit tai tuottoisampi maa. Jokaisen voi ottaa kerran.
 
 ## Kentät

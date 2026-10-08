@@ -11,8 +11,8 @@ import { GOODS } from './types';
 import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, STATION_COST, type Route } from './grid';
 import { siteAt, stationAt, siteById, goodsOnMap, zeroGoods } from './state';
 import {
-  BANKRUPT_YEARS, BASE_PRICE, BRIDGE_UPKEEP, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, CREW_CUT, CREW_PRICE, GROW_NEED, LIFT_BACK, LOAN_BASE, LOAN_RATE, LOAN_SHARE, MAKES, MILL_EATS, MONTHS,
-  PERK_FOREST, PERK_SPEED, PLATFORM_PRICE, PLATFORMS_START, QUEUE_GAP, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, PATIENCE_SECONDS, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, TRACK_UPKEEP, UNDO_SECONDS,
+  BANKRUPT_YEARS, BASE_PRICE, BRIDGE_UPKEEP, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, CREW_CUT, CREW_PRICE, GROW_LOSS, GROW_MONTHS, LIFT_BACK, LOAN_BASE, LOAN_RATE, LOAN_SHARE, MAKES, MILL_EATS, MONTHS,
+  PERK_FOREST, PERK_SPEED, PLATFORM_PRICE, PLATFORMS_START, QUEUE_GAP, RAW_CAP, RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, PATIENCE_SECONDS, STOP_SECONDS, TAKES, TOWN_EATS, TOWN_MAX, TOWN_STORE_CAP, TRACK_UPKEEP, UNDO_SECONDS,
   WAGON_DWELL, WAGON_GOODS, WAGON_LEN, WAGON_PRICE, WAGON_RUN, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS,
 } from './content/economy';
 
@@ -240,6 +240,52 @@ export function demand(taken: number): number {
   return 1 - (1 - DEMAND_FLOOR) * Math.min(1, taken / DEMAND_FILL);
 }
 
+/** a town's cap for a good, in loads: it grows with the town */
+export function storeCap(site: Site): number {
+  return TOWN_STORE_CAP * Math.max(1, site.size);
+}
+
+/** how full a town's store of a good is, 0 empty to 1 full */
+export function storeFill(site: Site, good: Good): number {
+  return Math.min(1, site.store[good] / storeCap(site));
+}
+
+/** how full a site is of a good it takes, 0 to 1: a town by its store, a refinery by what it took in lately */
+export function fillOf(site: Site, good: Good): number {
+  return site.kind === 'town' ? storeFill(site, good) : Math.min(1, site.taken[good] / DEMAND_FILL);
+}
+
+/** the demand a site pays at for a good now: 1 when it is empty of it, down to the floor when full */
+export function siteDemand(site: Site, good: Good): number {
+  return 1 - (1 - DEMAND_FLOOR) * fillOf(site, good);
+}
+
+/** the goods a town wants that the map makes: what a town needs in store to grow */
+export function wantedGoods(s: SimState): Good[] {
+  return goodsOnMap(s).filter((g) => TAKES.town.includes(g));
+}
+
+/** loads of each good a town eats a month */
+export function eatsPerMonth(site: Site): number {
+  return TOWN_EATS * site.size;
+}
+
+/**
+ * A town's growth at its present stock: the months until it grows if every month stays supplied,
+ * the good that is missing now, and the good whose store runs out before that (with the months it lasts).
+ */
+export function growthOutlook(s: SimState, site: Site): { months: number; missing: Good | null; runsOut: { good: Good; months: number } | null } {
+  const wanted = wantedGoods(s);
+  const missing = wanted.find((g) => site.store[g] <= 0.001) ?? null;
+  const months = Math.ceil((1 - site.growth) * GROW_MONTHS - 1e-9);
+  let runsOut: { good: Good; months: number } | null = null;
+  for (const g of wanted) {
+    const last = site.store[g] / eatsPerMonth(site);
+    if (last < months && (!runsOut || last < runsOut.months)) runsOut = { good: g, months: last };
+  }
+  return { months, missing, runsOut };
+}
+
 export function distanceFactor(cells: number): number {
   return 1 + (DIST_BONUS - 1) * Math.min(1, cells / DIST_CAP);
 }
@@ -247,7 +293,7 @@ export function distanceFactor(cells: number): number {
 /** what one load of a good pays at a site right now, carried over a line of this length */
 export function price(s: SimState, good: Good, siteId: string, lineLength: number): number {
   const site = siteById(s, siteId);
-  return Math.round(BASE_PRICE[good] * demand(site.taken[good]) * distanceFactor(lineLength));
+  return Math.round(BASE_PRICE[good] * siteDemand(site, good) * distanceFactor(lineLength));
 }
 
 /**
@@ -809,8 +855,37 @@ function monthTick(s: SimState): void {
       site.rate += (target - site.rate) * 0.5;
       site.stock = Math.min(RAW_CAP, site.stock + site.rate);
     }
-    const eats = site.kind === 'town' ? TOWN_EATS * site.size : MILL_EATS;
-    for (const g of GOODS) site.taken[g] = Math.max(0, site.taken[g] - eats);
+    if (site.kind === 'town') growMonth(s, site);
+    else for (const g of GOODS) site.taken[g] = Math.max(0, site.taken[g] - MILL_EATS);
+  }
+}
+
+/**
+ * A town's month. If every good it wants had stock in its store at the month's start, the growth
+ * meter fills by 1 / GROW_MONTHS; a short month drains a smaller step, never below zero. A full
+ * meter grows the town then, with a float over it and a sound.
+ */
+function growMonth(s: SimState, site: Site): void {
+  if (site.size >= TOWN_MAX) return;
+  const wanted = wantedGoods(s);
+  const supplied = wanted.length > 0 && wanted.every((g) => site.store[g] > 0.001);
+  site.growth = supplied ? site.growth + 1 / GROW_MONTHS : Math.max(0, site.growth - GROW_LOSS);
+  if (site.growth < 1 - 1e-9) return;
+  site.growth = 0;
+  site.size++;
+  site.grewAt = s.year;
+  s.grewYear.push(site.id);
+  s.floats.push({ x: site.cx + 0.5, y: site.cy - 3.5, text: '', age: 0, kind: 'grow', life: 3.4, grew: { site: site.id, size: site.size } });
+  s.sounds.push('grow');
+}
+
+/** the towns eat from their stores a little every tick */
+function eatStores(s: SimState): void {
+  const per = DT / (YEAR_SECONDS / MONTHS);
+  for (const site of s.sites) {
+    if (site.kind !== 'town') continue;
+    const eat = eatsPerMonth(site) * per;
+    for (const g of GOODS) if (site.store[g] > 0) site.store[g] = Math.max(0, site.store[g] - eat);
   }
 }
 
@@ -881,9 +956,9 @@ function tickDock(s: SimState, t: Train): boolean {
     t.earnedYear += pay;
     lineOf(s, t).earnedYear += pay;
     t.paid += pay;
-    site.taken[good] += 1;
+    if (site.kind === 'town') site.store[good] = Math.min(storeCap(site), site.store[good] + 1);
+    else site.taken[good] += 1;
     site.delivered += 1;
-    site.fed[good] += 1;
     t.cargo -= 1;
     t.unloaded += 1;
     if (t.cargo === 0) {
@@ -1027,16 +1102,10 @@ function yearEnd(s: SimState): void {
   s.cash -= interest;
   s.cash = Math.round(s.cash);
   const income = { ...s.income };
-  const grew: string[] = [];
-  const goods = goodsOnMap(s).filter((g) => TAKES.town.includes(g));
-  for (const site of s.sites) {
-    if (site.kind === 'town' && site.size < TOWN_MAX && goods.every((g) => site.fed[g] >= GROW_NEED)) {
-      site.size++;
-      site.grewAt = s.year;
-      grew.push(site.id);
-    }
-    site.fed = zeroGoods();
-  }
+  const grew = s.grewYear;
+  s.grewYear = [];
+  const growth: Record<string, number> = {};
+  for (const site of s.sites) if (site.kind === 'town') growth[site.id] = site.growth;
   const total = GOODS.reduce((a, g) => a + income[g], 0);
   const running = Math.round(s.running);
   const engine = Math.round(s.engineUp);
@@ -1046,7 +1115,7 @@ function yearEnd(s: SimState): void {
   // broke: cash below zero with the loan at its ceiling; two year ends in a row end the scenario
   s.broke = s.cash < 0 && s.loan >= loanCeiling(s) - 0.5 ? s.broke + 1 : 0;
   const worth = Math.round(netWorth(s));
-  s.yearEnd = { year: s.year, income, running, engine, track, interest: owed, upkeep: running + engine, profit, cash: s.cash, loan: s.loan, worth, choice: null, grew };
+  s.yearEnd = { year: s.year, income, running, engine, track, interest: owed, upkeep: running + engine, profit, cash: s.cash, loan: s.loan, worth, choice: null, grew, growth };
   s.history.push({ year: s.year, cash: s.cash, profit, worth, loan: s.loan });
   for (const t of s.trains) {
     t.earnedLast = t.earnedYear;
@@ -1066,7 +1135,7 @@ function yearEnd(s: SimState): void {
   s.year++;
   s.yearFrac = 0;
   s.month = 0;
-  s.sounds.push(grew.length ? 'grow' : 'bell');
+  s.sounds.push('bell');
 }
 
 export function step(s: SimState): void {
@@ -1077,7 +1146,8 @@ export function step(s: SimState): void {
     if (s.lastBuild.left <= 0) s.lastBuild = null;
   }
   for (const f of s.floats) f.age += DT;
-  s.floats = s.floats.filter((f) => f.age < 1.6);
+  eatStores(s);
+  s.floats = s.floats.filter((f) => f.age < (f.life ?? 1.6));
   const frac = s.yearFrac + DT / YEAR_SECONDS;
   const month = Math.floor(frac * MONTHS);
   if (month > s.month && month < MONTHS) {

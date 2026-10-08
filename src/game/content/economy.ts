@@ -32,12 +32,16 @@ export const SERVED_RATE = 1.6;
 /** months without a pickup before the rate starts to fall */
 export const SERVED_MEMORY = 2;
 
-/** a town eats this much of each good a month per size: its demand recovers that fast */
-export const TOWN_EATS = 0.4;
-/** a refinery's input stock decays this much a month: its demand recovers */
+/** a town's store of each good holds this many loads for every size it has; a full store pays the floor price */
+export const TOWN_STORE_CAP = 4;
+/** loads of each good a town eats a month for every size it has, taken continuously from its store */
+export const TOWN_EATS = 0.25;
+/** a refinery keeps its own input model: loads taken in lately set the price, and they decay this much a month */
 export const MILL_EATS = 1.5;
-/** loads of each good on the map a town must take in a year to grow one size */
-export const GROW_NEED = 3;
+/** supplied months (every good the town wants had stock at the month's start) that fill the growth meter */
+export const GROW_MONTHS = 8;
+/** what a short month takes off the growth meter, as a share of the whole meter */
+export const GROW_LOSS = 1 / 24;
 export const TOWN_MAX = 5;
 
 /** what a wagon carries */

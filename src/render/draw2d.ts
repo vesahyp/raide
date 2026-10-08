@@ -852,3 +852,95 @@ export function crew(v: View, x: number, y: number, lv: number): void {
     c.fill();
   }
 }
+
+/**
+ * A handcart on its way from a town's pile into the streets: a wooden bed on one wheel with two
+ * handles behind, a small load on it, a little bob as it is pushed. (x, y) is the middle of the
+ * bed; `dir` is +1 when it heads east and -1 when it heads west, `up` is 1 when it heads north
+ * (away from the viewer), which shows the load's back. The load is boards or flour sacks.
+ */
+export function handcart(v: View, x: number, y: number, dir: number, up: number, good: Good, lv: number, bob: number): void {
+  const { c, S } = v;
+  const X = v.x(x);
+  const Y = v.y(y, lv) - Math.abs(Math.sin(bob)) * S * 0.04;
+  const lw = Math.max(1, S * 0.04);
+  const bw = S * 0.5;
+  const bd = S * 0.3;
+  shadowEll(c, X, Y + S * 0.17, S * 0.34, S * 0.1);
+  // the porter walks behind the bed and holds the handles: a dark coat and a round head
+  c.fillStyle = '#2f4a6a';
+  c.strokeStyle = OUT;
+  c.lineWidth = lw;
+  if (up) {
+    const py = Y + bd * 1.25;
+    c.strokeStyle = '#5b3d1f';
+    c.lineWidth = Math.max(1.2, S * 0.045);
+    c.beginPath();
+    c.moveTo(X - bw * 0.3, Y + bd * 0.4);
+    c.lineTo(X - bw * 0.14, py);
+    c.moveTo(X + bw * 0.3, Y + bd * 0.4);
+    c.lineTo(X + bw * 0.14, py);
+    c.stroke();
+    c.strokeStyle = OUT;
+    c.lineWidth = lw;
+    c.beginPath();
+    c.ellipse(X, py + S * 0.04, S * 0.15, S * 0.1, 0, 0, 7);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#e8c9a0';
+    c.beginPath();
+    c.arc(X, py + S * 0.02, S * 0.08, 0, 7);
+    c.fill();
+    c.stroke();
+  } else {
+    const px = X - dir * bw * 1.05;
+    c.strokeStyle = '#5b3d1f';
+    c.lineWidth = Math.max(1.2, S * 0.045);
+    c.beginPath();
+    c.moveTo(X - dir * bw * 0.5, Y);
+    c.lineTo(px + dir * S * 0.05, Y);
+    c.stroke();
+    c.strokeStyle = OUT;
+    c.lineWidth = lw;
+    c.beginPath();
+    c.ellipse(px, Y - S * 0.02, S * 0.1, S * 0.15, 0, 0, 7);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#e8c9a0';
+    c.beginPath();
+    c.arc(px, Y - S * 0.14, S * 0.08, 0, 7);
+    c.fill();
+    c.stroke();
+  }
+  // the bed
+  c.fillStyle = '#9a6a35';
+  c.strokeStyle = OUT;
+  c.lineWidth = lw;
+  c.beginPath();
+  c.roundRect(X - bw / 2, Y - bd / 2, bw, bd, S * 0.05);
+  c.fill();
+  c.stroke();
+  // the load
+  if (good === 'flour') {
+    for (let i = 0; i < 2; i++) {
+      c.fillStyle = '#f4f0e4';
+      c.beginPath();
+      c.ellipse(X - bw * 0.18 + i * bw * 0.36, Y - bd * 0.18, S * 0.12, S * 0.1, 0, 0, 7);
+      c.fill();
+      c.stroke();
+    }
+  } else {
+    for (let i = 0; i < 3; i++) {
+      c.fillStyle = i % 2 ? '#d9bd84' : '#ead4a0';
+      c.fillRect(X - bw * 0.4, Y - bd * 0.46 - i * S * 0.05, bw * 0.8, S * 0.05);
+      c.strokeRect(X - bw * 0.4, Y - bd * 0.46 - i * S * 0.05, bw * 0.8, S * 0.05);
+    }
+  }
+  // the wheel, at the front
+  c.fillStyle = '#3a2a1a';
+  c.beginPath();
+  if (up) c.arc(X, Y - bd * 0.62, S * 0.07, 0, 7);
+  else c.arc(X + dir * bw * 0.52, Y + bd * 0.28, S * 0.08, 0, 7);
+  c.fill();
+  c.stroke();
+}

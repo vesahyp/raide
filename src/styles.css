@@ -109,6 +109,19 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .chip.wants.chg b { color: #fff; }
 .chip.wants.floor { color: #ff6a58; border-color: #e0392b; }
 .chip.wants.floor i { background: #e0392b; opacity: 1; }
+.chip.wants.low i { background: #e0553f; opacity: 1; }
+/* a good the town has none of: red chip and a small "!" that holds the town back */
+.chip em { display: none; font-style: normal; font: 900 10px/12px var(--f-body); width: 12px; height: 12px; border-radius: 50%; background: #e0392b; color: #fff; text-align: center; margin-left: 1px; }
+.chip.wants.short { border-color: #ffd870; box-shadow: 0 0 0 2px rgba(255, 216, 112, 0.45), 0 2px 0 #0e1710; }
+.chip.wants.short em { display: inline-block; }
+.badge .wd .wg.short { box-shadow: 0 0 0 1.5px #e0392b; background: rgba(224, 57, 43, 0.35); border-radius: 50%; }
+/* a town's growth meter: a thin gold bar under its name, a ring round its badge on the whole map */
+.site-tag .grow { height: 4px; width: 64px; margin: 1px auto 0; border-radius: 2px; background: rgba(20, 20, 15, 0.7); box-shadow: 0 0 0 1px rgba(20, 20, 15, 0.9); overflow: hidden; }
+.site-tag .grow i { display: block; height: 100%; width: 0; background: var(--gold); transition: width 0.6s ease-out; }
+.badge .c .ring { position: absolute; inset: -6px; border-radius: 50%; --g: 0; pointer-events: none;
+  background: conic-gradient(var(--gold) calc(var(--g) * 360deg), rgba(20, 20, 15, 0.55) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); }
 .badge .wd .wg { display: inline-flex; border-radius: 50%; }
 .badge .wd .wg.floor { background: #e0392b; box-shadow: 0 0 0 1.5px #e0392b; }
 .site-tag, .badge { transition: opacity 0.15s; }
@@ -129,6 +142,7 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .float.pay { color: var(--gold); }
 .float.cost { color: #ff9c8c; }
 .float.note { color: #fff; }
+.float.grow { color: var(--gold); font-size: 17px; white-space: nowrap; padding: 4px 10px; border-radius: 12px; background: rgba(27, 42, 30, 0.94); border: 1.5px solid var(--brass); }
 .hand { width: 34px; height: 34px; translate: -50% -50%; border-radius: 50%; border: 3px solid #fff; background: rgba(255, 255, 255, 0.25); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3); transition: opacity 0.2s; }
 .hand::after { content: ''; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #fff; translate: -50% -50%; }
 .plate { display: flex; flex-direction: column; gap: 4px; padding: 7px 12px; border-radius: 14px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; color: var(--bone); white-space: nowrap; }
@@ -284,6 +298,10 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .gline .bar { flex: 1; min-width: 40px; max-width: 120px; height: 10px; border-radius: 5px; background: rgba(239, 230, 207, 0.2); overflow: hidden; }
 .gline .bar i { display: block; height: 100%; background: var(--gold); }
 .gline .bar.low i { background: #e0553f; }
+.store-row { display: flex; flex-direction: column; }
+.site-card .sc small, .store-row small { font-size: 12px; font-weight: 600; color: var(--bone-dim); line-height: 1.3; }
+.site-card .sc small.red, .store-row small.red { color: #ff9c8c; }
+.gline .bar.grow { max-width: 160px; }
 .gline small { font-weight: 600; font-size: 13px; color: var(--bone-dim); white-space: nowrap; }
 .gline.buyer .bn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .gline .link { width: 16px; height: 16px; color: var(--brass); flex: none; }

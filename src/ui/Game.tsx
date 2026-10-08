@@ -7,8 +7,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineId, Good, Line, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
 import { createState, siteById, goodsOnMap, stationAt } from '../game/state';
-import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, demand, goalProgress, lineOf, buyers, moveTrain, buyCrew, dwellAt, canMove, tripTimes, gradeFactor, defaultWagons, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice } from '../game/sim';
-import { CREW_PRICE, ENGINES, ENGINE_LEN, GOOD_NAME, GROW_NEED, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, RAW_CAP, STOP_SECONDS, RAW_RATE, RESALE, TAKES, WAGON_GOODS, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { DT, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, setEngine, setFullLoad, sellTrain, fillOf, storeCap, eatsPerMonth, growthOutlook, goalProgress, lineOf, buyers, moveTrain, buyCrew, dwellAt, canMove, tripTimes, gradeFactor, defaultWagons, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice } from '../game/sim';
+import { HOUSES_PER_SIZE } from '../render/town';
+import { CREW_PRICE, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, TOWN_EATS, TOWN_MAX, TOWN_STORE_CAP, RAW_CAP, STOP_SECONDS, RAW_RATE, RESALE, TAKES, WAGON_GOODS, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
 import { earthWord, gradeText, GRADE_COL, perYear, routeKm, tripsByEngine } from './routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
@@ -864,6 +865,77 @@ const GoodIcon = ({ good }: { good: Good }) => (
   </svg>
 );
 
+/** a good in the sentence "no flour": Finnish partitive, English lower case */
+const NONE_OF: Record<Good, [string, string]> = { timber: ['tukkeja', 'timber'], boards: ['lautoja', 'boards'], grain: ['viljaa', 'grain'], flour: ['jauhoja', 'flour'] };
+/** what a town gets with the next size besides more houses, by the size it reaches */
+const NEXT_GIVES: Record<number, [string, string]> = { 2: ['kirkon', 'a church'], 3: ['toisen kadun', 'a second street'], 4: ['torin', 'a market square'], 5: ['kaupungintalon', 'a town hall'] };
+
+/**
+ * A town's store and growth: per good the store of its cap with a bar, the price now and how much
+ * the town eats a month; the growth meter with the months to the next size at this supply, or the
+ * good that is missing; the size and what the next size gives.
+ */
+function TownRows({ s, site, takes, railed }: { s: SimState; site: Site; takes: Good[]; railed: boolean }) {
+  const cap = storeCap(site);
+  const eats = eatsPerMonth(site);
+  const out = growthOutlook(s, site);
+  const maxed = site.size >= TOWN_MAX;
+  const nextEats = TOWN_EATS * (site.size + 1);
+  const f2 = (x: number): string => String(+x.toFixed(2));
+  const next = NEXT_GIVES[site.size + 1];
+  const none = (g: Good) => tr(`ei ${NONE_OF[g][0]}`, `no ${NONE_OF[g][1]}`);
+  let growText: string;
+  if (maxed) growText = tr('Suurin koko', 'Fully grown');
+  else if (!railed) growText = tr('Ei rataa: ei kasva', 'No railway: not growing');
+  else if (out.missing) growText = `${none(out.missing)}: ${tr('ei kasva', 'not growing')}`;
+  else if (out.runsOut) growText = tr(`Kasvaa noin ${out.months} kk:ssa, jos ${NONE_OF[out.runsOut.good][0]} riittää (varasto loppuu ${Math.floor(out.runsOut.months)} kk:ssa)`, `Grows in about ${out.months} months if the ${NONE_OF[out.runsOut.good][1]} lasts (the store runs out in ${Math.floor(out.runsOut.months)})`);
+  else growText = tr(`Kasvaa noin ${out.months} kk:ssa tällä tarjonnalla`, `Grows in about ${out.months} months at this supply`);
+  return (
+    <>
+      <div className="srow" data-sec="wants">
+        <span className="sl">{tr('Varasto', 'Store')}</span>
+        <div className="sc">
+          {takes.map((g) => (
+            <div key={g} className="store-row">
+              <div className="gline">
+                <GoodIcon good={g} />
+                <b>{site.store[g].toFixed(1)}</b>
+                <span className="of">/{cap}</span>
+                <span className={`bar${fillOf(site, g) > 0.75 ? ' low' : ''}`}>
+                  <i style={{ width: `${100 * fillOf(site, g)}%` }} />
+                </span>
+                <b className="gold">{price(s, g, site.id, 0)}</b>
+              </div>
+              <small className={railed && site.store[g] <= 0.001 ? 'red' : ''}>
+                {tr(`syö ${f2(eats)} kuormaa kuussa`, `eats ${f2(eats)} loads a month`)}
+                {railed && site.store[g] <= 0.001 ? ` · ${tr('tyhjä', 'empty')}` : ''}
+              </small>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="srow" data-sec="growth">
+        <span className="sl">{tr('Kasvu', 'Growth')}</span>
+        <div className="sc">
+          {!maxed && (
+            <div className="gline">
+              <span className="bar grow">
+                <i style={{ width: `${100 * site.growth}%` }} />
+              </span>
+              <small>{Math.round(100 * site.growth)} %</small>
+            </div>
+          )}
+          <small className={!maxed && railed && out.missing ? 'red' : ''}>{growText}</small>
+          <small>
+            {tr('Koko', 'Size')} {site.size}
+            {!maxed && ` ${tr('→', 'to')} ${site.size + 1}: ${tr(`${HOUSES_PER_SIZE} taloa lisää${next ? ` ja ${next[0]}` : ''}, syö ${f2(nextEats)} kuormaa kuussa, varastoon mahtuu ${TOWN_STORE_CAP * (site.size + 1)}`, `${HOUSES_PER_SIZE} more houses${next ? ` and ${next[1]}` : ''}, eats ${f2(nextEats)} loads a month, the store holds ${TOWN_STORE_CAP * (site.size + 1)}`)}`}
+          </small>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /**
  * The site card: what it has, what it wants and pays now, why it is stuck, who buys its output, and
  * a button that starts the track from here (or joins the site to the railway when it has no station).
@@ -903,7 +975,7 @@ function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClos
           </div>
         </div>
       )}
-      {takes.length > 0 && (
+      {takes.length > 0 && site.kind !== 'town' && (
         <div className="srow" data-sec="wants">
           <span className="sl">{tr('Haluaa', 'Wants')}</span>
           <div className="sc">
@@ -911,15 +983,15 @@ function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClos
               <div key={g} className="gline">
                 <GoodIcon good={g} />
                 <b className="gold">{price(s, g, site.id, 0)}</b>
-                <span className={`bar${demand(site.taken[g]) < 0.55 ? ' low' : ''}`}>
-                  <i style={{ width: `${100 * demand(site.taken[g])}%` }} />
+                <span className={`bar${fillOf(site, g) > 0.75 ? ' low' : ''}`}>
+                  <i style={{ width: `${100 * fillOf(site, g)}%` }} />
                 </span>
-                {site.kind === 'town' && <small>{tr('kasvuun', 'to grow')} {Math.min(GROW_NEED, Math.floor(site.fed[g]))}/{GROW_NEED}</small>}
               </div>
             ))}
           </div>
         </div>
       )}
+      {takes.length > 0 && site.kind === 'town' && <TownRows s={s} site={site} takes={takes} railed={hasStation} />}
       {stuck && <p className="stuck">{stuck}</p>}
       {station && (
         <div className="srow" data-sec="crew">
