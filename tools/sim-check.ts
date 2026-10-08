@@ -5,11 +5,11 @@
  * grows only when both goods reach it; demand falls and recovers; trains never share a block;
  * undo gives the cash back.
  */
-import { createState, siteById } from '../src/game/state';
+import { createState, siteById, stationAt } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood } from '../src/game/sim';
+import { stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood } from '../src/game/sim';
 import { idx, route, APPROACH } from '../src/game/grid';
-import { Bot, type YearRecord } from './bot';
+import { Bot, type Step, type YearRecord } from './bot';
 import { YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, TOWN_EATS } from '../src/game/content/economy';
 import { GOODS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
@@ -73,6 +73,9 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
     build(s2, plan(s2, cell(s2, 'sawmill'), cell(s2, 'hameenlinna'))[0]);
     const l = build(s2, plan(s2, cell(s2, 'hameenlinna'), cell(s2, 'farm')).find((o) => o.mode === 'short')!)!;
     const t = buyTrain(s2, l.id, 'hopper', engine)!;
+    // a full train both ways: the line's ends do not trade grain, so the loads are put aboard
+    t.loads = t.wagons.map(() => ({ good: 'grain' as const, from: 0 }));
+    t.cargo = t.wagons.length;
     siteById(s2, 'farm').stock = 6;
     // there and back: the climb is on one side going out and on the other coming home
     let t0 = -1;
@@ -576,18 +579,77 @@ const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s,
 const years: Record<string, YearRecord[]> = {};
 const bots: Record<string, Bot> = {};
 const maxLoan: Record<string, number> = {};
-/** the whole game of one bot: the state it ends in, with the checks that run every frame */
-function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
-  const s = createState(sc);
-  const bot = Bot.for(s, greedy);
-  let overlap = 0;
-  let shared = 0;
-  let apart = 0;
-  const limit = (Math.min(sc.goal.beforeYear, upToYear + 1) - sc.startYear) * YEAR_SECONDS + 10;
-  for (let t = 0; t < limit && !s.result; t += DT) {
-    bot.act(s);
+
+// lines with up to four stops and trains of mixed wagons
+{
+  const s = createState(HARJU);
+  s.cash = 9999;
+  const fs = plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0];
+  const line = build(s, fs)!;
+  check(line.stops.length === 2 && line.legs.length === 1 && line.stopAt.join() === `0,${line.path.length - 1}`, 'a drag builds a line of two stops and one leg');
+  // the drag from the end station offers to lengthen the line: the free side is the one the line does not arrive from
+  const exts = extendable(s, cell(s, 'sawmill'));
+  const side = freeSide(s, line, cell(s, 'sawmill'));
+  check(exts.length === 1 && exts[0] === line && side === 1, 'a drag from the end station of a line offers to lengthen it, leaving on the side the line does not arrive from');
+  const toTown = plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'), side).filter((r) => canExtend(s, r, line.id));
+  check(toTown.length >= 1 && stationAt(s, toTown[0].cells[1] === toTown[0].cells[0] + 1 ? toTown[0].cells[0] : -1) !== undefined, `the lengthening route runs east from Koskensaha (${toTown.map((r) => `${r.mode} ${r.cost}`).join(', ')})`);
+  const cash0 = s.cash;
+  const same = build(s, toTown[0], line.id);
+  check(same === line && line.stops.length === 3 && line.legs.length === 2 && s.lines.length === 1, 'built as an extension it is the same line with three stops and two legs');
+  check(s.cash === cash0 - toTown[0].cost && line.legs[0].block.size > 0 && line.legs[1].block.size > 0 && ![...line.legs[0].block].some((c) => line.legs[1].block.has(c)), 'each leg has its own block, with no cell in common');
+  check(line.stopAt.every((k, i) => line.path[k] === stationAt(s, line.path[k])!.cell && s.stations.find((st) => st.id === line.stops[i])!.cell === line.path[k]) && line.stopAt[1] === line.legs[0].b && line.legs[1].a === line.legs[0].b, 'the middle stop is the end of one leg and the start of the next');
+  check(undo(s) && line.stops.length === 2 && line.legs.length === 1 && s.cash === cash0 && !s.stations.some((st) => st.siteId === 'hameenlinna'), 'undo takes an extension back: the line has two stops again and the cash returns');
+  build(s, toTown[0], line.id);
+  // a line cannot take a station it serves, a fifth stop, or a route over its own track
+  const back = plan(s, cell(s, 'hameenlinna'), cell(s, 'sawmill')).filter((r) => canExtend(s, r, line.id));
+  check(back.length === 0, 'it takes no stop it already has');
+  // the default consist is what the stops make and take
+  check(defaultConsist(s, line).join() === 'flat,flat,box,box' && carryingTypes(s, line).join() === 'flat,box', `the buy card starts with two flat and two box wagons (${defaultConsist(s, line).join(' ')})`);
+  check(wagonWaste(s, line, 'hopper') && !wagonWaste(s, line, 'flat') && !wagonWaste(s, line, 'box'), 'a hopper wagon has nothing to carry on the line from the forest through the sawmill to the town');
+  const routes = wagonRoutes(s, line, 'box');
+  check(routes.length === 1 && routes[0].good === 'boards' && routes[0].from === 1 && routes[0].to === 2, 'box wagons carry boards from the sawmill to the town on it');
+  // a mixed train: timber and boards both reach their buyers in its first year
+  const t = buyTrain(s, line.id, defaultConsist(s, line))!;
+  check(!!t && t.wagons.join() === 'flat,flat,box,box' && t.nWagons === 4 && t.dir === 1 && t.idx === 0, 'a mixed train is bought on it, standing at the first stop');
+  siteById(s, 'forest').stock = 6;
+  const seen = { atSawmill: false, loads: new Set<string>() };
+  for (let k = 0; k < 60 * YEAR_SECONDS && !s.yearEnd; k++) {
     step(s);
-    // two trains never cover the same track cell, except at a station where they stand on their own platform tracks
+    if (t.state === 'stop' && t.at === cell(s, 'sawmill') && t.dock) seen.atSawmill = true;
+    for (const l of t.loads) if (l) seen.loads.add(l.good);
+  }
+  check(s.income.timber > 0 && s.income.boards > 0, `the mixed train delivers timber and boards in its first year (${Math.round(s.income.timber)} for timber, ${Math.round(s.income.boards)} for boards)`);
+  check(seen.atSawmill && seen.loads.has('timber') && seen.loads.has('boards'), 'it unloads and loads at the middle stop, flat wagons carrying timber and box wagons boards');
+  // a wagon that carries nothing is reported as waste, on the train too
+  const s2 = createState(HARJU);
+  s2.cash = 9999;
+  const l2 = build(s2, plan(s2, cell(s2, 'forest'), cell(s2, 'sawmill'))[0])!;
+  build(s2, plan(s2, cell(s2, 'sawmill'), cell(s2, 'hameenlinna'), 1).filter((r) => canExtend(s2, r, l2.id))[0], l2.id);
+  const t2 = buyTrain(s2, l2.id, ['flat', 'hopper', 'box'])!;
+  check(!!t2 && wasteWagons(s2, t2).join() === '1', 'a hopper in the consist of a train on this line is reported as waste');
+  // taking a wagon off gives half its price back
+  const cashW = s2.cash;
+  check(removeWagon(s2, t2.id, 1) && s2.cash === cashW + WAGON_BACK && t2.wagons.join() === 'flat,box' && t2.loads.length === 2 && wasteWagons(s2, t2).length === 0, `a wagon taken off returns half its price (${WAGON_BACK}) and the waste is gone`);
+  check(addWagon(s2, t2.id, 'box') && t2.wagons.join() === 'flat,box,box' && t2.nWagons === 3, 'a wagon of any type is added to a train');
+  check(removeWagon(s2, t2.id, 0) && removeWagon(s2, t2.id, 0) && !removeWagon(s2, t2.id, 0) && t2.nWagons === 1, 'the last wagon of a train cannot be taken off');
+  // a station's platforms count for both directions at a middle stop; the line runs as many trains as its poorest stop has platforms
+  check(lineCapacity(s2, l2) === 1 && lineCapacity(s, line) === 1, 'a three-stop line with one platform at each stop runs one train');
+}
+
+/**
+ * The checks that run every frame of a game: two trains never cover the same track cell (apart from
+ * the station throat, where platform tracks run side by side), no two standing trains share a platform
+ * track, a waiting train stands clear of the station, and how long a train goes without moving or
+ * working (`longest`, in seconds), the proof that no train is stuck.
+ */
+class Watch {
+  overlap = 0;
+  shared = 0;
+  apart = 0;
+  longest = 0;
+  private seen = new Map<number, { mark: string; since: number }>();
+
+  check(s: SimState): void {
     const bodies = s.trains.map((o) => ({ o, cells: bodyCells(s, o, 0) }));
     for (let i = 0; i < bodies.length; i++)
       for (let j = i + 1; j < bodies.length; j++) {
@@ -598,7 +660,7 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
         if (a.o.lineId === b.o.lineId && lineOf(s, a.o).siding) {
           if (a.o.state === 'run' && b.o.state === 'run') {
             const l = lineOf(s, a.o);
-            for (const [x0, x1] of mainPieces(l, a.o)) for (const [y0, y1] of mainPieces(l, b.o)) if (Math.min(x1, y1) - Math.max(x0, y0) > 0.05) overlap++;
+            for (const [x0, x1] of mainPieces(l, a.o)) for (const [y0, y1] of mainPieces(l, b.o)) if (Math.min(x1, y1) - Math.max(x0, y0) > 0.05) this.overlap++;
           }
           continue;
         }
@@ -607,40 +669,108 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
         const trackAt = (o: (typeof s.trains)[number], c: number) => {
           if (o.state === 'stop') return o.slot;
           const l = lineOf(s, o);
-          const nearFirst = dist(c, l.path[0]) <= dist(c, l.path[l.path.length - 1]);
-          return nearFirst === (o.dir === -1) ? o.slot : o.slotFrom;
+          // the stop the cell is nearest to: the platform track the train uses there is the one it runs to or left
+          let near = 0;
+          for (let k = 1; k < l.stops.length; k++) if (dist(c, stopCell(l, k)) < dist(c, stopCell(l, near))) near = k;
+          return near === o.idx + o.dir ? o.slot : o.slotFrom;
         };
         const throat = (c: number) => trackAt(a.o, c) !== trackAt(b.o, c) && s.stations.some((st) => dist(st.cell, c) <= 8);
         for (const c of a.cells) if (b.cells.has(c) && !s.stations.some((st) => st.cell === c) && !throat(c)) {
-          overlap++;
-          if (overlap === 1) console.log(`  overlap at t=${s.time.toFixed(1)} cell ${c}: train ${a.o.id} ${a.o.state}${a.o.queued ? ' queued' : ''} s=${a.o.s.toFixed(1)} dir ${a.o.dir} line ${a.o.lineId} slot ${a.o.slot} at ${a.o.at}; train ${b.o.id} ${b.o.state}${b.o.queued ? ' queued' : ''} s=${b.o.s.toFixed(1)} dir ${b.o.dir} line ${b.o.lineId} slot ${b.o.slot} at ${b.o.at}`);
+          this.overlap++;
+          if (this.overlap === 1) console.log(`  overlap at t=${s.time.toFixed(1)} cell ${c}: train ${a.o.id} ${a.o.state}${a.o.queued ? ' queued' : ''} s=${a.o.s.toFixed(1)} dir ${a.o.dir} line ${a.o.lineId} slot ${a.o.slot} at ${a.o.at}; train ${b.o.id} ${b.o.state}${b.o.queued ? ' queued' : ''} s=${b.o.s.toFixed(1)} dir ${b.o.dir} line ${b.o.lineId} slot ${b.o.slot} at ${b.o.at}`);
         }
       }
-    // and the old rule: one running train at a time on a block
+    // and the old rule: one running train at a time on a block, now a leg's block
     const running = s.trains.filter((o) => o.state === 'run' && !o.queued);
     for (let i = 0; i < running.length; i++)
       for (let j = i + 1; j < running.length; j++) {
         const a = lineOf(s, running[i]);
         const b = lineOf(s, running[j]);
-        if (a === b && !a.siding) overlap++;
+        const la = running[i].dir === 1 ? running[i].idx : running[i].idx - 1;
+        const lb = running[j].dir === 1 ? running[j].idx : running[j].idx - 1;
+        if (a === b && la === lb && !a.siding) this.overlap++;
       }
     // no two trains stand on one platform track of a station
     const seen = new Set<string>();
     for (const o of s.trains)
       if (o.state === 'stop' && o.at !== null) {
         const key = `${o.at}:${o.slot}`;
-        if (seen.has(key)) shared++;
+        if (seen.has(key)) this.shared++;
         seen.add(key);
       }
     // a waiting train stands clear of the station's centre by the longest train it could be waiting for
     for (const o of s.trains) {
       if (!o.queued) continue;
       const line = lineOf(s, o);
-      const end = line.dist[line.dist.length - 1];
-      const front = (o.dir === 1 ? end - o.s : o.s) - drawnLength(o) / 2;
-      if (front < QUEUE_GAP) apart++;
+      const front = (o.dir === 1 ? stopS(line, o.idx + o.dir) - o.s : o.s - stopS(line, o.idx + o.dir)) - drawnLength(o) / 2;
+      if (front < QUEUE_GAP) this.apart++;
+    }
+    // a train is moving or working, or it is not: the longest it goes without either
+    for (const o of s.trains) {
+      if (o.parked) {
+        this.seen.delete(o.id);
+        continue;
+      }
+      const mark = `${o.state}:${o.odometer.toFixed(2)}:${o.cargo}:${o.at}:${o.dock}:${o.idx}`;
+      const prev = this.seen.get(o.id);
+      if (!prev || prev.mark !== mark) this.seen.set(o.id, { mark, since: s.time });
+      else this.longest = Math.max(this.longest, s.time - prev.since);
     }
   }
+}
+
+// no deadlock: Harju's bot runs a four-stop line and a three-stop line, two trains each, for ten years
+{
+  const open = { ...HARJU, startStations: ['korpela', 'tampere', 'mill'], goal: { kind: 'deliver' as const, good: 'boards' as const, site: 'nowhere', count: 1e9, beforeYear: 1999 } };
+  const s = createState(open);
+  s.cash = 9999;
+  const mixed = ['flat', 'flat', 'box', 'box'] as const;
+  const steps: Step[] = [
+    { kind: 'line', from: 'korpela', to: 'forest', mode: 'cheap' },
+    { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap', extend: ['korpela', 'forest'] },
+    { kind: 'line', from: 'sawmill', to: 'hameenlinna', mode: 'cheap', extend: ['korpela', 'forest', 'sawmill'] },
+    // the second line is flour to Tampere and on to Lahti, on its own track
+    { kind: 'line', from: 'tampere', to: 'mill', mode: 'short' },
+    { kind: 'line', from: 'mill', to: 'lahti', mode: 'cheap', extend: ['tampere', 'mill'] },
+    ...(['korpela', 'forest', 'sawmill', 'hameenlinna', 'tampere', 'mill', 'lahti'] as const).map((site) => ({ kind: 'platform', site }) as Step),
+    { kind: 'train', line: ['korpela', 'forest', 'sawmill', 'hameenlinna'], wagons: [...mixed] },
+    { kind: 'train', line: ['korpela', 'forest', 'sawmill', 'hameenlinna'], wagons: [...mixed] },
+    { kind: 'train', line: ['tampere', 'mill', 'lahti'], wagons: ['box', 'box', 'box'] },
+    { kind: 'train', line: ['tampere', 'mill', 'lahti'], wagons: ['box', 'box', 'box'] },
+  ];
+  const bot = new Bot({ steps }, false);
+  const watch = new Watch();
+  let lines = '';
+  for (let k = 0; k < 10 * YEAR_SECONDS * 60; k++) {
+    bot.act(s);
+    // the mill has flour to move: no grain line feeds it here
+    if (k % 60 === 0) siteById(s, 'mill').stock = Math.max(siteById(s, 'mill').stock, 3);
+    step(s);
+    watch.check(s);
+    if (k === 60 * 5) lines = s.lines.map((l) => `${l.stops.length} stops`).join(', ');
+  }
+  const four = s.lines.filter((l) => l.stops.length === 4);
+  const three = s.lines.filter((l) => l.stops.length === 3);
+  check(bot.done === steps.length && four.length === 1 && three.length === 1 && s.trains.length === 4, `the bot builds a four-stop and a three-stop line and buys two trains for each (${lines})`);
+  check(s.trains.every((t) => !t.parked), 'and all four trains are in service');
+  check(watch.overlap === 0, `ten years: no two trains share a cell (${watch.overlap} frames)`);
+  check(watch.shared === 0 && watch.apart === 0, `and none stand on one platform or over a station (${watch.shared} and ${watch.apart} frames)`);
+  check(watch.longest <= 30, `and no train is stuck: the longest a train went without moving or working is ${watch.longest.toFixed(1)} s`);
+  check(s.trains.every((t) => t.earned > 0), `every train earned (${s.trains.map((t) => Math.round(t.earned)).join(', ')})`);
+}
+
+/** the whole game of one bot: the state it ends in, with the checks that run every frame */
+function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
+  const s = createState(sc);
+  const bot = Bot.for(s, greedy);
+  const watch = new Watch();
+  const limit = (Math.min(sc.goal.beforeYear, upToYear + 1) - sc.startYear) * YEAR_SECONDS + 10;
+  for (let t = 0; t < limit && !s.result; t += DT) {
+    bot.act(s);
+    step(s);
+    watch.check(s);
+  }
+  const { overlap, shared, apart } = watch;
   if (!greedy) for (const l of bot.log.filter((x) => !x.includes('borrow'))) console.log(`  ${l}`);
   years[`${sc.id}${greedy ? '-greedy' : ''}`] = bot.years;
   bots[`${sc.id}${greedy ? '-greedy' : ''}`] = bot;

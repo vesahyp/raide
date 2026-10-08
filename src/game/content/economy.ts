@@ -68,7 +68,7 @@ export interface EngineDef {
 }
 /** the engines of the wood era: a light wood burner, and a slow strong one for grades */
 export const ENGINES: Record<EngineId, EngineDef> = {
-  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 100, upkeep: 9, runCost: 0.067, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
+  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 100, upkeep: 6, runCost: 0.055, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
   jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 180, upkeep: 14, runCost: 0.2, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
 };
 /** a cell's side in metres: grades and the distance factor are read in these */
@@ -89,9 +89,11 @@ export const GRADE_LOAD = 0.07;
 /** a wagon's price; twice the first prices, so money is tight (docs/economy.md) */
 export const WAGON_PRICE = 20;
 /** every wagon on a train adds this to the cost of a tile run: a longer train burns more */
-export const WAGON_RUN = 0.12;
+export const WAGON_RUN = 0.10;
 export const WAGONS_DEFAULT = 2;
 export const WAGONS_MAX = 4;
+/** the most stops a line has: a line is extended by a drag from its end station */
+export const LINE_STOPS_MAX = 4;
 /** what a sold train or engine returns */
 export const RESALE = 0.5;
 /** seconds a train stands at a station */

@@ -212,7 +212,7 @@ thing, then the sandbox opens.
 
 | Scenario | Adds | Goal |
 |----------|------|------|
-| 1. Sawmill | Drag track, bridge, two trains, one chain | Deliver 20 boards to the town |
+| 1. Sawmill | Drag track, bridge, lengthen a line, a mixed train, one chain | Deliver 15 boards to the town |
 | 2. Ridge | Grades and the tunnel choice, engine power, passengers between two towns | Connect both towns and reach a cash target by 1870 |
 | 3. Two chains | Ore, ironworks, a second chain sharing one line, the "wait for full load" switch, a town growing to size 2 | Grow the town to size 3 |
 | 4. Harbour | The export sink, loans and interest, an industry that closes when unserved, the coal era unlock | Unlock the coal era by hauling 60 loads of its goods |
@@ -254,10 +254,39 @@ sandbox is a generated map, endless, with the full era ladder.
 
 ### Engines and carriages
 
-A **train** is one engine and one to six wagons, and it belongs to one
-**line**. A line is an ordered list of stations and the train runs it
-forward and back. Each stop has one switch: wait for a full load, or leave
-on time. That is the whole schedule.
+A **train** is one engine and one to four wagons (six later, with a long
+platform), and it belongs to one **line**. A line is an ordered list of two
+to four stations and the train runs it from the first to the last and back.
+Each train has one switch: wait for a full load, or leave on time. That is
+the whole schedule.
+
+**A line** is one path with a mark at each stop and one **leg** between each
+two neighbouring stops. Each leg has its own block (the cells between its two
+stations), so one train can run one leg while another runs the next. A stop in
+the middle is a station like the others: the train stands on a platform there
+and the platforms count for both directions, so a line runs as many trains as
+its poorest stop has platforms. A line is lengthened by a drag from its first
+or last station to a new site: the card after the lift offers "Extend A–B to C"
+next to "New line". The new leg leaves the station on the side the line does
+not arrive from, so a train runs straight through, and it may not cross the
+line's own track. A line with a passing siding is not lengthened, and a line of
+more than two stops takes no siding. Trains already on a lengthened line run all
+of it, so a flat-wagon train sent on to the town runs the new leg empty until
+box wagons go on it. Undo takes a lengthening back inside its second.
+
+**Mixed trains.** A train's wagons are a list, each wagon its own type. At each
+stop every wagon unloads what the stop takes (a town takes boards and flour, a
+sawmill timber, a mill grain), then each empty wagon whose type can carry what
+the stop makes loads it if some other stop of the line takes it, ahead or after
+the turn. Each wagon takes its own dwell, from the front. A load pays by the
+distance along the path from where it was loaded, and the loads of one good at
+one stop pay the same demand. A wagon type that carries nothing anywhere on the
+line is a waste: the buy card shows it in red ("carries nothing on this line")
+and the train card marks the wagon. The buy card starts with the consist the
+stops ask for (forest, sawmill, town: two flat, two box); a tap on a type adds
+a wagon, a tap on a wagon in the strip takes it off. On the train card a wagon
+of any type is added, and one taken off returns half its price. The trips a year
+count every stop.
 
 **Wagons** are typed, one type per good family, and a train's wagons decide
 what it carries: flat wagon (timber, boards), hopper (ore, coal), box wagon
@@ -561,7 +590,7 @@ judged on a phone.
 - One chain: timber to boards to town. Price falls as the town fills and
   recovers. Cash, no loan.
 - A year-end card with the numbers and the one choice.
-- One goal: deliver 20 boards before 1866.
+- One goal: deliver 15 boards before 1866.
 - The bot plays it headless; `make playthrough` records a hand playing it.
 
 The test: does the first paid delivery arrive inside 90 seconds, and does a

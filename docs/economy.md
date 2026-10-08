@@ -1,6 +1,6 @@
 # The economy and the loop
 
-Status: Vesa said yes on 2026-10-08. Steps 1 to 3 are built; steps 4 and 5 are ahead. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, platforms (one at the start, a second and a third bought) with a queue on the line, for towns a store of 4 loads per size, eating 0.25 loads a month per size, and a growth meter that fills in 8 supplied months, and the three buys of step 3: the passing siding, the crane and the year-end contract. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store; a passing siding has one fixed length (the longest train the game allows), a line with one yields to a waiting neighbour, and a second train starts at the end with fewer of them; the crane is bought at an industry's station only; the perks are gone and the base was made stronger to carry the game without them (prices about 20 % up, grain and flour 12 % up, running cost per tile and engine upkeep up about a fifth, so the cost share stays at 33 to 46 %). The rules of the towns and of the upgrades are in `docs/design.md`, "Stations and towns" and "Money and goals".
+Status: Vesa said yes on 2026-10-08. Steps 1 to 4 are built; step 5 is ahead. The numbers are in `src/game/content/economy.ts`: running costs per tile, track upkeep, the loan, stars from net worth, platforms (one at the start, a second and a third bought) with a queue on the line, for towns a store of 4 loads per size, eating 0.25 loads a month per size, and a growth meter that fills in 8 supplied months, and the three buys of step 3: the passing siding, the crane and the year-end contract. Where the build differs from the plan: a train that waits 12 s for a platform takes a siding track; the distance bonus is far steeper so long lines pay per tile like short ones; refineries keep their own input model instead of a store; a passing siding has one fixed length (the longest train the game allows), a line with one yields to a waiting neighbour, and a second train starts at the end with fewer of them; the crane is bought at an industry's station only; the perks are gone and the base was made stronger to carry the game without them (prices about 20 % up, grain and flour 12 % up, running cost per tile and engine upkeep up about a fifth, so the cost share stays at 33 to 46 %). The rules of the towns and of the upgrades are in `docs/design.md`, "Stations and towns" and "Money and goals". Step 4 (lines of up to four stops, mixed trains) is in "Engines and carriages". Where the build differs from the plan: a mixed train that carries a different good on each leg runs about a third less per engine than the single-purpose trains, because each wagon type is loaded on one leg only, so it pays where cash, engines or platforms are short (the tutorial) and not where they are not; to keep the cost share at 33 to 46 % and the two scenarios won late, a wagon's running cost fell from 0.12 to 0.10 a tile, Little Hilma's from 0.067 to 0.055 and its upkeep from 9 to 6; Sawmill starts with 200 and asks for 15 boards, and the stars are 120 and 240 for Sawmill and 1200 and 2700 for Harju.
 
 ## Why this file
 
@@ -102,15 +102,6 @@ and towns".
   already says so). Coaches carry them. A passenger line is the steady
   income a town line gives; goods are the bigger money with the falling
   price.
-- **Lines with more than two stops.** A line is a list of up to four
-  stations, run forward and back. This is what makes a mixed train worth
-  having: forest, sawmill, town in one line.
-- **Mixed trains.** A train is an engine and any wagons, each wagon its
-  own type. At each stop every wagon unloads what that stop takes and
-  loads what it carries and the next stops want. The train card shows,
-  per wagon, what it carries on this line, and a wagon that carries
-  nothing on this line is marked so the player can see the waste.
-
 ## Checks
 
 The bot proves the loop before Vesa plays it (`npm run balance`):
@@ -142,7 +133,7 @@ The bot proves the loop before Vesa plays it (`npm run balance`):
    crane, and the year-end contract in place of the perks. The rules are in
    `docs/design.md`, "Stations and towns" and "Money and goals". Double track
    and new engines by era, from the plan's table of upgrades, are not built.
-4. **Mixed trains and lines with up to four stops.**
+4. **Mixed trains and lines with up to four stops** (built): the rules are in `docs/design.md`, "Engines and carriages". A drag from the end station of a line offers to lengthen it or to start a new line; the buy card builds the consist wagon by wagon; a wagon that carries nothing on the line is marked on both cards.
 5. **Passengers and mail** between the three towns.
 
 Each step ships on its own and is played before the next starts.

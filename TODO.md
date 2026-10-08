@@ -27,6 +27,18 @@ at the screen on phone emulation. Scripted checks stay short.
 
 ### Left from slices 1 to 5
 
+- Two trains on shared blocks can starve a third for 150 s (seen with the
+  4-stop line in sim-check). Rule 5 holds (no deadlock), but a starved
+  train reads as a broken one; the fair-turn rule at a shared block needs
+  a look before passengers add more trains.
+- Two checks flake: `make touch-check` fails now and then on "Buy puts a
+  train on the line", and sim-check's "route() under 15 ms" on a loaded
+  machine.
+- A mixed train (forest, sawmill, town) earns about a third less per
+  engine than two single trains, because each wagon loads on one leg. It
+  pays where cash is short. Vesa decides whether that is the right
+  trade-off.
+
 - `make playthrough` loses Harju by thumb: it builds all six lines and
   trains but Hämeenlinna stays at size 1 while Tampere reaches 5. The bot
   wins headless (1869). The thumb plays slower, so the balance leans on
@@ -58,8 +70,6 @@ stops, autosave, stars in DynamoDB, the sandbox.
   route choice on a ridge.
 - Scenario 4, Harbour: the export sink, loans, an industry that closes, the
   coal era unlock.
-- Lines with more than two stops, so one train can serve a town from the
-  sawmill and the mill.
 - Branches: a drag from any point on existing track places a junction.
 - Double track as a second drag over a line.
 - Autosave at the year end and at every build; resume from the title.

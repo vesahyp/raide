@@ -406,3 +406,50 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .btn.act.lift { min-height: 40px; padding: 6px 10px; font-size: 14px; }
 .money-row small.sub { font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; }
 .buy-card > .btn.primary.wide { position: sticky; bottom: 0; z-index: 1; }
+
+/* --- lines with several stops and trains of mixed wagons --- */
+.stops-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; margin: 4px 0 2px; font-weight: 800; font-size: 14px; }
+.stops-row .stop { display: inline-flex; align-items: center; gap: 4px; }
+.stops-row .arrow { color: var(--brass); font-size: 16px; }
+.stops-row .gi { width: 18px; height: 18px; }
+.choice-card .grp { margin-top: 6px; }
+.choice-card .grp .buy-label { margin-bottom: 0; text-transform: none; font-size: 14px; color: var(--bone); letter-spacing: 0; }
+.consist-build { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.consist-build > .pic.eng { width: 40px; height: 22px; }
+.strip { display: flex; gap: 4px; flex-wrap: wrap; }
+.wchip { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 50px; min-height: 44px; padding: 4px 3px; border-radius: 8px; border: 2px solid var(--hair); background: var(--pine); color: var(--bone); cursor: pointer; }
+.wchip:disabled { cursor: default; }
+.wchip .pic { width: 38px; height: 16px; }
+.wchip .gi { width: 16px; height: 16px; }
+.wchip .gi.blank { display: inline-block; }
+.wchip.waste { border-color: #e0553f; background: rgba(224, 85, 63, 0.18); }
+.wchip .mark, .wagon-row .mark { position: absolute; right: -5px; top: -7px; min-width: 18px; height: 18px; border-radius: 9px; background: #e0553f; color: #fff; font-size: 13px; font-weight: 900; line-height: 18px; text-align: center; }
+.consist-build .hint { flex-basis: 100%; color: var(--bone-dim); font-weight: 600; font-size: 12px; }
+.picker { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 2px; }
+.wagon.row { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; text-align: left; padding: 8px 10px; min-height: 48px; }
+.wagon.row:disabled { opacity: 0.45; cursor: default; }
+.wagon.row .pic { flex: none; }
+.wagon.row .who { display: flex; flex-direction: column; gap: 2px; min-width: 84px; font-size: 14px; }
+.wagon.row .carry, .wagon.row .nothing { flex: 1; font-size: 12px; font-weight: 600; line-height: 1.25; display: flex; flex-direction: column; }
+.wagon.row .carry { color: var(--bone-dim); }
+.wagon.row .plus { flex: none; font-size: 14px; }
+.wagon .pic.hopper { background: #6f6a5a; }
+.wagon-rows { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; border-top: 1px solid var(--hair); }
+.wagon-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 10px; border: 2px solid var(--hair); background: var(--pine); font-size: 13px; }
+.wagon-row.waste { border-color: #e0553f; background: rgba(224, 85, 63, 0.14); }
+.wagon-row .pic { width: 38px; height: 16px; }
+.wagon-row .what { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.25; }
+.wagon-row .now { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.wagon-row .gi { width: 18px; height: 18px; }
+.wagon-row .carry, .wagon-row .nothing { font-size: 11px; font-weight: 600; display: flex; flex-direction: column; }
+.wagon-row .carry { color: var(--bone-dim); }
+.wagon-row .mark { right: auto; left: -6px; }
+.btn.act.small-act { flex: none; min-height: 40px; padding: 4px 10px; }
+
+.card p .gi { width: 18px; height: 18px; vertical-align: -4px; }
+.wagon.row:disabled { opacity: 0.8; }
+.wagon.row small.nothing { color: #ff8a7a; font-weight: 700; }
+.wagon-row small.nothing { color: #ff8a7a; font-weight: 700; }
+.wagon.row small.carry { color: var(--bone); }
+.wagon-row small.carry { color: var(--bone-dim); }
+.consist-build .wchip { flex: none; }

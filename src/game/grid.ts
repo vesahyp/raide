@@ -157,11 +157,12 @@ interface Approach {
 }
 
 /** the straight stretches a route may use at a station cell: west and east along its row, where free */
-function approaches(s: SimState, station: number, mode: RouteMode): Approach[] {
+function approaches(s: SimState, station: number, mode: RouteMode, only?: number): Approach[] {
   const out: Approach[] = [];
   const x = cx(s, station);
   const y = cy(s, station);
   for (const dir of [-1, 1]) {
+    if (only !== undefined && dir !== only) continue;
     const cells = [station];
     let cost = 0;
     let ok = true;
@@ -188,9 +189,11 @@ function approaches(s: SimState, station: number, mode: RouteMode): Approach[] {
  * plus a small constant so a free run over old track still prefers the short way; in short
  * mode every cell costs the same. Returns null when there is no path. A route that starts at a
  * station, or ends at a site, runs the last APPROACH cells straight along the station's row
- * (west or east, whichever the search finds cheaper). Elsewhere it is free.
+ * (west or east, whichever the search finds cheaper). Elsewhere it is free. `startSide` fixes the
+ * side the route leaves its first station on (-1 west, 1 east): a line that is lengthened leaves the
+ * station it ran into on the other side, so a train runs straight through.
  */
-export function route(s: SimState, from: number, to: number, mode: RouteMode = 'cheap'): Route | null {
+export function route(s: SimState, from: number, to: number, mode: RouteMode = 'cheap', startSide?: number): Route | null {
   if (from === to) return null;
   const n = s.w * s.h;
   const g = new Float64Array(n).fill(Infinity);
@@ -199,7 +202,7 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
   const isSite = s.sites.some((o) => idx(s, o.cx, o.cy) === to);
   // a site's own cell is reached only along its straight stretch, never through the search
   const free = isSite ? -1 : to;
-  const starts = approaches(s, from, mode);
+  const starts = approaches(s, from, mode, startSide);
   const ends: Approach[] = isSite ? approaches(s, to, mode) : [{ cells: [to], cost: 0, dir: 0 }];
   if (!starts.length || !ends.length) return null;
   const goals = ends.map((e) => ({ cell: e.cells[e.cells.length - 1], ...e }));
@@ -349,10 +352,10 @@ export function describe(s: SimState, cells: number[], mode: RouteMode): Route {
 }
 
 /** the routes a drag offers: the cheapest, and the shortest when it is a different path */
-export function routeOptions(s: SimState, from: number, to: number): Route[] {
-  const cheap = route(s, from, to, 'cheap');
+export function routeOptions(s: SimState, from: number, to: number, startSide?: number): Route[] {
+  const cheap = route(s, from, to, 'cheap', startSide);
   if (!cheap) return [];
-  const short = route(s, from, to, 'short');
+  const short = route(s, from, to, 'short', startSide);
   if (!short || short.length >= cheap.length - 0.5 || short.cells.join() === cheap.cells.join()) return [cheap];
   return [cheap, short];
 }

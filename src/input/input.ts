@@ -14,7 +14,7 @@
  * "lay track from here") a tap on a marked site builds as the lift of a drag would.
  */
 import type { SimState, Line, Site, Train } from '../game/types';
-import { plan, build } from '../game/sim';
+import { plan, build, extendable, canExtend, freeSide } from '../game/sim';
 import { idx, inside, route, type Route } from '../game/grid';
 import { stationAt } from '../game/state';
 import type { Renderer2D } from '../render/render2d';
@@ -36,8 +36,11 @@ export interface Drag {
 export interface InputEvents {
   /** a build landed: the line, and where the finger lifted (screen px) */
   onBuild: (line: Line, sx: number, sy: number) => void;
-  /** the lift offers two routes: the UI asks which */
-  onChoice: (options: Route[], sx: number, sy: number) => void;
+  /**
+   * the lift offers two routes, or a line that could take the new stop: the UI asks which. `extend`
+   * lists the lines the new stop could lengthen, each with the routes that do it (they leave its end station on the free side).
+   */
+  onChoice: (options: Route[], sx: number, sy: number, extend?: { line: Line; options: Route[] }[]) => void;
   onLine: (line: Line) => void;
   onTrain: (train: Train) => void;
   onSite: (site: Site) => void;
@@ -265,9 +268,23 @@ export class Input {
         best = cell;
       }
     }
-    const options = best === null ? [] : lay.reverse ? plan(this.s, best, lay.cell) : plan(this.s, lay.cell, best);
+    const from = best === null ? null : lay.reverse ? best : lay.cell;
+    const to = best === null ? null : lay.reverse ? lay.cell : best;
+    const options = from === null || to === null ? [] : plan(this.s, from, to);
     this.ev.onLayEnd(options.length > 0);
-    if (!options.length) return;
+    if (!options.length || from === null || to === null) return;
+    this.lifted(options, from, to, sx, sy);
+  }
+
+  /**
+   * A drag or a tap in pick mode has settled on a site: a line the station ends may take the new stop
+   * (the UI asks: extend it, or a new line), two routes ask which way, one route is built.
+   */
+  private lifted(options: Route[], from: number, to: number, sx: number, sy: number): void {
+    const exts = extendable(this.s, from)
+      .map((line) => ({ line, options: plan(this.s, from, to, freeSide(this.s, line, from)).filter((r) => canExtend(this.s, r, line.id)) }))
+      .filter((e) => e.options.length > 0);
+    if (exts.length) return this.ev.onChoice(options, sx, sy, exts);
     if (options.length > 1) return this.ev.onChoice(options, sx, sy);
     if (options[0].cost > this.s.cash) return this.ev.onNote(options[0].cells[options[0].cells.length - 1], 'cash');
     const line = build(this.s, options[0]);
@@ -320,16 +337,7 @@ export class Input {
     if (this.fingers.length) return;
     const moved = this.moved;
     if (mode === 'build' && drag && drag.route && !drag.loose && moved > 12) {
-      if (drag.options.length > 1) {
-        this.ev.onChoice(drag.options, e.clientX, e.clientY);
-        return;
-      }
-      if (drag.route.cost > this.s.cash) {
-        this.ev.onNote(drag.route.cells[drag.route.cells.length - 1], 'cash');
-        return;
-      }
-      const line = build(this.s, drag.route);
-      if (line) this.ev.onBuild(line, e.clientX, e.clientY);
+      this.lifted(drag.options.length ? drag.options : [drag.route], drag.from, drag.route.cells[drag.route.cells.length - 1], e.clientX, e.clientY);
       return;
     }
     if (moved > 12) return;

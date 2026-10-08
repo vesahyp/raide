@@ -120,9 +120,10 @@ try {
     await page.touchscreen.tap(p.x, p.y);
     await page.waitForTimeout(500);
     if (!(await page.locator('.buy-card').count())) errors.push(`${orient}: the line card did not open`);
-    for (const sel of ['[data-engine="hilma"]', '[data-engine="jyry"]', '[data-wagon="flat"]', '[data-wagon="box"]', '[data-act="more"]', '[data-act="fewer"]', '[data-act="buy"]']) if (!(await page.locator(`.buy-card ${sel}`).count())) errors.push(`${orient}: the buy card has no ${sel}`);
+    for (const sel of ['[data-engine="hilma"]', '[data-engine="jyry"]', '[data-add="flat"]', '[data-add="box"]', '[data-add="hopper"]', '[data-sec="consist"] [data-consist]', '[data-act="buy"]']) if (!(await page.locator(`.buy-card ${sel}`).count())) errors.push(`${orient}: the buy card has no ${sel}`);
     await shot('buy-card');
-    await page.locator('.buy-card [data-act="more"]').tap();
+    // the consist starts with two flat wagons; a tap on a type adds one
+    await page.locator('.buy-card [data-add="flat"]').tap();
     await page.locator('.buy-card [data-act="buy"]').tap();
     await page.waitForTimeout(400);
     if (await page.evaluate(() => window.__sim.trains.length) !== 1) errors.push(`${orient}: Buy did not buy a train`);
@@ -151,7 +152,7 @@ try {
     await page.touchscreen.tap(vp.x, vp.y);
     await page.waitForTimeout(500);
     if (!(await page.locator('.train-card').count())) errors.push(`${orient}: a tap on the train did not open its card`);
-    for (const sel of ['[data-sec="facts"]', '[data-sec="trip"]', '[data-sec="earned"]', '[data-sec="grade"]', '[data-act="wagon"]', '[data-act="fullload"]', '[data-act="move"]', '[data-act="sell"]', '.consist']) if (!(await page.locator(`.train-card ${sel}`).count())) errors.push(`${orient}: the train card has no ${sel}`);
+    for (const sel of ['[data-sec="facts"]', '[data-sec="trip"]', '[data-sec="earned"]', '[data-sec="grade"]', '[data-sec="picker"]', '[data-sec="wagons"]', '[data-act="fullload"]', '[data-act="move"]', '[data-act="sell"]', '.consist']) if (!(await page.locator(`.train-card ${sel}`).count())) errors.push(`${orient}: the train card has no ${sel}`);
     await page.locator('.train-card [data-act="move"]').tap();
     await page.waitForTimeout(300);
     await shot('train-card');

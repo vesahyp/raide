@@ -25,7 +25,7 @@ for (let t = 0; t < limit && !s.result; t += DT) {
 if (process.env.QUIET !== '1') for (const l of bot.log) console.log(l);
 console.log(`first pay ${s.firstPayAt?.toFixed(0)} s; result ${s.result ? `${s.result.won ? 'won' : 'lost'} ${s.result.year} (${s.result.reason}) cash ${s.result.cash} worth ${s.result.worth} stars ${s.result.stars}` : 'none'} at ${s.time.toFixed(0)} s`);
 console.log(`contracts: offered ${bot.years.filter((y) => y.offered).length}, taken ${bot.years.filter((y) => y.took).length}, done ${bot.contractsDone}, lost ${bot.contractsLost}, still held ${bot.held.length}; sidings ${s.lines.filter((l) => l.siding).length}, cranes ${s.stations.filter((x) => x.crane).length}`);
-console.log(`sites: ${s.sites.map((x) => `${x.id} delivered ${x.delivered} size ${x.size}`).join('; ')}`);
+console.log(`sites: ${s.sites.map((x) => `${x.id} delivered ${x.delivered} size ${x.size} stock ${x.stock.toFixed(1)}`).join('; ')}`);
 const pad = (x: number | string, n = 7) => String(x).padStart(n);
 console.log(['year', 'gross', 'running', 'engine', 'track', 'interest', 'cash', 'loan', 'worth', 'trains', 'run%'].map((h) => pad(h)).join(''));
 for (const y of bot.years) {
@@ -39,6 +39,6 @@ if (process.env.TRAINS === '1')
 if (process.env.TRAINS === '1') for (const t of s.trains) console.log(`train ${t.id} earned ${Math.round(t.earned)} line ${t.lineId} odometer ${Math.round(t.odometer)}`);
 if (process.env.LINES === '1') {
   const name = (id: number) => { const st = s.stations.find((x) => x.id === id)!; return st.siteId; };
-  for (const a of s.lines) for (const b of s.lines) if (a.id < b.id) { let n = 0; for (const c of a.block) if (b.block.has(c)) n++; if (n) console.log(`share ${name(a.stops[0])}-${name(a.stops[1])} with ${name(b.stops[0])}-${name(b.stops[1])}: ${n} cells`); }
+  for (const a of s.lines) for (const b of s.lines) if (a.id < b.id) { let n = 0; for (const c of a.legs.flatMap((l) => [...l.block])) if (b.legs.some((l) => l.block.has(c))) n++; if (n) console.log(`share ${name(a.stops[0])}-${name(a.stops[1])} with ${name(b.stops[0])}-${name(b.stops[1])}: ${n} cells`); }
   for (const l of s.lines) console.log(`line ${name(l.stops[0])}-${name(l.stops[1])} ${l.path.length} cells, siding spans ${sidingSpans(s, l).filter((x, i, a) => a.findIndex((y) => y.d0 === x.d0 && y.d1 === x.d1) === i).map((x) => `${x.d0.toFixed(0)}-${x.d1.toFixed(0)}`).join(' ') || 'none'}${l.siding ? ` (siding ${l.siding.s0.toFixed(0)}-${l.siding.s1.toFixed(0)})` : ''}`);
 }

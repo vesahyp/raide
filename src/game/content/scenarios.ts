@@ -107,17 +107,17 @@ function sawCover(x: number, y: number): Cover {
 export const SAWMILL: ScenarioDef = {
   id: 'sawmill',
   name: { fi: 'Saha', en: 'Sawmill' },
-  blurb: { fi: '1862. 20 lautakuormaa ennen vuotta 1866', en: '1862. 20 loads of boards before 1866' },
+  blurb: { fi: '1862. 15 lautakuormaa ennen vuotta 1866', en: '1862. 15 loads of boards before 1866' },
   w: SAW_W,
   h: SAW_H,
   terrain: sawLand,
   cover: sawCover,
   sites: SAW_SITES,
   startStation: 'forest',
-  cash: 150,
+  cash: 200,
   startYear: 1862,
-  goal: { kind: 'deliver', good: 'boards', site: 'town', count: 20, beforeYear: 1866 },
-  stars: [250, 420],
+  goal: { kind: 'deliver', good: 'boards', site: 'town', count: 15, beforeYear: 1866 },
+  stars: [120, 240],
   engines: ['hilma'],
 };
 
@@ -196,7 +196,7 @@ export const HARJU: ScenarioDef = {
   cash: 220,
   startYear: 1862,
   goal: { kind: 'towns', size: 3, count: 2, beforeYear: 1872 },
-  stars: [900, 1800],
+  stars: [1200, 2700],
   engines: ['hilma', 'jyry'],
 };
 

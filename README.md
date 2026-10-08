@@ -37,7 +37,7 @@ lyhyt. Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt
 veturi ryömii, ja kuorma hidastaa sitä lisää.
 
 **Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan.
-Osta-napista valitset veturin, vaunujen lajin ja määrän; kortti kertoo,
+Osta-napista valitset veturin ja rakennat junan vaunu kerrallaan: napautat vaunulajia, niin yksi vaunu lisätään, ja napautat vaunua nauhassa, niin se poistetaan. Jokaisen lajin kohdalla kortti kertoo, mitä se kuljettaa juuri tällä radalla, esimerkiksi "kuljettaa tukkeja Kuusikko → Koskensaha", tai punaisella, ettei se kuljeta mitään. Alussa kortti ehdottaa sen, mitä radan asemat tekevät ja ottavat (metsä, saha, kaupunki: kaksi lavavaunua ja kaksi umpivaunua). Kortti kertoo,
 montako kierrosta kumpikin veturi ajaa vuodessa juuri tällä radalla,
 paljonko tämä juna lisäisi linjan kierroksiin ja mitä se maksaisi ajaa
 vuodessa. Jos asema tai rataosuus on jo täynnä, luku näyttää sen: toinen
@@ -45,6 +45,8 @@ juna samalla linjalla ei lisää kierroksia, vaan odottaa sivuraiteella.
 Lavavaunut kuljettavat tukkeja, umpivaunut lautoja ja jauhoja, viljavaunut
 viljaa. Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva: se vetää mäen
 yli. Juna lähtee heti ja ajaa linjaansa edestakaisin itsekseen.
+
+**Jatka rataa.** Vedä radan päätyasemalta uuteen paikkaan, niin nosto-kortti tarjoaa kahta: "Jatka rataa Kuusikko–Koskensaha → Hämeenlinna" tai "Uusi rata". Jatkettu rata on yksi rata, jossa on enintään neljä pysäkkiä. Juna ajaa päästä päähän ja pysähtyy välissä: **sekajuna** purkaa jokaisella pysäkillä sen, minkä pysäkki ottaa vastaan (kaupunki lautoja ja jauhoja, saha tukkeja, mylly viljaa), ja lastaa sen, minkä pysäkki tekee, jos jokin toinen pysäkki ottaa sen vastaan. Lavavaunut purkavat tukit sahalla, ja umpivaunut lastaavat samalla pysäkillä laudat. Vaunu, joka ei kuljeta radalla mitään, on turha ja saa punaisen merkin. Jatkettu radan kortin otsikko on päiden nimet, ja pysäkit näkyvät kortissa järjestyksessä nuolin. Sekajuna tienaa vähemmän per veturi kuin kaksi omaa junaa, koska jokainen vaunulaji on kuormattu vain yhdellä osuudella: se kannattaa, kun rahaa, vetureita tai laitureita on vähän. Jatkettu rata ei saa ohitusraidetta. Tämän radan jo ajavat junat ajavat koko rataa.
 
 **Raha on tiukalla.** Juna maksaa jokaisesta ajamastaan ruudusta, täynnä tai
 tyhjänä, ja veturilla on lisäksi vuosiylläpito. Jokainen ratakappale
@@ -92,7 +94,7 @@ linja ajaa kaksi junaa kerrallaan, joten sen kanssa samaa rataa käyttävät
 linjat odottavat sitä vuorollaan.
 
 **Napauta junaa**, niin sen kortti aukeaa: kuorma, matka-aika täynnä ja
-tyhjänä, tämän ja viime vuoden tulot, vaunu lisää, veturin vaihto,
+tyhjänä, tämän ja viime vuoden tulot, jokaisen vaunun kuorma ja se, mitä vaunu kuljettaa tällä radalla (turha vaunu on merkitty), vaunu lisää minkä tahansa lajin tai poista vaunu (puolet hinnasta takaisin), veturin vaihto,
 **odota täysi kuorma**, **siirrä toiselle linjalle** (kun juna seisoo
 sen linjan asemalla) tai myynti puoleen hintaan. Kortti kertoo myös, mitä juna on tuottanut ja
 maksanut tänä vuonna.
@@ -138,7 +140,7 @@ kaksi sopimusta.
 ## Kentät
 
 - **Saha:** metsä, saha ja kaupunki joen takana. Opettaa vedon, sillan ja
-  junan. Tavoite: 20 lautakuormaa kaupunkiin ennen vuotta 1866.
+  junan. Tavoite: 15 lautakuormaa kaupunkiin ennen vuotta 1866. Saha opettaa myös radan jatkamisen ja sekajunan.
 - **Harju:** kaksi metsää ja saha, kaksi maatilaa ja mylly, kolme kaupunkia,
   harju ja järvi kaiken keskellä. Alussa sinulla on asema kummassakin
   metsässä, joten ensimmäinen valinta on kummasta aloitat, ja sen jälkeen

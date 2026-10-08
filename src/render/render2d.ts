@@ -13,11 +13,11 @@
  * Text and chips are HTML in the overlay div, placed each frame by projecting tile points, so
  * they stay crisp at any zoom.
  */
-import type { Contract, Good, Line, ScenarioDef, Siding, SimState, Site, Train } from '../game/types';
+import type { Contract, Good, Line, Load, ScenarioDef, Siding, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
-import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, SLOTS_MAX, workingWagon, sidingSpans, sidingAt } from '../game/sim';
+import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS } from '../game/sim';
 import { createState } from '../game/state';
 import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
@@ -509,10 +509,8 @@ export class Renderer2D {
   /** the stations a train uses a platform track at now: where it stands, or where it runs to and where it left */
   private slotCells(t: Train): [number, number][] {
     const line = lineOf(this.s, t);
-    const a = line.path[0];
-    const b = line.path[line.path.length - 1];
-    if (t.state === 'stop') return [[t.at ?? a, t.slot]];
-    return t.dir === 1 ? [[b, t.slot], [a, t.slotFrom]] : [[a, t.slot], [b, t.slotFrom]];
+    if (t.state === 'stop') return [[t.at ?? stopCell(line, t.idx), t.slot]];
+    return [[stopCell(line, t.idx + t.dir), t.slot], [stopCell(line, t.idx), t.slotFrom]];
   }
 
   private computeAprons(): Apron[] {
@@ -522,11 +520,12 @@ export class Renderer2D {
       const y = cy(s, st.cell);
       let west = false;
       let east = false;
-      for (const l of s.lines) {
-        const n = l.path.length;
-        if (l.path[0] === st.cell) (l.path[1] === st.cell - 1 ? (west = true) : (east = true));
-        if (l.path[n - 1] === st.cell) (l.path[n - 2] === st.cell - 1 ? (west = true) : (east = true));
-      }
+      // every side a line comes in from or leaves on: a middle stop has both
+      for (const l of s.lines)
+        for (const k of l.stopAt) {
+          if (l.path[k] !== st.cell) continue;
+          for (const nb of [l.path[k - 1], l.path[k + 1]]) if (nb !== undefined) (nb === st.cell - 1 ? (west = true) : (east = true));
+        }
       return { cell: st.cell, x, y, west, east, k: this.platformsNeeded(st.cell) };
     });
   }
@@ -1167,14 +1166,10 @@ export class Renderer2D {
     return { x, y, lv: railAlong(line, d) / TERRACE_M, dx: p.dx, dy: p.dy };
   }
 
-  /** the platform track a train uses at the end of its line, 0 or 1: where it stands or runs to, or where it left */
-  private slotAtEnd(t: Train, end: 0 | 1): number {
-    if (t.state === 'stop') {
-      const line = lineOf(this.s, t);
-      const cell = end === 0 ? line.path[0] : line.path[line.path.length - 1];
-      return t.at === cell ? t.slot : t.slotFrom;
-    }
-    return end === (t.dir === 1 ? 1 : 0) ? t.slot : t.slotFrom;
+  /** the platform track a train uses at a stop of its line: where it stands or runs to, or where it left */
+  private slotAtStop(t: Train, stop: number): number {
+    if (t.state === 'stop') return t.idx === stop ? t.slot : t.slotFrom;
+    return stop === t.idx + t.dir ? t.slot : t.slotFrom;
   }
 
   /** the drawn length of a train, a little more than the sum of its parts for the gaps */
@@ -1195,10 +1190,11 @@ export class Renderer2D {
       p.x += line.siding.nx * o;
       p.y += line.siding.ny * o;
     }
-    const end = line.dist[line.dist.length - 1];
-    const e = d < end / 2 ? 0 : 1;
-    const a = this.apronAt.get(e === 0 ? line.path[0] : line.path[line.path.length - 1]);
-    if (a && Math.abs(p.x - (a.x + 0.5)) < FAN1[1] + 0.5) p.y += this.platformY(a, this.slotAtEnd(t, e), p.x);
+    // the stop nearest along the line: its platform tracks fan out around it
+    let e = 0;
+    for (let i = 1; i < line.stops.length; i++) if (Math.abs(stopS(line, i) - d) < Math.abs(stopS(line, e) - d)) e = i;
+    const a = this.apronAt.get(stopCell(line, e));
+    if (a && Math.abs(p.x - (a.x + 0.5)) < FAN1[1] + 0.5) p.y += this.platformY(a, this.slotAtStop(t, e), p.x);
     return p;
   }
 
@@ -1243,13 +1239,13 @@ export class Renderer2D {
       const thirds = Math.min(2, Math.floor(work.progress * 3)) + 1;
       return t.dock === 'load' ? thirds / 3 : 1 - (thirds - 1) / 3;
     }
-    return w >= t.unloaded && w < t.unloaded + t.cargo ? 1 : 0;
+    return t.loads[w] ? 1 : 0;
   }
 
   /** the good a wagon shows: what is aboard, or what is being loaded */
-  private wagonGood(t: Train): Good | null {
-    if (t.good) return t.good;
-    if (t.dock !== 'load' || t.at === null) return null;
+  private wagonGood(t: Train, w: number): Good | null {
+    if (t.loads[w]) return t.loads[w]!.good;
+    if (t.dock !== 'load' || t.job !== w || t.at === null) return null;
     const st = this.s.stations.find((o) => o.cell === t.at);
     const site = st && this.s.sites.find((o) => o.id === st.siteId);
     return site ? MAKES[site.kind] : null;
@@ -1307,7 +1303,7 @@ export class Renderer2D {
         c.translate(veh.px, veh.py);
         c.rotate(veh.ang);
         if (veh.i === 0) drawEngine(c, veh.len * S, S, t.engine);
-        else drawWagon(c, veh.len * S, S, t.wagons, this.wagonGood(t), this.wagonFill(t, veh.i - 1));
+        else drawWagon(c, veh.len * S, S, t.wagons[veh.i - 1], this.wagonGood(t, veh.i - 1), this.wagonFill(t, veh.i - 1));
         c.restore();
       }
     for (const list of all) this.goodsStream(list);
@@ -1341,7 +1337,7 @@ export class Renderer2D {
         if (t.state !== 'stop' || t.at !== st.cell || !t.dock) continue;
         const w = workingWagon(this.s, t);
         const veh = w ? this.vehicles(t)[w.wagon + 1] : null;
-        const good = this.wagonGood(t) ?? (t.good as Good | null);
+        const good = w ? this.wagonGood(t, w.wagon) : null;
         if (w && veh && good) {
           // loading goes from the pile to the wagon, unloading the other way
           work = { wx: veh.wx, wy: veh.wy, good, phase: t.dock === 'load' ? w.progress : 1 - w.progress };
@@ -1458,7 +1454,7 @@ export class Renderer2D {
     const t = list[0].t;
     const S = this.cam.s;
     const work = workingWagon(this.s, t);
-    const good = this.wagonGood(t);
+    const good = work ? this.wagonGood(t, work.wagon) : null;
     if (!work || !good || S < 14 || t.at === null) return;
     const veh = list[work.wagon + 1];
     const st = this.s.stations.find((o) => o.cell === t.at);
@@ -2663,12 +2659,12 @@ export class Renderer2D {
       const key = `load:${t.id}`;
       seen.add(key);
       const el = this.label(key, 'tag load-tag');
-      const good = this.wagonGood(t);
-      // the loads aboard, and the one in hand counted by how far it has come
+      // the goods aboard, each once, and the one in hand counted by how far it has come
+      const goods = [...new Set(t.loads.filter((l): l is Load => !!l).map((l) => l.good))];
       const work = workingWagon(this.s, t);
       const frac = work ? (t.dock === 'load' ? work.progress : -work.progress) : 0;
       const shown = Math.max(0, Math.min(t.nWagons, t.cargo + frac));
-      const html = `${good ? this.goodIcon(good) : ''}<span>${t.cargo}<span class="u">/${t.nWagons}</span></span><i style="width:${((shown / t.nWagons) * 100).toFixed(1)}%;max-width:calc(100% - 12px)"></i>`;
+      const html = `${goods.map((g) => this.goodIcon(g)).join('')}<span>${t.cargo}<span class="u">/${t.nWagons}</span></span><i style="width:${((shown / t.nWagons) * 100).toFixed(1)}%;max-width:calc(100% - 12px)"></i>`;
       if (el.dataset.html !== html) {
         el.innerHTML = html;
         el.dataset.html = html;

@@ -105,9 +105,11 @@ try {
   await drag(w.forest, w.sawmill);
   await page.waitForTimeout(250);
   await page.locator('.card.sheet').waitFor({ timeout: 3000 });
-  const flatOn = await page.locator('.wagon').first().evaluate((el) => el.classList.contains('on'));
-  check(flatOn, 'the card offers flat wagons for a line from the forest');
+  const strip = await page.locator('[data-sec="consist"] [data-consist]').evaluateAll((els) => els.map((e) => e.dataset.type));
+  check(strip.join() === 'flat,flat', `the card starts a train from the forest with two flat wagons (${strip.join(' ')})`);
   // the train costs more than the cash left: the cash chip opens the money card, Borrow takes a hundred
+  await page.evaluate(() => { window.__sim.cash = 100; });
+  await page.waitForTimeout(250);
   check(await page.locator('[data-track="card-buy-train"]').isDisabled(), 'the Buy button waits while the cash is short');
   await tapButton(page.locator('[data-act="money"]'));
   await page.locator('.money-card').waitFor({ timeout: 2000 });

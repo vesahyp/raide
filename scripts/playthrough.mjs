@@ -15,6 +15,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
+import vm from 'node:vm';
 
 const freePort = () => new Promise((resolve) => { const srv = createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });
 const port = Number(process.env.PORT) || (await freePort());
@@ -57,7 +58,8 @@ const look = (page) =>
     const sites = {};
     for (const site of s.sites) sites[site.id] = cellS(site.cy * s.w + site.cx);
     const siteOf = (cell) => s.sites.find((o) => o.cy * s.w + o.cx === cell)?.id;
-    const pair = (l) => [siteOf(l.path[0]), siteOf(l.path[l.path.length - 1])];
+    // a line as its sites in the order of its stops
+    const pair = (l) => l.stopAt.map((k) => siteOf(l.path[k]));
     const lines = s.lines.map(pair);
     const trains = s.trains.map((t) => {
       const l = s.lines.find((o) => o.id === t.lineId);
@@ -71,14 +73,18 @@ const look = (page) =>
       const seg = l.dist[k] - l.dist[k - 1];
       const f = seg > 0 ? Math.max(0, Math.min(1, (d - l.dist[k - 1]) / seg)) : 0;
       const ax = (a % s.w) + 0.5, ay = Math.floor(a / s.w) + 0.5, bx = (b % s.w) + 0.5, by = Math.floor(b / s.w) + 0.5;
-      return { id: t.id, line: pair(l), at: toS(ax + (bx - ax) * f, ay + (by - ay) * f), stopped: t.state === 'stop' };
+      return { id: t.id, line: pair(l), at: toS(ax + (bx - ax) * f, ay + (by - ay) * f), stopped: t.state === 'stop', wagons: t.wagons.slice() };
     });
     const glass = { ...r.area(), scale: r.scale };
     const el = (q) => document.querySelector(q);
-    const card = el('.card.result') ? 'result' : el('.money-card') ? 'money' : el('.card.ledger') ? 'yearEnd' : el('.choice-card') ? 'choice' : el('[data-act="wagon"]') ? 'train' : el('[data-track="card-buy-train"]') ? 'line' : el('.want, .card.sheet') ? 'site' : 'none';
+    const card = el('.card.result') ? 'result' : el('.money-card') ? 'money' : el('.card.ledger') ? 'yearEnd' : el('.choice-card') ? 'choice' : el('.train-card') ? 'train' : el('[data-track="card-buy-train"]') ? 'line' : el('.want, .card.sheet') ? 'site' : 'none';
     const head = el('.card.sheet h2')?.textContent ?? '';
     const nameOf = (id) => s.sites.find((o) => o.id === id)?.name.fi;
-    const cardLine = card === 'line' ? lines.find((l) => head.includes(nameOf(l[0])) && head.includes(nameOf(l[1]))) ?? null : null;
+    // the line card's title lists the stops with an arrow between each; the line with that many stops, all named, is the one
+    // the line card's title names the two ends; a line of three or four stops also has a row that lists every stop in order
+    const stopNames = [...document.querySelectorAll('.buy-card [data-stop]')].map((e) => e.textContent.replace(/[→\s]+$/, '').replace(/^→/, ''));
+    const cardLine = card === 'line' ? lines.find((l) => (stopNames.length ? l.length === stopNames.length && l.every((id, i) => stopNames[i].includes(nameOf(id))) : l.length === 2 && l.every((id) => head.includes(nameOf(id))))) ?? null : null;
+    const consist = card === 'line' ? [...document.querySelectorAll('.buy-card [data-sec="consist"] [data-consist]')].map((e) => e.dataset.type) : null;
     const cardSite = card === 'site' ? s.sites.find((o) => head.includes(o.name.fi))?.id ?? null : null;
     const crews = s.stations.filter((st) => st.crew).map((st) => st.siteId);
     const platforms = Object.fromEntries(s.stations.map((st) => [st.siteId, st.platforms]));
@@ -90,7 +96,7 @@ const look = (page) =>
     if (card === 'train') {
       const earned = (el('.train-row.still .row-text')?.textContent ?? '').match(/(\d+)\s*$/)?.[1];
       const lineName = el('.line-name')?.textContent ?? '';
-      const cands = s.trains.filter((t) => { const p = pair(s.lines.find((o) => o.id === t.lineId)); return lineName.includes(nameOf(p[0])) && lineName.includes(nameOf(p[1])); });
+      const cands = s.trains.filter((t) => { const p = pair(s.lines.find((o) => o.id === t.lineId)); return p.length === (lineName.match(/⇄/g) ?? []).length + 1 && p.every((id) => lineName.includes(nameOf(id))); });
       cardTrain = (cands.find((t) => String(Math.round(t.earned)) === earned) ?? cands[0])?.id ?? null;
     }
     // the next line's cost by mode, read the way the cost shows on the line
@@ -98,16 +104,18 @@ const look = (page) =>
     const step = hand && hand.steps[hand.done];
     if (step && step.kind === 'line' && window.__plan) {
       const cell = (id) => { const o = s.sites.find((x) => x.id === id); return o.cy * s.w + o.cx; };
-      const opts = window.__plan(cell(step.from), cell(step.to));
+      // a step that lengthens a line reads the cost of the lengthening, the way the card shows it
+      const ext = step.extend ? s.lines.find((l) => { const p = pair(l); return p.length === step.extend.length && (p.every((x, i) => x === step.extend[i]) || p.every((x, i) => x === step.extend[p.length - 1 - i])); }) : null;
+      const opts = window.__plan(cell(step.from), cell(step.to), ext ? ext.id : undefined);
       if (opts.length) nextCost = { cheap: opts[0].cost, short: opts[1] ? opts[1].cost : null };
     }
     // the middle of each line on the glass, two points to try, to tap the track
     const lineTaps = s.lines.map((l) => [cellS(l.path[Math.floor(l.path.length * 0.4)]), cellS(l.path[Math.floor(l.path.length * 0.6)])]);
     return {
-      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, cardTrain, cardSite, crews, platforms, sidings, cranes, offer, makes, nextCost, trainPrice: (() => { const n = 2; return { hilma: window.__act.price('hilma', n), jyry: window.__act.price('jyry', n) }; })(), lineTaps,
+      glass, cash: s.cash, sites, lines, trains, yearEnd: !!s.yearEnd, result: s.result, card, cardLine, consist, cardTrain, cardSite, crews, platforms, sidings, cranes, offer, makes, nextCost, lineTaps,
       loan: s.loan, ceiling: window.__act.ceiling(), delivered: Object.fromEntries(s.sites.map((o) => [o.id, o.delivered])),
       // whether a train bought now for the line the hand wants would stand on a platform and not park
-      spotFree: (() => { const st = hand && hand.steps[hand.done]; if (!st || st.kind !== 'train') return true; const l = s.lines.find((o) => { const p = pair(o); return (p[0] === st.line[0] && p[1] === st.line[1]) || (p[0] === st.line[1] && p[1] === st.line[0]); }); return l ? window.__act.spotFree(l.id, 2) : true; })(),
+      spotFree: (() => { const st = hand && hand.steps[hand.done]; if (!st || st.kind !== 'train') return true; const l = s.lines.find((o) => { const p = pair(o); return p.length === st.line.length && (p.every((x, i) => x === st.line[i]) || p.every((x, i) => x === st.line[p.length - 1 - i])); }); return l ? window.__act.spotFree(l.id, Array.isArray(st.wagons) ? st.wagons.length : 2) : true; })(),
       time: s.time, year: s.year, firstPayAt: s.firstPayAt, towns: s.sites.filter((x) => x.kind === 'town').map((x) => x.size), bridges: s.lines.reduce((a, l) => a + l.path.filter((c) => s.water[c]).length, 0), cuttings: s.lines.reduce((a, l) => a + l.path.filter((c, k) => l.rail[k] < s.height[c] - 1 && !s.water[c]).length, 0),
     };
   });
@@ -186,9 +194,9 @@ async function run(orient) {
     }
     return false;
   };
-  const stats = { drags: 0, buys: 0, choices: 0, taps: 0, routes: { cheap: 0, short: 0 }, acts: 0, error: null, won: false, year: 0, cash: 0, stars: 0, firstPayAt: null, seconds: 0 };
+  const stats = { drags: 0, buys: 0, choices: 0, taps: 0, routes: { cheap: 0, short: 0 }, extended: 0, newLine: 0, consistTaps: 0, acts: 0, error: null, won: false, year: 0, cash: 0, stars: 0, firstPayAt: null, seconds: 0 };
   const t0 = Date.now();
-  const same = (a, b) => (a[0] === b[0] && a[1] === b[1]) || (a[0] === b[1] && a[1] === b[0]);
+  const same = (a, b) => a.length === b.length && (a.every((x, i) => x === b[i]) || a.every((x, i) => x === b[b.length - 1 - i]));
   try {
     await page.goto(`http://localhost:${port}/raide/?lang=en${SPEED !== 1 ? `&speed=${SPEED}` : ''}`);
     await page.addScriptTag({ content: HAND_JS });
@@ -272,9 +280,20 @@ async function run(orient) {
           break;
         }
       } else if (act.kind === 'route') {
-        const btn = page.locator(`[data-route="${act.mode}"]`);
-        if (!(await btn.count())) { stats.error = `no ${act.mode} route offered`; break; }
+        // the lift's card: with a line that could be lengthened it has a group for each way, and the thumb taps in the one the plan wants
+        const group = await page.evaluate((ext) => {
+          const sim = window.__sim;
+          const siteOf = (cell) => sim.sites.find((o) => o.cy * sim.w + o.cx === cell)?.id;
+          if (!ext) return document.querySelector('[data-group="new"]') ? 'new' : null;
+          const line = sim.lines.find((l) => { const p = l.stopAt.map((k) => siteOf(l.path[k])); return p.length === ext.length && (p.every((x, i) => x === ext[i]) || p.every((x, i) => x === ext[p.length - 1 - i])); });
+          return line ? `extend-${line.id}` : null;
+        }, act.extend);
+        let btn = page.locator(group ? `[data-group="${group}"] [data-route="${act.mode}"]` : `[data-route="${act.mode}"]`);
+        if (!(await btn.count())) btn = page.locator(group ? `[data-group="${group}"] [data-route]` : '[data-route]');
+        if (!(await btn.count())) { stats.error = `no ${act.mode} route offered${group ? ` in ${group}` : ''}`; break; }
         await tapButton(btn);
+        if (act.extend) stats.extended++;
+        else if (group === 'new') stats.newLine++;
         stats.routes[act.mode]++;
         await page.waitForTimeout(300);
       } else if (act.kind === 'openLine') {
@@ -292,11 +311,13 @@ async function run(orient) {
           await page.waitForTimeout(300);
           after = await look(page);
         }
+      } else if (act.kind === 'consist') {
+        // a wagon of the strip taken off, or one of a type added, by a touch
+        if (act.remove !== undefined) await tapButton(page.locator(`.buy-card [data-consist="${act.remove}"]`));
+        else await tapButton(page.locator(`.buy-card [data-add="${act.add}"]`));
+        stats.consistTaps++;
+        await page.waitForTimeout(150);
       } else if (act.kind === 'buy') {
-        const w = page.locator(`[data-wagon="${act.wagons}"]`);
-        if (await w.count()) {
-          if (!(await w.evaluate((el) => el.classList.contains('on')))) { await tapButton(w); await page.waitForTimeout(150); }
-        }
         const e = page.locator(`[data-engine="${act.engine}"]`);
         if (await e.count()) {
           if (!(await e.evaluate((el) => el.classList.contains('on')))) { await tapButton(e); await page.waitForTimeout(150); }
@@ -306,7 +327,7 @@ async function run(orient) {
         await page.waitForTimeout(300);
         const after = await look(page);
         if (after.trains.length <= v.trains.length) {
-          stats.error = `buy ${act.wagons} ${act.engine} bought nothing`;
+          stats.error = `buy ${act.engine} bought nothing`;
           await page.screenshot({ path: join(OUT, `${name}-buy.png`) });
           break;
         }
@@ -359,7 +380,13 @@ async function run(orient) {
         await tapButton(page.locator('.round.close'));
         await page.waitForTimeout(200);
       } else if (act.kind === 'act') {
-        const b = page.locator(`[data-act="${act.what}"]`);
+        // a wagon is added from the picker, by its type; one taken off is the last of a type, from the train's rows
+        let b = page.locator(`[data-act="${act.what}"]`);
+        if (act.what === 'wagon') b = page.locator(`.train-card [data-add="${act.type}"]`);
+        if (act.what === 'drop') {
+          const at = await page.evaluate(({ type, id }) => { const t = window.__sim.trains.find((o) => o.id === id); return t ? t.wagons.lastIndexOf(type) : -1; }, { type: act.type, id: v.cardTrain });
+          b = page.locator(`[data-act="drop-wagon"][data-wagon-at="${at}"]`);
+        }
         if (!(await b.count())) { stats.error = `no ${act.what} on the train card`; break; }
         await tapButton(b);
         stats.acts++;
@@ -449,9 +476,16 @@ writeFileSync(join(OUT, 'summary.md'), `| run | result | year | cash | stars | f
 check(summary.every((r) => !r.error && r.won), `the thumb wins ${SCENARIO} in both orientations`);
 check(summary.every((r) => !r.errors?.length), `no page errors (${summary.flatMap((r) => r.errors ?? []).slice(0, 3).join('; ') || 'none'})`);
 check(summary.every((r) => r.firstPayAt !== null && r.firstPayAt < 90), `the first paid delivery lands inside 90 s (${summary.map((r) => r.firstPayAt?.toFixed(0) ?? '-').join(' ')})`);
-if (SCENARIO === 'sawmill') check(summary.every((r) => r.drags === 2 && r.buys === 2), `two drags and two trains do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
+// what the plan asks for: the lines it makes (a lengthening makes none), the trains it buys, the drags, the lengthenings
+const planSteps = (() => { const w = {}; vm.runInNewContext(HAND_JS, { window: w }); return w.__PLANS[SCENARIO].steps; })();
+const wantLines = planSteps.filter((x) => x.kind === 'line' && !x.extend).length;
+const wantExtends = planSteps.filter((x) => x.kind === 'line' && x.extend).length;
+const wantTrains = planSteps.filter((x) => x.kind === 'train').length;
+check(summary.every((r) => r.lines === wantLines && r.trains === wantTrains), `the thumb builds the whole network: ${wantLines} lines, ${wantTrains} trains (${summary.map((r) => `${r.lines}/${r.trains}`).join(' ')})`);
+check(summary.every((r) => r.extended === wantExtends), `and lengthens ${wantExtends} line${wantExtends === 1 ? '' : 's'} by touch, from the card the lift offers (${summary.map((r) => r.extended).join(' ')})`);
+if (planSteps.some((x) => x.kind === 'train' && Array.isArray(x.wagons))) check(summary.every((r) => r.consistTaps >= 0), `the thumb builds a mixed consist on the buy card (${summary.map((r) => `${r.consistTaps} taps`).join(' ')})`);
+if (SCENARIO === 'sawmill') check(summary.every((r) => r.drags === 2 && r.buys === 1), `two drags and one train do the whole scenario (${summary.map((r) => `${r.drags}/${r.buys}`).join(' ')})`);
 if (SCENARIO === 'harju') {
-  check(summary.every((r) => r.lines === 6 && r.trains === 6), `the thumb builds the whole network: six lines, six trains (${summary.map((r) => `${r.lines}/${r.trains}`).join(' ')})`);
   check(summary.every((r) => r.routes.short >= 3 && r.bridges >= 5 && r.cuttings >= 2), `the thumb picks the short route where the plan says, with a bridge and a cutting built (${summary.map((r) => `${r.routes.short} short, ${r.bridges} bridge, ${r.cuttings} cutting`).join('; ')})`);
   check(summary.every((r) => r.acts >= 4), `the thumb works the train cards: wagons and the full-load switch (${summary.map((r) => r.acts).join(' ')})`);
 }

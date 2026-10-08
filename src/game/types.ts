@@ -105,21 +105,37 @@ export interface Siding {
   ny: number;
 }
 
+/**
+ * One stretch of a line between two neighbouring stops. The track itself is the line's path; a leg
+ * marks which part of it, and keeps its own block, so a train can run one leg while another runs the next.
+ */
+export interface Leg {
+  /** the path indexes of the leg's two stations, a < b */
+  a: number;
+  b: number;
+  /** the block: the cells between the two stations. One running train at a time on any of them */
+  block: Set<number>;
+  /** the steepest step on this leg, in percent */
+  worst: number;
+}
+
 export interface Line {
   id: number;
-  /** two stations: the train runs forward and back */
-  stops: [number, number];
-  /** the cells from the first stop to the second */
+  /** two to four stations, in order: the train runs from the first to the last and back */
+  stops: number[];
+  /** the cells from the first stop to the last, the legs' tracks laid end to end */
   path: number[];
   /** cumulative distance along the path, in cells, per path index */
   dist: number[];
   /** the rail's height in metres per path index: the land, cut and filled to the grade limit */
   rail: number[];
+  /** the path index of each stop */
+  stopAt: number[];
+  /** the stretches between neighbouring stops, one fewer than the stops */
+  legs: Leg[];
   /** the steepest step on the line, in percent */
   worst: number;
-  /** the block: the cells between the two stations. One running train at a time on any of them */
-  block: Set<number>;
-  /** the passing siding, when the line has one: it splits the block in two */
+  /** the passing siding, when the line has one (only a two-stop line can): it splits the block in two */
   siding: Siding | null;
   /** pay earned and running cost paid by this line's trains this year, for the line card */
   earnedYear: number;
@@ -128,25 +144,35 @@ export interface Line {
 
 export type TrainState = 'run' | 'stop';
 
+/** a load on one wagon: the good, and the distance along the line's path where it was loaded, for the pay */
+export interface Load {
+  good: Good;
+  from: number;
+}
+
 export interface Train {
   id: number;
   lineId: number;
   engine: EngineId;
-  wagons: WagonType;
+  /** the consist, front to back: each wagon its own type, one load each */
+  wagons: WagonType[];
+  /** how many wagons: `wagons.length`, kept so the pictures and the cards read it */
   nWagons: number;
+  /** what each wagon carries now, null when empty */
+  loads: (Load | null)[];
   /** the train waits at a loading stop until every wagon is full */
   fullLoad: boolean;
-  /** +1 runs the path from stop 0 to stop 1 */
+  /** +1 runs the path from the first stop towards the last */
   dir: 1 | -1;
+  /** the stop (an index into the line's stops) the train stands at, or left last */
+  idx: number;
   /** the leading end of the train, as a distance along the line's path in cells */
   s: number;
   state: TrainState;
   /** seconds left at the station */
   stopLeft: number;
-  /** loads on board */
+  /** loads on board: the wagons that are not empty */
   cargo: number;
-  /** the good on board, while cargo is above zero */
-  good: Good | null;
   /** the station cell the train stands at, while it stops */
   at: number | null;
   /** the train waits on its line before a station whose platforms are all taken; it moves on when one is free */
@@ -186,10 +212,10 @@ export interface Train {
   dock: 'load' | 'unload' | null;
   /** seconds until the load now being moved is on board (or off it) */
   work: number;
-  /** wagons emptied so far this stop, counted from the front: the full ones are `unloaded` up to `unloaded + cargo` */
-  unloaded: number;
-  /** pay for each load that comes off, set when the train arrives */
-  unitPay: number;
+  /** the wagon the load in hand belongs to, counted from the front; -1 when none */
+  job: number;
+  /** the demand a good paid at this stop when its first load came off, so the loads of one stop pay alike */
+  quote: Partial<Record<Good, number>>;
   /** pay taken this stop, shown as one float when the unloading ends */
   paid: number;
 }
@@ -252,7 +278,10 @@ export interface LastBuild {
   cost: number;
   cells: number[];
   station: number | null;
+  /** a line this build made */
   line: number | null;
+  /** a line this build lengthened: how it was, and how far the trains' distances moved when the new stop went in front */
+  extend: { lineId: number; before: Pick<Line, 'stops' | 'path' | 'dist' | 'rail' | 'stopAt' | 'legs' | 'worst'>; shift: number } | null;
   /** seconds left to undo */
   left: number;
   /** where the finger lifted, a cell */

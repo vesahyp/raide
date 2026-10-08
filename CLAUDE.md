@@ -14,7 +14,7 @@ the water and shows the cost on the line. Buy a train, and it runs the line
 on its own: timber from the forest to the sawmill, boards from the sawmill
 to the town, grain to the mill and flour to the towns, cash on every
 delivery. Finland from 1862. Scenarios with one goal and a year limit: the
-sawmill (deliver 20 boards before 1866, the tutorial) and Harju (two
+sawmill (deliver 15 boards before 1866, the tutorial) and Harju (two
 chains, two towns, a lake and a ridge, grow both towns to size 3 before
 1872, which takes a network). Raide is Finnish for a railway track.
 
@@ -39,7 +39,7 @@ The Räkkä architecture, copied from `sora` (ADR 0001):
 ```
 src/
   game/               the simulation, no DOM anywhere in here
-    types.ts          ScenarioDef, Site, Station, Line, Train, SimState
+    types.ts          ScenarioDef, Site, Station, Line (stops, legs, blocks), Train (wagons and a load each), SimState
     grid.ts           the grid the player never sees: eight directions, A* routing two ways (the
                         cheapest and the shortest, which bridges water and cuts through a hill),
                         the rail profile (the land clamped to GRADE_MAX, cut and fill paid for),
@@ -100,6 +100,9 @@ scripts/
   spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
                         check that every running train sits on its rails and that a frame at play zoom
                         takes 12 ms or less; the check for a change to trains, track or the camera
+  mixed.mjs           make mixed: the card that offers to lengthen a line, a three-stop line, the buy card with a mixed consist
+                        and a wagon that carries nothing, a mixed train unloading and loading at its middle stop, the train card
+                        with each wagon's load; the check for a change to lines, consists or those cards
   upgrades.mjs        make upgrades: the passing siding in pick mode and bought, two trains passing at it, the
                         crane loading, the site card rows, the contract offer and its chip and HUD line;
                         the check for a change to the siding, the crane or the contracts
@@ -137,7 +140,7 @@ docs/
 4. **The player's moves are sim functions.** `plan`, `build`, `undo`,
    `buyTrain`, `closeYearEnd` in `sim.ts`. The UI and the bot call the same
    ones, so what the bot can do the thumb can do and the other way round.
-5. **No signals, no deadlock.** A block is the cells between two stations;
+5. **No signals, no deadlock.** A block is the cells between two neighbouring stops (a leg);
    one running train on it at a time, and two lines that share cells share
    the block; trains wait at stations. Nothing in the UI shows a signal. A
    free line laid over other lines' track is slow for this reason, and
