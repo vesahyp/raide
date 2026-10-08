@@ -364,6 +364,10 @@ new work for the player.
 
 ### Money and goals
 
+The economy and the minute-to-minute loop are planned in
+`docs/economy.md` (2026-10-08); it replaces the year-end perks and the
+train cap described elsewhere in this file once Vesa says yes.
+
 - Cash, one loan with 5 % yearly interest, a loan ceiling that rises with
   net worth. The year-end card is the only report: income by good, upkeep,
   interest, profit, net worth, and one upgrade choice.

@@ -3,6 +3,14 @@
 Forward-looking only. Shipped items are deleted; git history is the record.
 The design is in `docs/design.md`; its "first hour" table is the order.
 
+## Now: the economy and the loop
+
+Vesa on build Terävä Ratavalli, 2026-10-08: "It works. But isnt a game
+yet." `docs/economy.md` is the plan: money that is tight, running costs,
+station capacity in place of the train cap, upgrades bought where the
+bottleneck is, mixed trains and passengers. Nothing is built until Vesa
+says yes.
+
 ## Next: the game in the top-down style
 
 The plan to build the game in the look Vesa picked on 2026-10-07
