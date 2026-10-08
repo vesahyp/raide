@@ -13,6 +13,14 @@ game follows your browser's language.*
 
 ## Miten pelataan
 
+**Vihje ja tavoite.** Ylärivin alla on yksi vihje: mikä on jumissa ja mitä
+tehdä seuraavaksi. Kartalla vihjeen paikan päällä keinuu keltainen
+huutomerkki, ja jumissa olevasta paikasta vie kaareva katkoviiva ratkaisuun.
+Napauta vihjettä, niin kamera vie paikalle ja kortti aukeaa. **×** piilottaa
+vihjeet loppuvuodeksi. Tavoitelaatta nimeää kaupungit ja näyttää pikkukuvalla,
+mitä kultakin puuttuu; napauta sitä, niin tavoitekortti näyttää koon,
+kasvumittarin ja vuosirajan.
+
 **Katso karttaa.** Kartta on iso maasto ylhäältä päin: joki, järvi, metsä
 ja harjut. Mäet näkyvät portaina: jokainen porras on kymmenen metriä
 korkeampi kuin edellinen. Yhdellä sormella tyhjästä kohdasta kartta

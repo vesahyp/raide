@@ -84,7 +84,8 @@ h2 { margin: 0 0 8px; font-weight: 800; font-size: 26px; letter-spacing: 0.02em;
 .hud-goal .until { font-size: 12px; font-weight: 600; color: var(--bone-dim); white-space: nowrap; }
 .hud-goal .goal-row { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 /* the contracts taken: a slim second row under the HUD bar, one pill each, never cut */
-.hud-contracts { position: absolute; left: 0; right: 0; top: 54px; display: flex; flex-wrap: wrap; gap: 4px 6px; pointer-events: none; z-index: 1; }
+.hud-sub { position: absolute; left: 0; right: 0; top: 54px; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; pointer-events: none; z-index: 1; }
+.hud-contracts { align-self: stretch; display: flex; flex-wrap: wrap; gap: 4px 6px; pointer-events: none; }
 .hud-contracts .ct { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px 2px 5px; border-radius: 12px; background: rgba(72, 34, 18, 0.95); border: 1.5px solid #e08a3a; color: #ffd9a0; font-size: 13px; font-weight: 800; white-space: nowrap; box-shadow: 0 2px 0 #0e1710; }
 .hud-contracts .gi { width: 15px; height: 15px; }
 .hud-contracts .who { font-weight: 700; color: var(--bone); }
@@ -95,8 +96,15 @@ button.hud-cash { font-family: inherit; cursor: pointer; }
 button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .hud .pause { flex: none; }
 @media (max-width: 420px) {
+  .hud { gap: 5px; }
+  /* the months stack under the year, so the goal chip keeps room for two town names */
+  .hud-year { flex-direction: column; justify-content: center; gap: 3px; }
+  .hud-year .num { line-height: 1; }
+  .hud-year .months { gap: 1px; }
+  .hud-year .months i { width: 3px; height: 5px; }
+  .hud-year, .hud-goal, .hud-cash { font-size: 17px; padding: 0 6px; }
+  .goal-towns .gn { font-size: 11px; }
   .hud-goal .until { display: none; }
-  .hud-year, .hud-goal, .hud-cash { padding: 0 9px; font-size: 18px; }
 }
 
 /* --- the overlay over the map: names, chips, floats, the hand, the plate --- */
@@ -506,4 +514,63 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 @media (orientation: landscape) {
   .buy-card .buy-foot .btn.primary.wide { min-height: 46px; }
   .card.sheet.buy-card { padding-top: 8px; padding-bottom: calc(6px + var(--sab)); }
+}
+
+/* the goal chip: a button naming the towns the goal rides on, a tiny icon per good each one lacks */
+button.hud-goal { font-family: inherit; cursor: pointer; text-align: left; flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 0 8px; position: relative; overflow: hidden; }
+button.hud-goal:active { transform: translateY(2px); box-shadow: none; }
+.goal-towns { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.goal-towns .gts { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.goal-towns .sz2 { display: none; }
+.goal-towns .gto { flex: none; font-size: 13px; color: var(--gold); }
+.goal-towns .gt { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 800; line-height: 17px; min-width: 0; white-space: nowrap; }
+.goal-towns .gn { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.goal-towns small { font-size: 11px; font-weight: 800; color: var(--gold); flex: none; }
+.goal-towns .gt.done small { color: #9dffa0; }
+.goal-towns .gi { width: 13px; height: 13px; flex: none; }
+button.hud-goal > .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 0; min-width: 0; flex: none; }
+/* the tip: one slim line under the HUD, before the contract pills */
+.hud-tip { pointer-events: auto; display: inline-flex; align-items: stretch; max-width: 100%; border-radius: 14px; background: rgba(72, 50, 14, 0.95); border: 1.5px solid #e8b23a; color: #ffeec2; box-shadow: 0 2px 0 #0e1710; overflow: hidden; }
+.hud-tip .tip-text { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 7px; padding: 5px 4px 5px 7px; font: 700 13px/16px var(--f-body, inherit); cursor: pointer; min-width: 0; }
+.hud-tip .tip-text b { flex: none; width: 18px; height: 18px; border-radius: 50%; background: #f2b631; color: #2a2010; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; }
+.hud-tip .tip-x { all: unset; box-sizing: border-box; flex: none; width: 34px; display: flex; align-items: center; justify-content: center; font-size: 20px; color: #e8c9a0; cursor: pointer; border-left: 1px solid rgba(232, 178, 58, 0.35); }
+/* the marker on the map: an amber speech bubble with a bobbing "!" */
+.advice-mark { position: absolute; left: 0; top: 0; translate: -50% -100%; pointer-events: none; z-index: 2; }
+.advice-mark span { display: block; min-width: 26px; padding: 2px 0 3px; text-align: center; border-radius: 10px; background: #f2b631; border: 2px solid #16120e; color: #2a2010; font: 900 17px/20px var(--f-body, inherit); position: relative; animation: advice-bob 1.8s ease-in-out infinite; box-shadow: 0 2px 0 rgba(22, 18, 14, 0.5); }
+.advice-mark span::after { content: ''; position: absolute; left: 50%; bottom: -7px; margin-left: -5px; border: 5px solid transparent; border-top: 6px solid #16120e; border-bottom: 0; }
+@keyframes advice-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+/* the goal card */
+.goal-card .goal-until { margin: 0 0 6px; color: var(--bone-dim); }
+.goal-town { padding: 7px 0; border-top: 1px solid var(--hair); opacity: 0.75; }
+.goal-town.on { opacity: 1; }
+.goal-town .gtn { display: flex; justify-content: space-between; align-items: baseline; font-size: 17px; }
+.goal-town .gtn .num { color: var(--gold); font-weight: 800; }
+.goal-town.done .gtn .num { color: #9dffa0; }
+.goal-town .gm { height: 8px; margin: 4px 0; border-radius: 4px; background: rgba(239, 230, 207, 0.18); overflow: hidden; }
+.goal-town .gm i { display: block; height: 100%; background: var(--gold); }
+.goal-town .gl { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 14px; font-weight: 700; }
+.goal-town .gl small { color: var(--bone-dim); font-size: 12px; text-transform: uppercase; }
+.goal-town .lack { display: inline-flex; align-items: center; gap: 4px; color: #ff9a8a; }
+.goal-town .lack .gi { width: 18px; height: 18px; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .hud-sub { position: static; display: contents; }
+  .hud-contracts { order: 2; }
+  .hud-tip { position: absolute; left: 160px; top: 0; width: max-content; max-width: min(520px, calc(100vw - 300px)); }
+  .goal-towns .gto, .goal-towns .sz { display: none; }
+  .goal-towns .sz2 { display: inline; }
+  button.hud-goal { padding: 6px 8px 8px; }
+}
+@media (max-width: 420px) {
+  .goal-towns .gt { gap: 3px; }
+  .goal-towns .gi { width: 11px; height: 11px; }
+  .goal-towns .gto { font-size: 12px; }
+  .goal-towns { gap: 3px; }
+  button.hud-goal { padding: 0 5px; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .goal-towns .gt { gap: 3px; }
+  .goal-towns .gn { font-size: 11px; }
+  .goal-towns small { font-size: 10px; }
+  .goal-towns .gi { width: 11px; height: 11px; }
+  button.hud-goal { padding: 6px 5px 8px; }
 }

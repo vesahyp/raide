@@ -121,7 +121,7 @@ const look = (page) =>
   });
 
 async function run(orient) {
-  const phone = devices[orient === 'landscape' ? 'iPhone 15 landscape' : 'iPhone 15'];
+  const phone = devices[orient === 'landscape' ? 'iPhone 16 landscape' : 'iPhone 16'];
   const context = await browser.newContext({ ...phone, hasTouch: true, recordVideo: { dir: join(OUT, 'tmp'), size: phone.viewport } });
   const page = await context.newPage();
   const errors = [];

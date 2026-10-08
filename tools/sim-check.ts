@@ -11,6 +11,7 @@ import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSi
 import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot, type Step, type YearRecord } from './bot';
 import { YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
+import { advice, goalTowns } from '../src/game/advice';
 import { CARGOS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
 
@@ -930,6 +931,23 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity) {
   check(b.length === 3 && b.every((x) => x.site.kind === 'town' && x.price > 0 && x.km > 0 && !x.linked), `on Harju the sawmill's buyers are the three towns and all pay (${b.map((x) => `${x.site.id} ${x.price} at ${x.km} km`).join(', ')})`);
   check(b[0].price >= b[1].price, 'buyers come highest price first');
   check(buyers(s0, siteById(s0, 'hameenlinna')).length === 0, 'a town has no buyers');
+}
+// the advice: the first chain at the start, a stuck mill first once it holds flour with no line out
+{
+  const s = createState(HARJU);
+  const a = advice(s);
+  check(a.length === 1 && a[0].kind === 'first' && a[0].site === 'forest' && a[0].to === 'sawmill', `on Harju at the start the top advice is the first chain (${a.map((x) => `${x.kind} ${x.site}>${x.to}`).join(', ')})`);
+  const g = goalTowns(s);
+  check(g.length === 2 && g.every((x) => x.kind === 'town'), `the goal path names two towns at the start (${g.map((x) => x.id).join(', ')})`);
+  const s2 = createState(HARJU);
+  build(s2, plan(s2, cell(s2, 'forest'), cell(s2, 'sawmill'))[0]);
+  s2.cash = 1400;
+  siteById(s2, 'mill').stock = 20;
+  const b = advice(s2);
+  check(b.length <= 3 && b[0].kind === 'stuck' && b[0].site === 'mill' && !!b[0].to, `a mill full of flour with no line out comes first as stuck (${b.map((x) => `${x.kind} ${x.site}>${x.to}`).join(', ')})`);
+  const t0 = performance.now();
+  for (let i = 0; i < 50; i++) advice(s2);
+  check(performance.now() - t0 < 500, `advice is cheap (${((performance.now() - t0) / 50).toFixed(1)} ms a call)`);
 }
 play(SAWMILL);
 const h = play(HARJU);

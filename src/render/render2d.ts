@@ -19,6 +19,7 @@ import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, waitingTotal, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS } from '../game/sim';
 import { createState } from '../game/state';
+import type { Advice } from '../game/advice';
 import { Clouds } from './clouds';
 import { planTown, secondStreet, type TownItem } from './town';
 import { ENGINE_LEN, WAGON_FARE, WAGON_LEN, MAKES, TAKES, RAW_CAP, RAW_RATE, TERRACE_M, TOWN_MAX, SIDING_OFFSET, SIDING_RAMP, yard } from '../game/content/economy';
@@ -258,6 +259,9 @@ export class Renderer2D {
   backdrop = false;
   /** a canvas size to use instead of the element's, for a map drawn off screen */
   fixed: { w: number; h: number } | null = null;
+  /** the tip on show: its site gets a bobbing marker, and stuck and starved ones an arc to the answer; null for none */
+  advice: Advice | null = null;
+  private adviceEl: HTMLElement | null = null;
   /** a tile point the view eases to, with the zoom */
   private glide: { x: number; y: number } | null = null;
   private followId: number | null = null;
@@ -1805,6 +1809,17 @@ export class Renderer2D {
     }
   }
 
+  /** ease the view to a site, to play zoom when the map is zoomed out to the whole look */
+  panToSite(id: string): void {
+    const site = this.s.sites.find((o) => o.id === id);
+    if (!site) return;
+    this.followId = null;
+    const x = site.cx + 0.5;
+    const y = site.cy + 0.5;
+    this.glide = { x, y: y - this.levelAt(x, y) * LIFT };
+    if (this.cam.s < PLAY_S) this.zoomTo = PLAY_S;
+  }
+
   get following(): number | null {
     return this.followId;
   }
@@ -2313,9 +2328,67 @@ export class Renderer2D {
     }
     if (!this.backdrop) {
       this.drawMarks(drag, lod);
+      this.drawAdviceArc();
       this.overlayFrame(drag, hint, pending, lod);
     }
     if (this.logFps) this.fpsTick(t0);
+  }
+
+  /** a faint dashed arc from the site with the problem to the one that answers it, for stuck and starved tips */
+  private drawAdviceArc(): void {
+    const a = this.advice;
+    if (!a || !a.to || (a.kind !== 'stuck' && a.kind !== 'starved')) return;
+    const from = this.s.sites.find((o) => o.id === a.site);
+    const to = this.s.sites.find((o) => o.id === a.to);
+    if (!from || !to) return;
+    const c = this.ctx;
+    const p = this.project(from.cx + 0.5, from.cy + 0.5, 0);
+    const q = this.project(to.cx + 0.5, to.cy + 0.5, 0);
+    const lift = Math.min(90, Math.hypot(q.x - p.x, q.y - p.y) * 0.25);
+    const mx = (p.x + q.x) / 2;
+    const my = (p.y + q.y) / 2 - lift;
+    c.save();
+    c.lineCap = 'round';
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(22,18,14,0.28)';
+    c.setLineDash([2, 10]);
+    c.beginPath();
+    c.moveTo(p.x, p.y);
+    c.quadraticCurveTo(mx, my, q.x, q.y);
+    c.stroke();
+    c.lineWidth = 2;
+    c.strokeStyle = 'rgba(255,214,120,0.8)';
+    c.setLineDash([2, 10]);
+    c.lineDashOffset = -this.time * 6;
+    c.stroke();
+    // a dot where the answer is
+    c.setLineDash([]);
+    c.fillStyle = 'rgba(255,214,120,0.85)';
+    c.beginPath();
+    c.arc(q.x, q.y, 5, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+  }
+
+  /** the amber "!" in a speech bubble over the tip's site, riding above its name tag */
+  private adviceMark(lod: boolean): void {
+    const a = this.advice;
+    const site = a ? this.s.sites.find((o) => o.id === a.site) : null;
+    if (!a || !site) {
+      if (this.adviceEl) this.adviceEl.style.display = 'none';
+      return;
+    }
+    if (!this.adviceEl) {
+      const el = document.createElement('div');
+      el.className = 'advice-mark';
+      el.innerHTML = '<span>!</span>';
+      this.overlay.appendChild(el);
+      this.adviceEl = el;
+    }
+    const box = lod ? null : this.tagBox.get(site.id);
+    const p = this.project(site.cx + 0.5, site.cy + 0.5, 0);
+    const at = box ? { x: (box.x0 + box.x1) / 2, y: box.y0 - 2 } : { x: p.x, y: p.y - (lod ? 50 : 40) };
+    this.place(this.adviceEl, at);
   }
 
   private fpsTick(t0: number): void {
@@ -2621,6 +2694,7 @@ export class Renderer2D {
     for (const site of s.sites) this.siteLabel(site, lod);
     this.layoutTags();
     this.layoutBadges();
+    this.adviceMark(lod);
     const seen = new Set<object>();
     for (const f of s.floats) {
       seen.add(f);

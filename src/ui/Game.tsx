@@ -21,6 +21,9 @@ import { play, unlock, isMuted, setMuted } from '../audio';
 import { track } from '../track';
 import { saveStars } from '../results';
 import { YearEndCard } from './Ledger';
+import { townLacks } from '../game/advice';
+import { advice, adviceKey, type Advice } from '../game/advice';
+import { tipText, readGoalTowns, GoalTowns, untilText, type GoalTown } from './tips';
 import { GoodIcon, NONE_OF, WagonStrip, WagonPicker, CarryText } from './Wagons';
 
 type Card =
@@ -32,6 +35,7 @@ type Card =
   | { kind: 'result' }
   | { kind: 'pause' }
   | { kind: 'money' }
+  | { kind: 'goal' }
   | null;
 
 interface Hud {
@@ -40,6 +44,8 @@ interface Hud {
   cash: number;
   goal: number;
   goalText: string;
+  /** the towns the goal rides on, for the chip */
+  towns: GoalTown[];
   /** the contracts taken, for the second line of the goal area */
   contracts: { id: number; site: string; good: Good; got: number; count: number; deadline: number }[];
 }
@@ -55,6 +61,10 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const [card, setCard] = useState<Card>(null);
   const [cancel, setCancel] = useState<{ x: number; y: number } | null>(null);
   const [paused, setPaused] = useState(false);
+  // the tip under the HUD: held at least 8 s so it can be read, hidden for the year with the x
+  const [tip, setTip] = useState<Advice | null>(null);
+  const tipRef = useRef<{ adv: Advice | null; key: string; at: number }>({ adv: null, key: '', at: -1e9 });
+  const tipOff = useRef<number | null>(null);
   const [muted, setMutedState] = useState(isMuted());
   const [, bump] = useState(0);
   // pick mode, from the site card's "lay track from here": the site the track starts at or ends at
@@ -129,6 +139,20 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     let acc = 0;
     let frame = 0;
     let raf = 0;
+    // twice a second: the advice, the tip held on screen for 8 s, and the marker on the map
+    const refreshTip = (now: number) => {
+      const held = tipRef.current;
+      const list = tipOff.current === s.year || s.result || s.yearEnd ? [] : advice(s);
+      let next = held;
+      if (held.adv && list.some((a) => adviceKey(a) === held.key)) next = held;
+      else if (held.adv) next = { adv: null, key: '', at: held.at };
+      if (!next.adv && list.length && now - next.at >= 8000) next = { adv: list[0], key: adviceKey(list[0]), at: now };
+      if (next !== held) {
+        tipRef.current = next;
+        setTip(next.adv);
+      }
+      renderer.advice = next.adv;
+    };
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       const real = Math.min(0.1, (now - last) / 1000);
@@ -159,6 +183,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       const c = cardRef.current;
       input.update(real);
       renderer.draw(real * speed, input.drag, hint, c?.kind === 'choice' ? (c.extend ? [...c.extend.flatMap((e) => e.options), ...c.options] : c.options) : null);
+      if (frame % 30 === 0) refreshTip(now);
       if (++frame % 6 === 0) {
         setHud(readHud(s));
         // the open card's numbers follow the sim
@@ -232,7 +257,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       <canvas ref={canvasRef} />
       <div className="map-overlay" ref={overlayRef} />
       <GoodIcons />
-      <div className="hud" data-ui>
+      <div className={`hud${tip ? ' has-tip' : ''}`} data-ui>
         <div className="hud-year">
           <span className="num">{hud.year}</span>
           <span className="months">
@@ -241,22 +266,60 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
             ))}
           </span>
         </div>
-        <div className="hud-goal" title={tr('Tavoite', 'Goal')}>
-          <div className="goal-row">
-            <span className="label">{goal.kind === 'deliver' ? tr('Laudat', 'Boards') : tr(`Koko ${goal.size}`, `Size ${goal.size}`)}</span>
-            <span className="num">{hud.goalText}</span>
-            <span className="bar">
-              <i style={{ width: `${Math.min(100, 100 * hud.goal)}%` }} />
-            </span>
-            <span className="until">{tr('ennen', 'before')} {goal.beforeYear}</span>
-          </div>
-        </div>
+        <button className="hud-goal" data-act="goal" aria-label={tr('Tavoite', 'Goal')} onClick={() => setCard({ kind: 'goal' })}>
+          {goal.kind === 'towns' ? (
+            <>
+              <GoalTowns s={s} towns={hud.towns} size={goal.size} />
+              <span className="bar">
+                <i style={{ width: `${Math.min(100, 100 * hud.goal)}%` }} />
+              </span>
+            </>
+          ) : (
+            <div className="goal-row">
+              <span className="label">{tr('Laudat', 'Boards')}</span>
+              <span className="num">{hud.goalText}</span>
+              <span className="bar">
+                <i style={{ width: `${Math.min(100, 100 * hud.goal)}%` }} />
+              </span>
+              <span className="until">{tr('ennen', 'before')} {goal.beforeYear}</span>
+            </div>
+          )}
+        </button>
         <button className={`hud-cash num${hud.cash < 0 ? ' red' : ''}`} data-act="money" aria-label={tr('Raha', 'Money')} onClick={() => setCard({ kind: 'money' })}>
           {num(hud.cash)}
         </button>
         <button className="round pause" aria-label={tr('Tauko', 'Pause')} onClick={() => setCard({ kind: 'pause' })}>
           <svg viewBox="0 0 24 24" className="glyph"><rect x="6" y="5" width="4" height="14" fill="currentColor" /><rect x="14" y="5" width="4" height="14" fill="currentColor" /></svg>
         </button>
+        <div className="hud-sub">
+        {tip && (
+          <div className="hud-tip" data-sec="tip" data-tip={tip.kind}>
+            <button
+              className="tip-text"
+              data-act="tip"
+              onClick={() => {
+                rendRef.current?.panToSite(tip.site);
+                setCard({ kind: 'site', siteId: tip.site });
+              }}
+            >
+              <b>!</b>
+              <span>{tipText(s, tip)}</span>
+            </button>
+            <button
+              className="tip-x"
+              data-act="tip-hide"
+              aria-label={tr('Piilota vihjeet tämän vuoden ajaksi', 'Hide tips for the rest of the year')}
+              onClick={() => {
+                tipOff.current = s.year;
+                tipRef.current = { adv: null, key: '', at: tipRef.current.at };
+                setTip(null);
+                if (rendRef.current) rendRef.current.advice = null;
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         {hud.contracts.length > 0 && (
           <div className="hud-contracts" data-sec="hud-contracts">
             {hud.contracts.map((c) => (
@@ -269,6 +332,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
             ))}
           </div>
         )}
+        </div>
       </div>
       {lay && (
         <div className="pick-banner" data-ui>
@@ -389,6 +453,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       )}
       {card?.kind === 'result' && s.result && <ResultCard s={s} onAgain={onAgain} onQuit={onQuit} />}
       {card?.kind === 'money' && <MoneyCard s={s} onClose={close} />}
+      {card?.kind === 'goal' && <GoalCard s={s} onClose={close} />}
       {card?.kind === 'pause' && (
         <div className="card overlay">
           <h2>{tr('Tauko', 'Paused')}</h2>
@@ -428,7 +493,7 @@ function readHud(s: SimState): Hud {
   const goal = s.scenario.goal;
   const towns = s.sites.filter((x) => x.kind === 'town');
   const goalText = goal.kind === 'deliver' ? `${s.goalCount}/${goal.count}` : `${Math.min(goal.count, towns.filter((x) => x.size >= goal.size).length)}/${goal.count}`;
-  return { year: s.year, month: s.month, cash: Math.floor(s.cash), goal: goalProgress(s), goalText, contracts: s.contracts.map((c) => ({ id: c.id, site: c.site, good: c.good, got: c.got, count: c.count, deadline: c.deadline })) };
+  return { year: s.year, month: s.month, cash: Math.floor(s.cash), goal: goalProgress(s), goalText, towns: readGoalTowns(s), contracts: s.contracts.map((c) => ({ id: c.id, site: c.site, good: c.good, got: c.got, count: c.count, deadline: c.deadline })) };
 }
 
 /** the site whose station stands at a cell */
@@ -582,6 +647,58 @@ const signed = (n: number): string => {
 };
 
 /** the money card: cash, the loan against its ceiling, net worth, and the two buttons */
+/** the goal in full: each town, its size, its growth meter and what it lacks right now, and the year limit */
+function GoalCard({ s, onClose }: { s: SimState; onClose: () => void }) {
+  const goal = s.scenario.goal;
+  const chosen = new Set(readGoalTowns(s).map((x) => x.id));
+  const towns = s.sites.filter((x) => x.kind === 'town').sort((a, b) => Number(chosen.has(b.id)) - Number(chosen.has(a.id)));
+  return (
+    <div className="card sheet goal-card" data-ui data-sec="goal-card">
+      <CardHead title={goal.kind === 'towns' ? tr(`${goal.count} kaupunkia kokoon ${goal.size}`, `${goal.count} towns to size ${goal.size}`) : tr(`${goal.count} lautakuormaa`, `${goal.count} loads of boards`)} onClose={onClose} />
+      <p className="small goal-until">{untilText(goal.beforeYear, s.year, s.month)}</p>
+      {goal.kind === 'deliver' ? (
+        <div className="fact">
+          <span className="fl">{tt(siteById(s, goal.site).name)}</span>
+          <b className="num gold">{s.goalCount}/{goal.count}</b>
+        </div>
+      ) : (
+        towns.map((x) => {
+          const lacks = townLacks(s, x);
+          const done = x.size >= goal.size;
+          return (
+            <div key={x.id} className={`goal-town${chosen.has(x.id) ? ' on' : ''}${done ? ' done' : ''}`} data-goal-card-town={x.id}>
+              <div className="gtn">
+                <b>{tt(x.name)}</b>
+                <span className="num">{done ? '✓' : `${x.size}→${goal.size}`}</span>
+              </div>
+              <div className="gm" aria-label={tr('Kasvumittari', 'Growth meter')}>
+                <i style={{ width: `${Math.round(100 * (x.size >= TOWN_MAX ? 1 : x.growth))}%` }} />
+              </div>
+              <div className="gl">
+                {x.size >= TOWN_MAX || done ? (
+                  <small>{tr('Valmis', 'Done')}</small>
+                ) : lacks.length ? (
+                  <>
+                    <small>{tr('Puuttuu', 'Lacks')}</small>
+                    {lacks.map((g) => (
+                      <span key={g} className="lack">
+                        <GoodIcon good={g} />
+                        {tr(NONE_OF[g][0], NONE_OF[g][1])}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <small>{tr('Kaikkea on, kasvaa', 'Has what it needs, growing')}</small>
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 function MoneyCard({ s, onClose }: { s: SimState; onClose: () => void }) {
   const ceiling = loanCeiling(s);
   const worth = netWorth(s);
