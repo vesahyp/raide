@@ -361,6 +361,21 @@ function crossesTrack(s: SimState, x: number, y: number, dx: number, dy: number)
   return (s.track[y * s.w + x + dx] & CROSS_BIT[dy > 0 ? (dx > 0 ? 0 : 1) : dx > 0 ? 2 : 3]) !== 0;
 }
 
+/**
+ * Whether a route doubles back: over any three cells it heads one way, and over the next three it
+ * heads more than 90 degrees away from that. A hairpin is never a sensible way to a site.
+ */
+export function turnsBack(s: { w: number }, cells: number[], span = 3): boolean {
+  for (let k = span; k + span < cells.length; k++) {
+    const ax = cx(s, cells[k]) - cx(s, cells[k - span]);
+    const ay = cy(s, cells[k]) - cy(s, cells[k - span]);
+    const bx = cx(s, cells[k + span]) - cx(s, cells[k]);
+    const by = cy(s, cells[k + span]) - cy(s, cells[k]);
+    if (ax * bx + ay * by < 0) return true;
+  }
+  return false;
+}
+
 /** the routes a drag offers: the cheapest, and the shortest when it is a different path */
 export function routeOptions(s: SimState, from: number, to: number, startSide?: number): Route[] {
   const cheap = route(s, from, to, 'cheap', startSide);

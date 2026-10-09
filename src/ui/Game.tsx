@@ -33,7 +33,7 @@ type Card =
   | { kind: 'line'; lineId: number }
   | { kind: 'train'; trainId: number }
   | { kind: 'site'; siteId: string }
-  | { kind: 'choice'; options: Route[]; sx: number; sy: number; /** the lines the new stop could lengthen, each with the routes that do */ extend?: { lineId: number; options: Route[] }[] }
+  | { kind: 'choice'; options: Route[]; sx: number; sy: number; /** the lines the new stop could lengthen, each with the routes that do */ extend?: { lineId: number; options: Route[]; trainIds: number[] }[] }
   | { kind: 'yearEnd' }
   | { kind: 'result' }
   | { kind: 'pause' }
@@ -83,6 +83,12 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const inputRef = useRef<Input | null>(null);
   const cardRef = useRef<Card>(null);
   cardRef.current = card;
+  // the year end opens the ledger only when the player is not in the middle of something
+  const [ledgerWaits, setLedgerWaits] = useState(false);
+  const ledgerWaitsRef = useRef(false);
+  ledgerWaitsRef.current = ledgerWaits;
+  const busyRef = useRef({ lay: false, siding: false });
+  busyRef.current = { lay: lay !== null, siding: sidingPick !== null };
   const pausedRef = useRef(false);
   pausedRef.current = paused || (card !== null && card.kind !== 'line' && card.kind !== 'train' && card.kind !== 'site');
 
@@ -115,7 +121,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           setCancel({ x: sx, y: sy });
           setCard({ kind: 'line', lineId: line.id });
         },
-        onChoice: (options, sx, sy, extend) => setCard({ kind: 'choice', options, sx, sy, extend: extend ? extend.map((e) => ({ lineId: e.line.id, options: e.options })) : undefined }),
+        onChoice: (options, sx, sy, extend) => setCard({ kind: 'choice', options, sx, sy, extend: extend ? extend.map((e) => ({ lineId: e.line.id, options: e.options, trainIds: e.trains.map((x) => x.id) })) : undefined }),
         onLine: (line) => setCard({ kind: 'line', lineId: line.id }),
         onTrain: (train) => {
           renderer.follow(train);
@@ -181,9 +187,14 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         track('scenario_end', { scenario: scenario.id, won: s.result.won, year: s.result.year, cash: s.result.cash, worth: s.result.worth, stars: s.result.stars, reason: s.result.reason });
         setCard({ kind: 'result' });
       } else if (s.yearEnd && !s.result && cardRef.current?.kind !== 'yearEnd') {
+        // a held drag, a pick mode and any card the player opened come first: the ledger waits until they are done
+        const kind = cardRef.current?.kind;
+        const busy = !!input.drag || busyRef.current.lay || busyRef.current.siding || (kind !== undefined && kind !== 'result');
         if (bot && !(holdLedger > 0 && s.history.length >= holdLedger)) bot.act(s);
+        else if (busy) setLedgerWaits((x) => (x ? x : true));
         else setCard({ kind: 'yearEnd' });
       }
+      if (ledgerWaitsRef.current && (!s.yearEnd || cardRef.current?.kind === 'yearEnd')) setLedgerWaits(false);
       for (const name of s.sounds) play(name);
       s.sounds.length = 0;
       if (!s.lastBuild) setCancel((c) => (c ? null : c));
@@ -260,7 +271,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const site = card?.kind === 'site' ? s.sites.find((x) => x.id === card.siteId) ?? null : null;
 
   return (
-    <div className="game">
+    <div className={`game${ledgerWaits ? ' ledger-waits' : ''}`}>
       <canvas ref={canvasRef} />
       <div className="map-overlay" ref={overlayRef} />
       <GoodIcons />
@@ -341,6 +352,11 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         )}
         </div>
       </div>
+      {ledgerWaits && (
+        <div className={`yearend-pill${lay || sidingPick ? ' low' : ''}`} data-ui data-sec="yearend-pill">
+          {tr('Vuosi päättyi: tilinpäätös, kun olet valmis', 'Year ended: ledger when you are done')}
+        </div>
+      )}
       {lay && (
         <div className="pick-banner" data-ui>
           <span>{stationAt(s, idx(s, siteById(s, lay.siteId).cx, siteById(s, lay.siteId).cy)) ? tr('Napauta, minne rata menee', 'Tap where the track goes') : tr('Napauta asema, josta rata alkaa', 'Tap the station the track starts from')}</span>
@@ -398,7 +414,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         <ChoiceCard
           s={s}
           options={card.options}
-          extend={card.extend ? card.extend.map((e) => ({ line: s.lines.find((l) => l.id === e.lineId)!, options: e.options })) : undefined}
+          extend={card.extend ? card.extend.map((e) => ({ line: s.lines.find((l) => l.id === e.lineId)!, options: e.options, trains: e.trainIds.map((id) => s.trains.find((x) => x.id === id)).filter((x): x is Train => !!x) })) : undefined}
           onPick={(r, extendId) => {
             if (r.cost > s.cash) {
               note(s, r.cells[r.cells.length - 1], tr('Ei rahaa', 'No cash'));
@@ -533,17 +549,18 @@ function lineSiteIds(s: SimState, lineId: number | undefined): string | undefine
  * costs and runs. When the drag starts at the end of a line that has room for a stop, the card also
  * asks whether the new stop lengthens that line or starts a new one, and each way shows its own route.
  */
-function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; options: Route[]; extend?: { line: Line; options: Route[] }[]; onPick: (r: Route, extendId?: number) => void; onClose: () => void }) {
+function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; options: Route[]; extend?: { line: Line; options: Route[]; trains: Train[] }[]; onPick: (r: Route, extendId?: number) => void; onClose: () => void }) {
   const name = (r: Route) => (r.bridge.length ? tr('Silta', 'Bridge') : r.cutting.length ? tr('Leikkaus', 'Cutting') : r.mode === 'cheap' ? tr('Kierto', 'Around') : tr('Suora', 'Direct'));
   const target = siteAt(s, options[0].cells[options[0].cells.length - 1]);
-  const groups: { key: string; label: string | null; routes: Route[]; from: number; extendId?: number }[] = [];
+  const groups: { key: string; label: string | null; routes: Route[]; from: number; extendId?: number; trains?: Train[] }[] = [];
   if (extend) {
-    let from = 0;
+    // a new line comes first and is the plain way; lengthening is a deliberate second choice and says which trains it sends on
+    groups.push({ key: 'new', label: tr('Uusi rata', 'New line'), routes: options, from: 0 });
+    let from = options.length;
     for (const e of extend) {
-      groups.push({ key: `extend-${e.line.id}`, label: tr(`Jatka rataa ${lineName(s, e.line)} → ${tt(target!.name)}`, `Extend ${lineName(s, e.line)} to ${tt(target!.name)}`), routes: e.options, from, extendId: e.line.id });
+      groups.push({ key: `extend-${e.line.id}`, label: tr(`Jatka rataa ${lineName(s, e.line)} → ${tt(target!.name)}`, `Lengthen ${lineName(s, e.line)} to ${tt(target!.name)}`), routes: e.options, from, extendId: e.line.id, trains: e.trains });
       from += e.options.length;
     }
-    groups.push({ key: 'new', label: tr('Uusi rata', 'New line'), routes: options, from });
   } else groups.push({ key: 'way', label: null, routes: options, from: 0 });
   return (
     <div className="card sheet choice-card" data-ui>
@@ -551,6 +568,12 @@ function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; opti
       {groups.map((g) => (
         <div key={g.key} className="grp" data-group={g.key}>
           {g.label && <div className="buy-label">{g.label}</div>}
+          {g.trains && (
+            <p className="small" data-sec="run-on">
+              {tr(`Nämä junat ajavat jatkossa ${tt(target!.name)} asti: `, `These trains will now run on to ${tt(target!.name)}: `)}
+              {g.trains.map((x) => `${tt(ENGINES[x.engine].name)} (${[...new Set(x.wagons.map((w) => tt(WAGON_NAME[w])))].join(', ')})`).join('; ')}
+            </p>
+          )}
           <div className="routes">
             {g.routes.map((r, k) => {
               const earth = earthWord(r);

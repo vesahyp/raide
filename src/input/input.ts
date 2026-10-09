@@ -14,7 +14,8 @@
  * "lay track from here") a tap on a marked site builds as the lift of a drag would.
  */
 import type { SimState, Line, Site, Train } from '../game/types';
-import { plan, build, extendable, canExtend, freeSide } from '../game/sim';
+import { plan, build } from '../game/sim';
+import { lengthenOptions, type Lengthen } from '../game/advice';
 import { idx, inside, route, type Route } from '../game/grid';
 import { stationAt } from '../game/state';
 import type { Renderer2D } from '../render/render2d';
@@ -40,7 +41,7 @@ export interface InputEvents {
    * the lift offers two routes, or a line that could take the new stop: the UI asks which. `extend`
    * lists the lines the new stop could lengthen, each with the routes that do it (they leave its end station on the free side).
    */
-  onChoice: (options: Route[], sx: number, sy: number, extend?: { line: Line; options: Route[] }[]) => void;
+  onChoice: (options: Route[], sx: number, sy: number, extend?: Lengthen[]) => void;
   onLine: (line: Line) => void;
   onTrain: (train: Train) => void;
   onSite: (site: Site) => void;
@@ -291,13 +292,12 @@ export class Input {
   }
 
   /**
-   * A drag or a tap in pick mode has settled on a site: a line the station ends may take the new stop
-   * (the UI asks: extend it, or a new line), two routes ask which way, one route is built.
+   * A drag or a tap in pick mode has settled on a site: a new line is the default. A line the station ends is
+   * offered on the card only when one of its trains carries something the new stop takes or makes; two routes ask which
+   * way, one route is built. The drag and the pick mode both come here.
    */
   private lifted(options: Route[], from: number, to: number, sx: number, sy: number): void {
-    const exts = extendable(this.s, from)
-      .map((line) => ({ line, options: plan(this.s, from, to, freeSide(this.s, line, from)).filter((r) => canExtend(this.s, r, line.id)) }))
-      .filter((e) => e.options.length > 0);
+    const exts = lengthenOptions(this.s, from, to);
     if (exts.length) return this.ev.onChoice(options, sx, sy, exts);
     if (options.length > 1) return this.ev.onChoice(options, sx, sy);
     if (options[0].cost > this.s.cash) return this.ev.onNote(options[0].cells[options[0].cells.length - 1], 'cash');

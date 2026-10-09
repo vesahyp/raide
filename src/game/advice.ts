@@ -4,10 +4,10 @@
  * most three, the top one first. It reads the state and changes nothing, and the one costly part
  * (a route's price) is remembered while the stations and lines stay as they are.
  */
-import type { Good, Line, SimState, Site, WagonType } from './types';
+import type { Good, Line, SimState, Site, Train, WagonType } from './types';
 import { MAKES, TAKES, WAGON_GOODS, WAGON_FARE, WAGONS_MAX, WAGONS_DEFAULT, wagonFor } from './content/economy';
-import { siteById, stationAt } from './state';
-import { idx } from './grid';
+import { siteById, siteAt, stationAt } from './state';
+import { idx, type Route } from './grid';
 import { plan, platformPrice, lineYear, trainPrice, wantedGoods, extendable, canExtend, freeSide, stopSite, townStops, wantsPeople, visited } from './sim';
 
 export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'people' | 'platform' | 'cash' | 'contract';
@@ -242,12 +242,37 @@ export function advice(s: SimState): Advice[] {
 function lengthenable(s: SimState, a: Site, b: Site): number | undefined {
   const [from, to] = hasStation(s, a) ? [a, b] : hasStation(s, b) ? [b, a] : [null, null];
   if (!from || !to) return undefined;
-  const start = cellOf(s, from);
-  for (const line of extendable(s, start)) {
-    if (!plan(s, start, cellOf(s, to), freeSide(s, line, start)).some((r) => canExtend(s, r, line.id))) continue;
-    if (s.trains.some((t) => t.lineId === line.id && t.wagons.some((w) => carriesAt(s, line, w, to)))) return line.id;
+  return lengthenOptions(s, cellOf(s, from), cellOf(s, to))[0]?.line.id;
+}
+
+/** a line the new stop could lengthen: the routes that do it, and the trains that would then run on to the new stop */
+export interface Lengthen {
+  line: Line;
+  options: Route[];
+  trains: Train[];
+}
+
+/**
+ * The lines a track from a station to a site may lengthen. A line is on the list only when a train
+ * on it carries something the new stop takes or makes (a lengthening that sends a train where its
+ * wagons have nothing to do is never offered), and a route can leave its end station on the free
+ * side without a bridge the new line would not need (the free side may point away from the target,
+ * and the forced straight run then ends in a bridge and a hairpin). Everything else is
+ * a new line. The drag and the pick mode both ask here.
+ */
+export function lengthenOptions(s: SimState, from: number, to: number): Lengthen[] {
+  const site = siteAt(s, to);
+  if (!site) return [];
+  const fresh = plan(s, from, to);
+  const dry = fresh.length ? Math.min(...fresh.map((r) => r.bridge.length)) : 0;
+  const out: Lengthen[] = [];
+  for (const line of extendable(s, from)) {
+    const trains = s.trains.filter((t) => t.lineId === line.id && t.wagons.some((w) => carriesAt(s, line, w, site)));
+    if (!trains.length) continue;
+    const options = plan(s, from, to, freeSide(s, line, from)).filter((r) => canExtend(s, r, line.id) && r.bridge.length <= dry);
+    if (options.length) out.push({ line, options, trains });
   }
-  return undefined;
+  return out;
 }
 
 /** whether a wagon of this type would carry something to or from a new stop at this site on the line */

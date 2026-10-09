@@ -29,7 +29,12 @@ buy-sheet: build
 #   make drag-look      # the start rings and the drag targets, portrait and landscape, into shots/look/targets-*.png
 #   make icon           # render public/icon.svg to the PNG icons
 #   make touch-check    # lays track and buys a train by touch on an emulated phone
-#   make rotate-check   # turning the phone mid-game must keep the state and the layout
+#   make yearend-check  # the year end must wait for a held drag, a pick mode and an open card; a drag from a line's end builds a new line
+#   make rotate-check   # the year end against a drag, a pick mode and a card
+yearend-check:
+	node scripts/yearend-check.mjs
+
+# turning the phone mid-game must keep the state and the layout
 #   make playthrough    # the scenario by thumb on an emulated iPhone, portrait and landscape,
 #                       #   a video each (ORIENT=portrait for one; SPEED=0.5 on a loaded machine)
 #   make pwa-check      # manifest, icons, service worker, offline (URL ?= the live site)
@@ -47,7 +52,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed people buy-sheet drag-look icon money-look touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed people buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev

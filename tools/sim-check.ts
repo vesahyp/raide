@@ -8,10 +8,10 @@
 import { createState, siteById, stationAt } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
 import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth } from '../src/game/sim';
-import { idx, route, APPROACH } from '../src/game/grid';
+import { idx, route, APPROACH, turnsBack } from '../src/game/grid';
 import { Bot, type Step, type YearRecord } from './bot';
 import { ENGINE_LEN, WAGON_LEN, YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
-import { advice, goalTowns } from '../src/game/advice';
+import { advice, goalTowns, lengthenOptions } from '../src/game/advice';
 import { CARGOS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
 
@@ -1048,6 +1048,37 @@ check(h.sites.filter((x) => x.kind === 'town' && x.size >= 3).length >= 2, `harj
   check(served(plans.A, 'forest') && !served(plans.A, 'korpela') && served(plans.A, 'farm') && !served(plans.A, 'niittyla') && !served(plans.A, 'lahti'), 'plan A runs Kuusikko and Peltola and never Korpela, Niittylä or Lahti');
   check(served(plans.B, 'korpela') && !served(plans.B, 'forest') && served(plans.B, 'niittyla') && !served(plans.B, 'farm') && served(plans.B, 'lahti'), 'plan B runs Korpela, Niittylä and Lahti and never Kuusikko or Peltola');
   check(served(plans.C, 'forest') && served(plans.C, 'farm') && served(plans.C, 'lahti') && !served(plans.C, 'korpela') && !served(plans.C, 'niittyla'), 'plan C runs Kuusikko, Peltola and Lahti: a mix of the other two');
+}
+// a track out of the end of a line never goes out over water or doubles back to satisfy the station's approach, and a line is lengthened only for a train that has something to do at the new stop
+{
+  const s = createState(HARJU);
+  build(s, plan(s, cell(s, 'korpela'), cell(s, 'forest'))[0]);
+  const log = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+  const from = cell(s, 'sawmill');
+  const to = cell(s, 'tampere');
+  const routes = plan(s, from, to);
+  const cheap = routes[0];
+  // the straight line between the two stations crosses water or it does not; the route may bridge only when it does
+  const a = { x: siteById(s, 'sawmill').cx, y: siteById(s, 'sawmill').cy };
+  const b = { x: siteById(s, 'tampere').cx, y: siteById(s, 'tampere').cy };
+  let wet = false;
+  for (let k = 0; k <= 200; k++) {
+    const x = Math.round(a.x + ((b.x - a.x) * k) / 200);
+    const y = Math.round(a.y + ((b.y - a.y) * k) / 200);
+    if (s.water[idx(s, x, y)]) wet = true;
+  }
+  check(!!cheap && (wet || cheap.bridge.length === 0), `Koskensaha to Tampere has no bridge where the straight line between them is dry (${cheap?.bridge.length} bridge cells, straight line wet: ${wet})`);
+  check(!!cheap && !turnsBack(s, cheap.cells), 'and it never doubles back more than 90 degrees');
+  // the log line's train carries timber: Tampere takes none of it, so the card offers a new line only
+  buyTrain(s, log.id, ['flat', 'flat'], 'hilma');
+  check(lengthenOptions(s, from, to).length === 0, 'a log train is not sent on to Tampere: the lengthening is not offered');
+  // the Korpela line ends at Kuusikko; a timber train on it may be lengthened to the sawmill, which takes timber, and the card says which train runs on
+  const s2 = createState(HARJU);
+  const first = build(s2, plan(s2, cell(s2, 'korpela'), cell(s2, 'forest'))[0])!;
+  check(lengthenOptions(s2, cell(s2, 'forest'), cell(s2, 'sawmill')).length === 0, 'with no train on the line there is nothing to lengthen it for');
+  buyTrain(s2, first.id, ['flat', 'flat'], 'hilma');
+  const ext = lengthenOptions(s2, cell(s2, 'forest'), cell(s2, 'sawmill'));
+  check(ext.length === 1 && ext[0].line.id === first.id && ext[0].trains.length === 1, `a timber train may be lengthened to the sawmill, which takes timber, and the train that runs on is named (${ext.length} lines)`);
 }
 // the sensible player: the tips, one train a line, no loan, no siding, no crane. It wins in the last years and earns one or two stars
 play(SAWMILL, false, Infinity, 'D');

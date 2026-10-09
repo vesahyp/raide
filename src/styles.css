@@ -402,6 +402,17 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 @media (orientation: landscape) and (max-height: 520px) {
   .pick-banner { top: calc(var(--sat) + 8px); }
 }
+/* the year ended while the player was busy: the ledger waits, and this says so */
+.yearend-pill { position: absolute; left: 50%; top: calc(var(--sat) + 64px); transform: translateX(-50%); max-width: calc(100% - 16px); padding: 6px 14px; border-radius: 999px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; font-weight: 800; font-size: 14px; white-space: nowrap; pointer-events: none; z-index: 6; }
+.game.ledger-waits .card.sheet, .game.ledger-waits .card.sheet.buy-card, .game.ledger-waits .card.sheet.train-card { max-height: calc(100% - var(--sat) - 112px); }
+@media (orientation: landscape) and (max-height: 520px) {
+  .game.ledger-waits .card.sheet, .game.ledger-waits .card.sheet.buy-card, .game.ledger-waits .card.sheet.train-card { max-height: calc(100% - var(--sat) - 64px); }
+}
+.yearend-pill.low { top: calc(var(--sat) + 124px); }
+@media (orientation: landscape) and (max-height: 520px) {
+  .yearend-pill { top: calc(var(--sat) + 8px); }
+  .yearend-pill.low { top: calc(var(--sat) + 64px); }
+}
 .btn.route small b { font-weight: 900; }
 .btn.route .trips { white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 700; color: var(--bone); }
 .btn.route .trips .pic { transform: scale(0.75); margin: 0 -3px; }
