@@ -3,12 +3,29 @@
 Forward-looking only. Shipped items are deleted; git history is the record.
 The design is in `docs/design.md`; its "first hour" table is the order.
 
-## Now: play the economy
+## Now: Vesa plays the overnight build
 
-All five steps of `docs/economy.md` are built: money that is tight, towns
-that use what they get, the upgrades and the contract, mixed trains, and
-travellers and mail. Vesa plays it on the phone before the next step starts.
-What the plan left out (double track, engines by era) is listed there.
+All five steps of `docs/economy.md` shipped on 2026-10-08, then Harju was
+played by touch on an iPhone 16 overnight and the weaknesses a player hits
+were fixed in order: the game now says what is stuck and what to do next
+(a tip, a marker, a goal chip that names its towns), every start and far
+site is a real choice, a fast clock, pick mode asks before lengthening a
+line, a goal sensible play can win with stars for winning early and a
+result card, and no train stands on another. Vesa plays it before the
+next step starts. What the economy plan left out (double track, engines by
+era) is listed there.
+
+Still weak, in the order a player meets it:
+
+- Towns grow from size 3 by a market and a hall more than by houses (a
+  yard fits about 7); growth past the goal is not much to look at.
+- The bot's three Harju plans end within 35 % of each other in net worth,
+  not 20 %: a route never crosses laid track in an X now, which costs the
+  mixed plan. The choice is real but not even.
+- Passengers earn little against goods; a coach line is a growth need
+  more than a business.
+- The playthrough is flaky at normal speed on a loaded machine
+  (`SPEED=0.5` is steady).
 
 ## Next: the game in the top-down style
 
@@ -24,20 +41,13 @@ Each slice deploys to https://vesahyp.github.io/raide/ and is reported with
 the link and three steps to try on the phone. A slice is judged by looking
 at the screen on phone emulation. Scripted checks stay short.
 
-### Left from slices 1 to 5
+### Left from slices 1 to 5 and the night
 
 - A mixed train (forest, sawmill, town) earns about a third less per
   engine than two single trains, because each wagon loads on one leg. It
   pays where cash is short. Vesa decides whether that is the right
   trade-off.
 
-- `make playthrough` loses Harju by thumb: it builds all six lines and
-  trains but Hämeenlinna stays at size 1 while Tampere reaches 5. The bot
-  wins headless (1869). The thumb plays slower, so the balance leans on
-  speed; look at which town the hand's plan starves.
-- A town fits about 7 houses in its yard, not 20: growth past size 3 shows
-  as the market and the hall more than as houses. A bigger town yard would
-  need the map to give it room.
 - The Harju ridge is a flat-topped mesa of uniform width; the mockup's
   ridge was softer. Revisit with slice 5's map work.
 - At Koskensaha the east points of the platform tracks sit on the bridge
@@ -67,22 +77,4 @@ stops, autosave, stars in DynamoDB, the sandbox.
 - Scenario stars in DynamoDB behind one Lambda, once there is a records
   screen to show them on.
 - The tracking rollup and the stats board, copied from sora once it has one.
-- The name: Raide, Veturi or Ratapiha.## Now: the overnight push (2026-10-08 to 09)
-
-Vesa: "I hope to have a good game by morning." Harju was played by touch
-on an iPhone 16 after the economy plan's five steps shipped (build Iloinen
-Satama). What works: the first ten minutes, and tight money in the early
-years. The three things that most stop it being a good game, fixed in this
-order, each deployed and replayed:
-
-1. **The player loses the thread mid-game.** The thumb sat on 1400 to 3000
-   cash from 1868 while Myllykylä held 20 flour with no line out and every
-   town stayed at size 1. Nothing says what is stuck or what to do next;
-   the goal chip "Size 3 0/2" names no town and no missing good.
-2. **Half the map and the first choice do not matter.** Korpela, Niittylä,
-   Peltola and Lahti get no deliveries in the bot's game; which forest to
-   start from changes nothing.
-3. **Dead time.** Long stretches where nothing needs the player, and no
-   way to run the clock faster.
-
-
+- The name: Raide, Veturi or Ratapiha.
