@@ -292,6 +292,8 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
       const kink = (leave && dx * leave <= 0) || (enter && dx * -enter <= 0) ? KINK_COST : 0;
       // a diagonal step between two water cells would run over the water's corner on no bridge
       if (dx !== 0 && dy !== 0 && s.water[idx(s, x + dx, y)] && s.water[idx(s, x, y + dy)] && !s.water[ni] && !s.water[cur]) continue;
+      // a diagonal step may not cross laid track's other diagonal of the same square: two lines that cross in an X share no cell, so no block, and their trains would meet at the point
+      if (dx !== 0 && dy !== 0 && crossesTrack(s, x, y, dx, dy)) continue;
       const len = stepLen(dx, dy);
       const c = g[cur] + (mode === 'cheap' ? stepCost(s, cur, ni, len) : len) + kink;
       if (c < g[ni]) {
@@ -349,6 +351,14 @@ export function describe(s: SimState, cells: number[], mode: RouteMode): Route {
     cost += (TRACK_COST * (1 + GRADE_COST * g) + EARTH_COST * Math.abs(earth)) * len;
   }
   return { mode, cells, rail, cost: Math.round(cost), bridge, cutting, fill, added, newStation, length, worst, climb };
+}
+
+/** the track bit of the other diagonal, seen from the cell beside the step: (dx, dy) = (+, +), (-, +), (+, -), (-, -) */
+const CROSS_BIT = [dirIndex(-1, 1), dirIndex(1, 1), dirIndex(-1, -1), dirIndex(1, -1)].map((d) => 1 << d);
+
+/** whether laid track already runs along the other diagonal of the square that a diagonal step from (x, y) by (dx, dy) cuts across */
+function crossesTrack(s: SimState, x: number, y: number, dx: number, dy: number): boolean {
+  return (s.track[y * s.w + x + dx] & CROSS_BIT[dy > 0 ? (dx > 0 ? 0 : 1) : dx > 0 ? 2 : 3]) !== 0;
 }
 
 /** the routes a drag offers: the cheapest, and the shortest when it is a different path */

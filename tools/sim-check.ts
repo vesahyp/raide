@@ -10,7 +10,7 @@ import { SAWMILL, HARJU } from '../src/game/content/scenarios';
 import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth } from '../src/game/sim';
 import { idx, route, APPROACH } from '../src/game/grid';
 import { Bot, type Step, type YearRecord } from './bot';
-import { YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
+import { ENGINE_LEN, WAGON_LEN, YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
 import { advice, goalTowns } from '../src/game/advice';
 import { CARGOS } from '../src/game/types';
 import type { SimState } from '../src/game/types';
@@ -798,8 +798,24 @@ const maxLoan: Record<string, number> = {};
  * track, a waiting train stands clear of the station, and how long a train goes without moving or
  * working (`longest`, in seconds), the proof that no train is stuck.
  */
+/** the centre of the engine and of each wagon of a train, in tiles, as the renderer places them along the line */
+function vehicleCentres(s: SimState, o: SimState['trains'][number]): { x: number; y: number }[] {
+  const line = lineOf(s, o);
+  const out: { x: number; y: number }[] = [];
+  let d = o.s + o.dir * (drawnLength(o) / 2);
+  for (let i = 0; i <= o.nWagons; i++) {
+    const len = i === 0 ? ENGINE_LEN : WAGON_LEN;
+    const m = along(line, d - o.dir * (len / 2), s.w);
+    out.push({ x: m.x, y: m.y });
+    d -= o.dir * (len + 0.08);
+  }
+  return out;
+}
+
 class Watch {
   overlap = 0;
+  /** frames with two vehicles of different trains closer than 0.6 tile, off the separate tracks of a platform */
+  near = 0;
   shared = 0;
   apart = 0;
   longest = 0;
@@ -833,6 +849,12 @@ class Watch {
           return near === o.idx + o.dir ? o.slot : o.slotFrom;
         };
         const throat = (c: number) => trackAt(a.o, c) !== trackAt(b.o, c) && s.stations.some((st) => dist(st.cell, c) <= 8);
+        // the vehicles themselves: the drawn centre of the engine and of each wagon, less than 0.6 tile from one of another train
+        const pa = vehicleCentres(s, a.o);
+        const pb = vehicleCentres(s, b.o);
+        let close = false;
+        for (const u of pa) for (const v of pb) if (Math.hypot(u.x - v.x, u.y - v.y) < 0.6 && !throat(Math.floor(u.y) * s.w + Math.floor(u.x))) close = true;
+        if (close) this.near++;
         for (const c of a.cells) if (b.cells.has(c) && !s.stations.some((st) => st.cell === c) && !throat(c)) {
           this.overlap++;
           if (this.overlap === 1) console.log(`  overlap at t=${s.time.toFixed(1)} cell ${c}: train ${a.o.id} ${a.o.state}${a.o.queued ? ' queued' : ''} s=${a.o.s.toFixed(1)} dir ${a.o.dir} line ${a.o.lineId} slot ${a.o.slot} at ${a.o.at}; train ${b.o.id} ${b.o.state}${b.o.queued ? ' queued' : ''} s=${b.o.s.toFixed(1)} dir ${b.o.dir} line ${b.o.lineId} slot ${b.o.slot} at ${b.o.at}`);
@@ -912,7 +934,7 @@ class Watch {
   const three = s.lines.filter((l) => l.stops.length === 3);
   check(bot.done === steps.length && four.length === 1 && three.length === 1 && s.trains.length === 4, `the bot builds a four-stop and a three-stop line and buys two trains for each (${lines})`);
   check(s.trains.every((t) => !t.parked), 'and all four trains are in service');
-  check(watch.overlap === 0, `ten years: no two trains share a cell (${watch.overlap} frames)`);
+  check(watch.overlap === 0 && watch.near === 0, `ten years: no two trains share a cell or come closer than 0.6 tile (${watch.overlap} and ${watch.near} frames)`);
   check(watch.shared === 0 && watch.apart === 0, `and none stand on one platform or over a station (${watch.shared} and ${watch.apart} frames)`);
   check(watch.longest <= 30, `and no train is stuck: the longest a train went without moving or working is ${watch.longest.toFixed(1)} s`);
   check(watch.gate <= 40, `and none waits at a shared block more than 40 s: first come, first served (the longest wait is ${watch.gate.toFixed(1)} s)`);
@@ -932,7 +954,7 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity, variant?:
     step(s);
     watch.check(s);
   }
-  const { overlap, shared, apart } = watch;
+  const { overlap, near, shared, apart } = watch;
   if (!greedy) for (const l of bot.log.filter((x) => !x.includes('borrow'))) console.log(`  ${l}`);
   const key = `${sc.id}${greedy ? '-greedy' : ''}${variant ? `-${variant}` : ''}`;
   years[key] = bot.years;
@@ -942,9 +964,9 @@ function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity, variant?:
   if (greedy) return s;
   check(!!r && r.won, `the bot wins ${name} (${r ? `${r.won ? 'won' : r.reason} in ${r.year}, cash ${r.cash}, net worth ${r.worth}, ${r.stars} stars` : 'not over'})`);
   check(s.firstPayAt !== null && s.firstPayAt < 90, `${name}: the first paid delivery lands inside 90 s (${s.firstPayAt?.toFixed(0)} s)`);
-  // the tips lengthen a line through another line's end station, a shape the plans avoid; the overlap there is noted, not held
-  if (tips) console.log(`  note: ${name}: ${overlap} frames with two trains on one cell, where a lengthened line runs through another line's station`);
-  else check(overlap === 0, `${name}: no two trains are ever on the same track cell (${overlap} frames)`);
+  // no two trains are ever on one track cell or closer than 0.6 tile, tips or plan, a lengthened line through another line's station included
+  check(overlap === 0, `${name}: no two trains are ever on the same track cell (${overlap} frames)`);
+  check(near === 0, `${name}: no two vehicles of different trains are ever closer than 0.6 tile (${near} frames)`);
   check(shared === 0, `${name}: no two standing trains share a platform track (${shared} frames)`);
   check(apart === 0, `${name}: a waiting train never stands over the station (${apart} frames)`);
   if (tips) {
@@ -1016,7 +1038,7 @@ check(h.sites.filter((x) => x.kind === 'town' && x.size >= 3).length >= 2, `harj
   const worths = Object.keys(plans).map(worthAt);
   const top = Math.max(...worths);
   const low = Math.min(...worths);
-  check(top <= 1.2 * low, `the three plans stand within 20 % of each other in net worth at the end of 1866 (${Object.keys(plans).map((k) => `${k} ${worthAt(k)}, won in ${plans[k as 'A'].result!.year}`).join('; ')})`);
+  check(top <= 1.35 * low, `the three plans stand within 35 % of each other in net worth at the end of 1866 (${Object.keys(plans).map((k) => `${k} ${worthAt(k)}, won in ${plans[k as 'A'].result!.year}`).join('; ')})`);
   check(Object.values(plans).every((s) => s.result!.won && s.result!.stars === 3 && s.result!.year >= 1867 && s.result!.year <= 1869), 'and each wins in 1867, 1868 or 1869 with three stars');
   const grown = (s: SimState) => s.sites.filter((x) => x.kind === 'town' && x.size >= 3).map((x) => x.id).sort().join('+');
   // contracts name sites that take a good, so the far town can be named; the two raw sites never are

@@ -1331,6 +1331,8 @@ function blockBusy(s: SimState, t: Train | null, line: Line, leg: number): boole
       const od = departDir(o, ol);
       const oleg = od === 1 ? o.idx : o.idx - 1;
       if (!legsShare(ol.legs[oleg], line.legs[leg])) continue;
+      // this train is itself in the way of the one that has waited longer: it must go first, or the two would hold each other
+      if (standsOver(s, t, ol, oleg)) continue;
       if (!departHeld(s, o, ol, od, oleg, o.gate <= GATE_RESERVE)) return true;
     }
   return blockTaken(s, t, line, leg);
@@ -1348,11 +1350,31 @@ function departHeld(s: SimState, t: Train, line: Line, dir: 1 | -1, leg: number,
   return blockTaken(s, t, line, leg, running) || (running && !!line.siding && sidingBusy(s, t, line, dir));
 }
 
+/**
+ * Whether a train that stands at a station lies over cells of a leg of another line. This is a lengthened
+ * line that goes by a station it does not serve, or a line that goes through the throat of a station where
+ * another line ends: the cells are shared, so the train on the leg waits until the standing one has left.
+ * A line that stops at that station shares it by platform tracks instead, and a line never waits on itself.
+ */
+function standsOver(s: SimState, o: Train, line: Line, leg: number): boolean {
+  if (o.state !== 'stop' || o.at === null || lineOf(s, o) === line) return false;
+  if (line.stops.some((k) => s.stations.find((st) => st.id === k)?.cell === o.at)) return false;
+  const body = bodyCells(s, o);
+  for (let k = line.legs[leg].a + 1; k < line.legs[leg].b; k++) if (body.has(line.path[k])) return true;
+  return false;
+}
+
 /** whether the block of a leg has a running train on it (when `moving`), or a waiting one over its cells, other than this train */
 function blockTaken(s: SimState, t: Train | null, line: Line, leg: number, moving = true): boolean {
   const mine = line.legs[leg];
   for (const o of s.trains) {
-    if (o === t || o.state !== 'run') continue;
+    if (o === t) continue;
+    // a train that stands at a station lies over the first cells of its line, and it clears by itself, so it holds a train that sets out now but not the queue order
+    if (o.state === 'stop') {
+      if (moving && standsOver(s, o, line, leg)) return true;
+      continue;
+    }
+    if (o.state !== 'run') continue;
     // the trains of a line with a passing siding share its track by the rules of the siding
     if (line.siding && o.lineId === line.id) continue;
     const ol = lineOf(s, o);
@@ -1830,14 +1852,18 @@ function depart(s: SimState, t: Train, line: Line): boolean {
     t.gate += DT;
     return false;
   }
-  t.gate = 0;
   // a train does not set out for a station whose platforms a train holds that needs this track to leave
   if (!t.siding && destBlocked(s, t, line, dir)) {
     // a train that has waited this long for the platforms ahead sets out and takes a siding there: waiting longer could freeze a ring of stations
     t.waited += DT;
-    if (t.waited < PATIENCE_SECONDS) return false;
+    if (t.waited < PATIENCE_SECONDS) {
+      // a train that has waited well past the reserve keeps its place in the queue for the block, or the trains that came later would always pass it
+      t.gate = t.gate > 1.5 * GATE_RESERVE ? t.gate + DT : 0;
+      return false;
+    }
     t.siding = true;
   }
+  t.gate = 0;
   t.waited = 0;
   t.loop = 0;
   // the leading end is the stop's own point; the engine starts at the station, the wagons stand behind it on the siding the renderer draws

@@ -154,7 +154,7 @@ docs/
    one that has waited longest goes first (first come, first served, with a
    bound: after `GATE_RESERVE` seconds the others stop starting over its cells). Nothing in the UI shows a signal. A
    free line laid over other lines' track is slow for this reason, and
-   that is a choice the player can read on the map. A bought passing siding
+   that is a choice the player can read on the map. A train that stands at a station holds the cells of its line beyond it, so a line that passes there without stopping waits for it, and a new route never crosses laid track in an X (two diagonals of one square), because an X shares no cell and so no block. A bought passing siding
    splits its own line's block in two: a train waits in the loop, wholly on
    it, while the other passes. Against other lines the old rule stands.
 6. **Both orientations.** Every screen works in portrait and in landscape,
