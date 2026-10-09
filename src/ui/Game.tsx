@@ -23,7 +23,7 @@ import { saveStars } from '../results';
 import { YearEndCard } from './Ledger';
 import { townLacks } from '../game/advice';
 import { advice, adviceKey, type Advice } from '../game/advice';
-import { tipText, readGoalTowns, GoalTowns, untilText, type GoalTown } from './tips';
+import { tipText, lineName, readGoalTowns, GoalTowns, untilText, type GoalTown } from './tips';
 import { GoodIcon, NONE_OF, WagonStrip, WagonPicker, CarryText } from './Wagons';
 
 /** how much faster the clock runs while the fast button is on */
@@ -300,7 +300,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         </button>
         <div className="hud-sub">
         {tip && (
-          <div className="hud-tip" data-sec="tip" data-tip={tip.kind}>
+          <div className="hud-tip" data-sec="tip" data-tip={tip.kind} data-lengthen={lineSiteIds(s, tip.lengthen)}>
             <button
               className="tip-text"
               data-act="tip"
@@ -522,9 +522,10 @@ function CardHead({ title, onClose }: { title: React.ReactNode; onClose: () => v
   );
 }
 
-/** the name of a line, its stops in order: "Kuusikko–Koskensaha" */
-function lineName(s: SimState, line: Line): string {
-  return line.stops.map((_, i) => tt(stopSite(s, line, i).name)).join('–');
+/** the site ids of a line's stops in order, comma separated, for the scripts; undefined when there is no such line */
+function lineSiteIds(s: SimState, lineId: number | undefined): string | undefined {
+  const line = lineId === undefined ? undefined : s.lines.find((l) => l.id === lineId);
+  return line ? line.stops.map((_, i) => stopSite(s, line, i).id).join(',') : undefined;
 }
 
 /**

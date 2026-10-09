@@ -110,11 +110,13 @@ const look = (page) =>
     // the tip row under the HUD as it reads on the screen: its kind, its words, and the first two sites its words name
     const tipEl = el('.hud-tip');
     const tipText = (tipEl?.querySelector('.tip-text')?.textContent ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    // the closing bracket names the kind of link ("new line", "lengthen the A–B line"): its site names are not the tip's two sites
+    const tipWords = tipText.replace(/\s*\((?:uusi rata|jatka rataa|new line|lengthen)[^)]*\)\s*$/, '');
     const named = s.sites
-      .map((o) => ({ id: o.id, at: Math.min(...[o.name.en, o.name.fi].map((n) => { const i = tipText.indexOf(n); return i < 0 ? Infinity : i; })) }))
+      .map((o) => ({ id: o.id, at: Math.min(...[o.name.en, o.name.fi].map((n) => { const i = tipWords.indexOf(n); return i < 0 ? Infinity : i; })) }))
       .filter((o) => o.at !== Infinity)
       .sort((a, b) => a.at - b.at);
-    const tip = tipEl && tipText ? { kind: tipEl.dataset.tip, text: tipText, from: named[0]?.id ?? null, to: named[1]?.id ?? null } : null;
+    const tip = tipEl && tipText ? { kind: tipEl.dataset.tip, text: tipText, from: named[0]?.id ?? null, to: named[1]?.id ?? null, lengthen: tipEl?.dataset.lengthen ? tipEl.dataset.lengthen.split(',') : null } : null;
     // what the line the tip names costs at the cheapest: laid from the end that has a station
     let tipCost = null;
     if (tip && tip.from && tip.to && window.__plan) {

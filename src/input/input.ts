@@ -90,6 +90,8 @@ export class Input {
   /** the finger that holds the drag */
   private dragId = -1;
   private moved = 0;
+  /** until this time (performance.now) the touch that ends sends no click */
+  private noClickUntil = 0;
   constructor(
     private canvas: HTMLCanvasElement,
     private s: SimState,
@@ -101,13 +103,24 @@ export class Input {
     canvas.addEventListener('pointermove', this.onMove);
     canvas.addEventListener('pointerup', this.onUp);
     canvas.addEventListener('pointercancel', this.onUp);
+    canvas.addEventListener('touchend', this.onTouchEnd, { passive: false });
   }
+
+  /**
+   * A tap in pick mode opens a card or a Cancel button under the finger. The browser sends the
+   * tap's own click after the touch ends, and it would land on that new button (the first
+   * "Extend" choice, or Cancel). Cancelling the touch's default stops the click.
+   */
+  private onTouchEnd = (e: TouchEvent): void => {
+    if (performance.now() < this.noClickUntil) e.preventDefault();
+  };
 
   dispose(): void {
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointercancel', this.onUp);
+    this.canvas.removeEventListener('touchend', this.onTouchEnd);
   }
 
   private cellAt(sx: number, sy: number): { cell: number; x: number; y: number } | null {
@@ -273,6 +286,7 @@ export class Input {
     const options = from === null || to === null ? [] : plan(this.s, from, to);
     this.ev.onLayEnd(options.length > 0);
     if (!options.length || from === null || to === null) return;
+    this.noClickUntil = performance.now() + 300;
     this.lifted(options, from, to, sx, sy);
   }
 

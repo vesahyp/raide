@@ -4,11 +4,11 @@
  * most three, the top one first. It reads the state and changes nothing, and the one costly part
  * (a route's price) is remembered while the stations and lines stay as they are.
  */
-import type { Good, SimState, Site } from './types';
-import { MAKES, TAKES } from './content/economy';
+import type { Good, Line, SimState, Site, WagonType } from './types';
+import { MAKES, TAKES, WAGON_GOODS, WAGON_FARE } from './content/economy';
 import { siteById, stationAt } from './state';
 import { idx } from './grid';
-import { plan, platformPrice, lineYear, trainPrice, wantedGoods } from './sim';
+import { plan, platformPrice, lineYear, trainPrice, wantedGoods, extendable, canExtend, freeSide, stopSite, townStops } from './sim';
 
 export type AdviceKind = 'first' | 'stuck' | 'starved' | 'platform' | 'cash' | 'contract';
 
@@ -25,6 +25,8 @@ export interface Advice {
   cost?: number;
   /** contract: the year it ends */
   deadline?: number;
+  /** a tip that lays track: the id of the line the track would lengthen; absent when it starts a new line */
+  lengthen?: number;
   /** how much it matters, higher first; not for the words */
   score: number;
 }
@@ -188,10 +190,36 @@ export function advice(s: SimState): Advice[] {
     if (best) out.push({ kind: 'cash', site: best.a.id, to: best.b.id, good: best.good, amount: Math.floor(s.cash), cost: best.cost, score: 50 + Math.min(20, spare / 100) });
   }
 
-  return out.sort((x, y) => y.score - x.score).slice(0, 3);
+  const top = out.sort((x, y) => y.score - x.score).slice(0, 3);
+  for (const a of top) if (a.to && (a.kind === 'first' || a.kind === 'stuck' || a.kind === 'starved' || a.kind === 'cash')) a.lengthen = lengthenable(s, siteById(s, a.site), siteById(s, a.to));
+  return top;
+}
+
+/**
+ * The line the track between two sites would lengthen, when the tip may say so: one of the sites
+ * has a station that ends a line, the route can leave on the line's free side, and a train of that
+ * line carries something the new stop makes or takes. Otherwise the track is a new line.
+ */
+function lengthenable(s: SimState, a: Site, b: Site): number | undefined {
+  const [from, to] = hasStation(s, a) ? [a, b] : hasStation(s, b) ? [b, a] : [null, null];
+  if (!from || !to) return undefined;
+  const start = cellOf(s, from);
+  for (const line of extendable(s, start)) {
+    if (!plan(s, start, cellOf(s, to), freeSide(s, line, start)).some((r) => canExtend(s, r, line.id))) continue;
+    if (s.trains.some((t) => t.lineId === line.id && t.wagons.some((w) => carriesAt(s, line, w, to)))) return line.id;
+  }
+  return undefined;
+}
+
+/** whether a wagon of this type would carry something to or from a new stop at this site on the line */
+function carriesAt(s: SimState, line: Line, wagon: WagonType, site: Site): boolean {
+  const fare = WAGON_FARE[wagon];
+  if (fare) return site.kind === 'town' && townStops(s, line).length >= 1;
+  const stops = line.stops.map((_, i) => stopSite(s, line, i));
+  return WAGON_GOODS[wagon].some((g) => (MAKES[site.kind] === g && stops.some((o) => TAKES[o.kind].includes(g))) || (TAKES[site.kind].includes(g) && stops.some((o) => MAKES[o.kind] === g)));
 }
 
 /** a key that stays the same while the advice says the same thing, for holding a tip on screen */
 export function adviceKey(a: Advice): string {
-  return `${a.kind}:${a.site}:${a.to ?? ''}:${a.good ?? ''}`;
+  return `${a.kind}:${a.site}:${a.to ?? ''}:${a.good ?? ''}:${a.lengthen ?? ''}`;
 }

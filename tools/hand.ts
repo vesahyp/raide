@@ -52,7 +52,7 @@ export interface HandView {
   /** pick mode is on: the banner says to tap where the track goes */
   picking: boolean;
   /** the tip row under the HUD, as read off the screen: its kind, its words, and the first and second site its words name */
-  tip: { kind: string; text: string; from: string | null; to: string | null } | null;
+  tip: { kind: string; text: string; from: string | null; to: string | null; /** the sites of the line the tip means to lengthen; null for a new line */ lengthen: string[] | null } | null;
   /** what the line the tip names costs at the cheapest, from the sites' cells; null when no route can be laid */
   tipCost: number | null;
 }
@@ -94,6 +94,8 @@ interface TipRun {
   text: string;
   from: string;
   to: string | null;
+  /** the line the tip means to lengthen (its sites in order); null when it means a new line */
+  lengthen: string[] | null;
   since: number;
   taps: number;
   /** the second platform count the site had when the thumb began */
@@ -136,9 +138,13 @@ const ROUTE_SCALE = 16;
 /** the same line: the same sites in the same order, or in the reverse order */
 const same = (a: string[], b: string[]) => a.length === b.length && (a.every((x, i) => x === b[i]) || a.every((x, i) => x === b[b.length - 1 - i]));
 
+/** whether a line serves these sites: it has all of them among its stops (a lengthened line serves the sites of every leg) */
+const serves = (line: string[], sites: string[]) => sites.every((id) => line.includes(id));
+
 /** whether a line step is done: the line it makes is on the map (a lengthened line has the new site at the end or at the front) */
 const lineMade = (lines: string[][], step: Extract<Step, { kind: 'line' }>): boolean => {
-  if (!step.extend) return lines.some((l) => same(l, [step.from, step.to]));
+  // a tip may have joined the two sites by lengthening a line: that line serves them too
+  if (!step.extend) return lines.some((l) => serves(l, [step.from, step.to]));
   const grown = [...step.extend, step.to];
   const front = [step.to, ...step.extend];
   return lines.some((l) => same(l, grown) || same(l, front));
@@ -237,7 +243,7 @@ export class Hand {
     if (!line && t.kind !== 'platform') return;
     if (line && (!t.to || v.tipCost === null || v.cash < v.tipCost)) return;
     if (t.kind === 'platform' && v.cash < PLATFORM_PRICE[0]) return;
-    this.tipRun = { kind: t.kind, text: t.text, from: t.from, to: line ? t.to : null, since: v.time, taps: 0, platforms0: v.platforms[t.from] ?? 1, trains0: null };
+    this.tipRun = { kind: t.kind, text: t.text, from: t.from, to: line ? t.to : null, lengthen: line ? t.lengthen : null, since: v.time, taps: 0, platforms0: v.platforms[t.from] ?? 1, trains0: null };
     this.log.push(`tip followed at ${Math.round(v.time)} s: [${t.kind}] ${t.text}`);
   }
 
@@ -275,7 +281,8 @@ export class Hand {
     const line = v.lines.find((l) => pair.every((id) => l.includes(id)));
     if (!line) {
       if (v.picking) return tap({ kind: 'pickTarget', site: r.to! });
-      if (v.card === 'choice') return tap({ kind: 'route', mode: 'cheap', extend: null });
+      // the card's group is the kind of link the tip meant: lengthen its line, or a new line
+      if (v.card === 'choice') return tap({ kind: 'route', mode: 'cheap', extend: r.lengthen });
       if (v.card === 'site' && v.cardSite === r.from) return tap({ kind: 'lay' });
       if (v.card !== 'none') return { kind: 'close' };
       return tap({ kind: 'tapTip' });
@@ -313,8 +320,11 @@ export class Hand {
       return { kind: 'drag', from: step.from, to: step.to };
     }
     if (step.kind === 'train') {
-      const have = v.trains.filter((t) => same(t.line, step.line)).length;
-      const want = this.steps.slice(0, this.done + 1).filter((o) => o.kind === 'train' && same(o.line, step.line)).length;
+      // a train counts for the step when its line serves the step's sites, and a step counts toward the wanted trains when one line serves both its sites and this step's
+      const serving = v.lines.filter((l) => serves(l, step.line));
+      const have = v.trains.filter((t) => serves(t.line, step.line)).length;
+      const want = this.steps.slice(0, this.done + 1).filter((o) => o.kind === 'train' && (same(o.line, step.line) || serving.some((l) => serves(l, o.line)))).length;
+      const actual = serving.find((l) => same(l, step.line)) ?? serving[0] ?? step.line;
       if (have >= want) {
         this.done++;
         if (step.fullLoad) {
@@ -324,7 +334,7 @@ export class Hand {
         return { kind: 'wait' };
       }
       if (v.cash < ENGINES[step.engine ?? 'hilma'].price + countOf(step.wagons) * WAGON_PRICE || !v.spotFree) return v.card === 'line' ? { kind: 'close' } : { kind: 'wait' };
-      if (v.card === 'line' && v.cardLine && same(v.cardLine, step.line)) {
+      if (v.card === 'line' && v.cardLine && same(v.cardLine, actual)) {
         // build the consist wagon by wagon: take off the first wagon that is not the one wanted, then add what is missing
         const want = wantedConsist(step.wagons);
         const have = v.consist ?? [];
@@ -335,7 +345,7 @@ export class Hand {
         return { kind: 'buy', engine: step.engine ?? 'hilma' };
       }
       if (v.card !== 'none') return { kind: 'close' };
-      return { kind: 'openLine', line: step.line };
+      return { kind: 'openLine', line: actual };
     }
     if (step.kind === 'crew') {
       if (v.crews.includes(step.site)) {
