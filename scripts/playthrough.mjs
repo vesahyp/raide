@@ -498,6 +498,9 @@ async function run(orient) {
         if (await c.count()) await tapButton(c);
         await page.waitForTimeout(200);
       } else if (act.kind === 'choose') {
+        // the ledger waits while a card is open: the pill over it takes the thumb there
+        const pill = page.locator('[data-sec="yearend-pill"]');
+        if (!(await page.locator('.card.ledger').count()) && (await pill.count())) await tapButton(pill);
         await page.locator('.card.ledger').waitFor({ timeout: 5000 }).catch(() => undefined);
         await page.waitForTimeout(700);
         // the contract on offer is taken when the plan serves it, skipped when not

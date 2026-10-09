@@ -354,9 +354,19 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         </div>
       </div>
       {ledgerWaits && (
-        <div className={`yearend-pill${lay || sidingPick ? ' low' : ''}`} data-ui data-sec="yearend-pill">
-          {tr('Vuosi päättyi: tilinpäätös, kun olet valmis', 'Year ended: ledger when you are done')}
-        </div>
+        <button
+          className={`yearend-pill${lay || sidingPick ? ' low' : ''}`}
+          data-ui
+          data-sec="yearend-pill"
+          onClick={() => {
+            // the player is done: close what is open, and the loop opens the ledger
+            setLay(null);
+            setSidingPick(null);
+            setCard(null);
+          }}
+        >
+          {tr('Vuosi päättyi: napauta tilinpäätökseen', 'Year ended: tap for the ledger')}
+        </button>
       )}
       {lay && (
         <div className="pick-banner" data-ui>

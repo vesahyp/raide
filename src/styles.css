@@ -403,7 +403,7 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
   .pick-banner { top: calc(var(--sat) + 8px); }
 }
 /* the year ended while the player was busy: the ledger waits, and this says so */
-.yearend-pill { position: absolute; left: 50%; top: calc(var(--sat) + 64px); transform: translateX(-50%); max-width: calc(100% - 16px); padding: 6px 14px; border-radius: 999px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; font-weight: 800; font-size: 14px; white-space: nowrap; pointer-events: none; z-index: 6; }
+.yearend-pill { position: absolute; left: 50%; top: calc(var(--sat) + 64px); transform: translateX(-50%); max-width: calc(100% - 16px); padding: 6px 14px; border-radius: 999px; background: rgba(27, 42, 30, 0.96); border: 2px solid var(--brass); box-shadow: 0 3px 0 #0e1710; font-weight: 800; font-size: 14px; white-space: nowrap; pointer-events: auto; z-index: 6; min-height: 44px; font-family: inherit; color: var(--bone); cursor: pointer; }
 .game.ledger-waits .card.sheet, .game.ledger-waits .card.sheet.buy-card, .game.ledger-waits .card.sheet.train-card { max-height: calc(100% - var(--sat) - 112px); }
 @media (orientation: landscape) and (max-height: 520px) {
   .game.ledger-waits .card.sheet, .game.ledger-waits .card.sheet.buy-card, .game.ledger-waits .card.sheet.train-card { max-height: calc(100% - var(--sat) - 64px); }
