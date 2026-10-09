@@ -521,8 +521,22 @@ bottleneck is, and the year end offers a contract.
   the profit, not in the income by good.
 - Scenarios have one goal and a year limit, shown at the top at all times.
   The sandbox has no goal; it shows net worth and the era.
-- Net worth at a scenario's end gives one to three stars. Stars are the
-  score and the only thing a records table would hold.
+- A win gives one to three stars, by the year it ends in: one for any win,
+  two for a win by a year the scenario names, three for a win by an earlier
+  one (Sawmill 1864 and 1863, Harju 1870 and 1869; the result year is the year
+  after the last one played). The result card lists the three with what each
+  asks, the net worth, what was built (lines, trains, a house per size of each
+  town) and, for a loss, the one thing that was missing ("Tampere needed
+  travellers", "Lahti reached size 2 of 3"). Net worth only grows with time, so
+  stars by net worth rewarded the slow player who sat on cash; the year does not.
+  Stars are the score and the only thing a records table would hold.
+- The goal has slack for a sensible player. The bot's plans win Harju in 1867
+  to 1869 and Sawmill in 1864. A player who follows the tips under the HUD
+  (plan D in `tools/bot.ts`: a line only when a tip says so, one train a line,
+  no loan, no siding, no crane) wins Harju in 1870 and does not earn three
+  stars. The tips cover what a player needs to win: the first chain, a stuck
+  maker, a starved town, goods piling up where a line has no room (`more`),
+  a town that wants travellers (`people`) and a second platform.
 
 ### Failure states
 
@@ -710,8 +724,8 @@ no rate. The goal stays two towns at size 3 of the three.
 Three plans win it, and the bot plays all three in `npm run sim-check`: A
 (Kuusikko, Peltola, Hämeenlinna and Tampere, the default), B (Korpela,
 Niittylä, Tampere and Lahti) and C (Kuusikko, Peltola, Tampere and Lahti).
-Each wins between 1869 and 1871 with two stars, and their net worth at the end
-lies within 20 % of each other, so no plan is the one right answer. A rich
+Each wins in 1867 to 1869 with three stars, and their net worth at the end of
+1866 lies within 20 % of each other, so no plan is the one right answer. A rich
 site pays only when the player buys the wagons and trains it can fill, and
 a poor one pays when it is the shorter way to a town: that is the trade-off
 the plans show.

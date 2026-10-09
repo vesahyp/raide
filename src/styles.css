@@ -241,8 +241,39 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .ledger-pick .offer .gi { width: 26px; height: 26px; flex: none; }
 .card.ledger .lost .grown { color: #8a2a1e; }
 .card.ledger .lost .gi, .card.ledger .grow .gi { width: 18px; height: 18px; }
-.card.result .stars { font-size: 44px; color: var(--gold); letter-spacing: 6px; margin: 2px 0 6px; }
-.card.result p { margin: 0 0 12px; color: var(--bone-dim); }
+.card.result h2 { margin-bottom: 0; }
+.card.result p { margin: 0 0 8px; color: var(--bone-dim); }
+.res-year { font-size: 40px; font-weight: 800; line-height: 1.1; color: var(--gold); letter-spacing: 2px; margin: 0 0 8px; }
+.res-cols { display: flex; flex-direction: column; gap: 10px; text-align: left; margin-bottom: 8px; }
+.res-stars, .res-built { background: rgba(0, 0, 0, 0.22); border-radius: 12px; padding: 8px 12px; }
+.res-star { display: flex; align-items: center; gap: 10px; padding: 2px 0; font-size: 16px; color: var(--bone-dim); opacity: 0.7; }
+.res-star .mark { font-size: 30px; line-height: 1; width: 34px; text-align: center; color: var(--bone-dim); }
+.res-star.got { color: var(--bone); opacity: 1; font-weight: 700; }
+.res-star.got .mark { color: var(--gold); }
+.card.result .res-stars p.worth { margin: 4px 0 0; padding-top: 6px; border-top: 1px dashed rgba(255, 255, 255, 0.2); font-size: 16px; }
+.card.result .res-stars p.worth b { color: var(--bone); }
+.card.result .built-head { margin: 0 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+.card.result .built-count { margin: 0 0 6px; font-size: 16px; color: var(--bone); }
+.res-town { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 15px; color: var(--bone); }
+.res-town .houses { display: flex; gap: 2px; }
+.res-town .house { width: 20px; height: 20px; fill: rgba(255, 255, 255, 0.25); stroke: rgba(0, 0, 0, 0.45); stroke-width: 1.2; }
+.res-town .house.on { fill: var(--gold); }
+.res-town .house rect { fill: rgba(0, 0, 0, 0.45); stroke: none; }
+.card.result .res-missing { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(176, 58, 46, 0.25); border: 1.5px solid #b03a2e; color: var(--bone); font-weight: 700; font-size: 16px; }
+.res-buttons { display: flex; flex-direction: column; gap: 6px; }
+.res-buttons .btn { margin: 0; }
+@media (orientation: landscape) {
+  .card.result.overlay { width: min(620px, calc(100% - 32px)); padding-top: 8px; padding-bottom: 8px; }
+  .card.result h2 { font-size: 22px; }
+  .res-year { font-size: 30px; margin-bottom: 4px; }
+  .res-cols { flex-direction: row; gap: 8px; margin-bottom: 6px; }
+  .res-cols > * { flex: 1 1 0; min-width: 0; }
+  .res-star { font-size: 14px; }
+  .res-star .mark { font-size: 24px; }
+  .res-buttons { flex-direction: row; }
+  .res-buttons .btn { flex: 1 1 0; min-height: 44px; }
+  .card.result .res-missing { padding: 5px 8px; font-size: 14px; margin-bottom: 6px; }
+}
 
 /* the update banner and the crash screen */
 .update { position: absolute; left: 50%; bottom: calc(var(--sab) + 12px); transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--pine-2); border: 2px solid var(--brass-dim); z-index: 9; font-size: 14px; }

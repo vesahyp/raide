@@ -8,8 +8,9 @@
  */
 import type { Contract, EngineId, Good, SimState, WagonType } from '../src/game/types';
 import type { Route, RouteMode } from '../src/game/grid';
-import { removeWagon, build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, buyCrew, buyCrane, buyPlatform, buySiding, platformPrice, borrow, repay, loanCeiling, netWorth, extendable, freeSide, canExtend } from '../src/game/sim';
-import { WAGONS_DEFAULT, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, MAKES, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
+import { removeWagon, build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, buyCrew, buyCrane, buyPlatform, buySiding, defaultConsist, platformPrice, borrow, repay, loanCeiling, netWorth, visited, extendable, freeSide, canExtend } from '../src/game/sim';
+import { advice, type Advice } from '../src/game/advice';
+import { wagonFor, WAGONS_DEFAULT, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, MAKES, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
 import type { YearEnd } from '../src/game/types';
 import { idx } from '../src/game/grid';
 import { stationAt } from '../src/game/state';
@@ -28,11 +29,11 @@ export type Step =
   | { kind: 'line'; from: string; to: string; mode: RouteMode; after?: Gate; extend?: string[] }
   /** a train on the line through these sites in order (two to four); `wagons` is one type (the default count) or the consist wagon by wagon */
   | { kind: 'train'; line: string[]; wagons: WagonType | WagonType[]; engine?: EngineId; fullLoad?: boolean; after?: Gate; /** buy it even when it can only park: the greedy plan's trains */ anyway?: boolean }
-  /** one more wagon on a train, of a type (the last wagon's when none is given) */
-  | { kind: 'wagon'; train: number; type?: WagonType }
+  /** one more wagon on a train, of a type (the last wagon's when none is given). The train is named by its line (its stops as they are at that moment), and by `nth` when the line has several (0 is the first bought), so a train bought off the plan does not shift it */
+  | { kind: 'wagon'; line: string[]; nth?: number; type?: WagonType }
   /** the train gives up its last wagon of a type (half the price comes back) */
-  | { kind: 'drop'; train: number; type: WagonType }
-  | { kind: 'engine'; train: number; engine: EngineId }
+  | { kind: 'drop'; line: string[]; nth?: number; type: WagonType }
+  | { kind: 'engine'; line: string[]; nth?: number; engine: EngineId }
   /** the train, by its place in the list of trains, goes to another line while it stands at a station both serve */
   | { kind: 'move'; train: number; line: string[] }
   /** the loading crew at a site's station */
@@ -49,13 +50,14 @@ export interface BotPlan {
 }
 
 export const PLANS: Record<string, BotPlan> = {
-  // the tutorial: one line forest to sawmill, the same line lengthened to the town, and one mixed
-  // train: flat wagons for the timber, box wagons for the boards
+  // the tutorial: one line forest to sawmill with a train of flat wagons, then the line to the town
+  // with a train of box wagons
   sawmill: {
     steps: [
       { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
-      { kind: 'line', from: 'sawmill', to: 'town', mode: 'cheap', extend: ['forest', 'sawmill'] },
-      { kind: 'train', line: ['forest', 'sawmill', 'town'], wagons: ['flat', 'flat', 'box', 'box'] },
+      { kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat' },
+      { kind: 'line', from: 'sawmill', to: 'town', mode: 'cheap', after: { site: 'sawmill', delivered: 3 } },
+      { kind: 'train', line: ['sawmill', 'town'], wagons: 'box' },
       { kind: 'crew', site: 'sawmill' },
       { kind: 'crew', site: 'forest' },
       { kind: 'crew', site: 'town' },
@@ -73,29 +75,29 @@ export const PLANS: Record<string, BotPlan> = {
       { kind: 'crew', site: 'forest' },
       { kind: 'line', from: 'sawmill', to: 'hameenlinna', mode: 'cheap', after: { site: 'sawmill', delivered: 6 } },
       { kind: 'train', line: ['sawmill', 'hameenlinna'], wagons: 'box' },
-      { kind: 'wagon', train: 1 },
+      { kind: 'wagon', line: ['sawmill', 'hameenlinna'] },
       { kind: 'line', from: 'hameenlinna', to: 'mill', mode: 'short' },
       { kind: 'line', from: 'mill', to: 'farm', mode: 'cheap' },
       { kind: 'train', line: ['mill', 'farm'], wagons: 'hopper', fullLoad: true },
-      { kind: 'wagon', train: 2 },
+      { kind: 'wagon', line: ['mill', 'farm'] },
       { kind: 'train', line: ['hameenlinna', 'mill'], wagons: 'box' },
       { kind: 'platform', site: 'mill' },
       // Tampere: boards from the sawmill, then the line between the two towns with two coaches and a mail van
       // (the towns want travellers from size 2), then flour from the mill
       { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap' },
       { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
-      { kind: 'wagon', train: 4 },
+      { kind: 'wagon', line: ['sawmill', 'tampere'] },
       { kind: 'line', from: 'tampere', to: 'hameenlinna', mode: 'short' },
       { kind: 'train', line: ['tampere', 'hameenlinna'], wagons: ['coach', 'coach', 'mailvan'] },
       { kind: 'line', from: 'tampere', to: 'mill', mode: 'short' },
       { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
-      { kind: 'wagon', train: 6 },
-      { kind: 'wagon', train: 0 },
-      { kind: 'wagon', train: 3 },
+      { kind: 'wagon', line: ['tampere', 'mill'] },
+      { kind: 'wagon', line: ['forest', 'sawmill'] },
+      { kind: 'wagon', line: ['hameenlinna', 'mill'] },
       // the mill's flour line to Hämeenlinna is long: a second platform at each end, a second train and the passing siding
       { kind: 'platform', site: 'mill' },
       { kind: 'platform', site: 'hameenlinna' },
-      { kind: 'wagon', train: 4 },
+      { kind: 'wagon', line: ['sawmill', 'tampere'] },
       { kind: 'train', line: ['hameenlinna', 'mill'], wagons: 'box' },
       { kind: 'crew', site: 'sawmill' },
       { kind: 'siding', line: ['hameenlinna', 'mill'] },
@@ -144,24 +146,24 @@ export const HARJU_PLANS: Record<string, BotPlan> = {
       { kind: 'platform', site: 'tampere' },
       { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
       { kind: 'line', from: 'mill', to: 'lahti', mode: 'short', extend: ['tampere', 'mill'] },
-      { kind: 'wagon', train: 2 },
+      { kind: 'wagon', line: ['sawmill', 'tampere'] },
       { kind: 'crew', site: 'sawmill' },
-      { kind: 'engine', train: 2, engine: 'jyry' },
+      { kind: 'engine', line: ['sawmill', 'tampere'], engine: 'jyry' },
       { kind: 'line', from: 'sawmill', to: 'lahti', mode: 'short' },
       { kind: 'train', line: ['sawmill', 'lahti'], wagons: ['box', 'box', 'box'] },
-      { kind: 'wagon', train: 2 },
-      { kind: 'wagon', train: 3 },
+      { kind: 'wagon', line: ['sawmill', 'tampere'] },
+      { kind: 'wagon', line: ['tampere', 'mill', 'lahti'] },
       { kind: 'platform', site: 'tampere' },
-      { kind: 'engine', train: 0, engine: 'jyry' },
+      { kind: 'engine', line: ['korpela', 'sawmill'], engine: 'jyry' },
       { kind: 'crew', site: 'tampere' },
       { kind: 'crew', site: 'lahti' },
       { kind: 'platform', site: 'lahti' },
-      { kind: 'wagon', train: 4 },
+      { kind: 'wagon', line: ['sawmill', 'lahti'] },
       { kind: 'platform', site: 'sawmill' },
-      { kind: 'wagon', train: 3, type: 'coach' },
+      { kind: 'wagon', line: ['tampere', 'mill', 'lahti'], type: 'coach' },
       { kind: 'train', line: ['sawmill', 'lahti'], wagons: ['box', 'box', 'box', 'box'] },
       { kind: 'crane', site: 'niittyla' },
-      { kind: 'engine', train: 4, engine: 'jyry' },
+      { kind: 'engine', line: ['sawmill', 'lahti'], engine: 'jyry' },
       { kind: 'crew', site: 'sawmill' },
     ],
   },
@@ -170,7 +172,7 @@ export const HARJU_PLANS: Record<string, BotPlan> = {
       { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
       { kind: 'train', line: ['forest', 'sawmill'], wagons: ['flat', 'flat', 'flat'] },
       { kind: 'crew', site: 'forest' },
-      { kind: 'wagon', train: 0 },
+      { kind: 'wagon', line: ['forest', 'sawmill'] },
       { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap', after: { site: 'sawmill', delivered: 6 } },
       { kind: 'line', from: 'tampere', to: 'mill', mode: 'cheap' },
       { kind: 'platform', site: 'forest' },
@@ -180,20 +182,20 @@ export const HARJU_PLANS: Record<string, BotPlan> = {
       { kind: 'train', line: ['sawmill', 'tampere'], wagons: 'box' },
       { kind: 'train', line: ['tampere', 'mill'], wagons: 'box' },
       { kind: 'platform', site: 'tampere' },
-      { kind: 'wagon', train: 1 },
+      { kind: 'wagon', line: ['mill', 'farm'] },
       { kind: 'line', from: 'mill', to: 'lahti', mode: 'short', extend: ['tampere', 'mill'] },
       { kind: 'line', from: 'sawmill', to: 'lahti', mode: 'short' },
       { kind: 'crew', site: 'farm' },
       { kind: 'crew', site: 'sawmill' },
-      { kind: 'wagon', train: 3, type: 'coach' },
+      { kind: 'wagon', line: ['tampere', 'mill', 'lahti'], type: 'coach' },
       { kind: 'crew', site: 'mill' },
-      { kind: 'wagon', train: 2 },
+      { kind: 'wagon', line: ['sawmill', 'tampere'] },
       { kind: 'train', line: ['sawmill', 'lahti'], wagons: ['box', 'box', 'box'] },
       { kind: 'crew', site: 'lahti' },
       { kind: 'platform', site: 'lahti' },
-      { kind: 'wagon', train: 2 },
-      { kind: 'wagon', train: 4 },
-      { kind: 'wagon', train: 3, type: 'coach' },
+      { kind: 'wagon', line: ['sawmill', 'tampere'] },
+      { kind: 'wagon', line: ['sawmill', 'lahti'] },
+      { kind: 'wagon', line: ['tampere', 'mill', 'lahti'], type: 'coach' },
       { kind: 'crew', site: 'tampere' },
       { kind: 'platform', site: 'sawmill' },
       { kind: 'platform', site: 'farm' },
@@ -201,7 +203,7 @@ export const HARJU_PLANS: Record<string, BotPlan> = {
       { kind: 'platform', site: 'farm' },
       { kind: 'crane', site: 'sawmill' },
       { kind: 'platform', site: 'sawmill' },
-      { kind: 'wagon', train: 1 },
+      { kind: 'wagon', line: ['mill', 'farm'] },
     ],
   },
 };
@@ -263,6 +265,7 @@ export class Bot {
   ) {}
 
   static for(s: SimState, greedy = false, variant?: string): Bot {
+    if (variant === 'D') return new TipBot();
     if (variant && s.scenario.id === 'harju') return new Bot(HARJU_PLANS[variant]);
     return new Bot(greedy ? GREEDY[s.scenario.id] : PLANS[s.scenario.id]);
   }
@@ -281,6 +284,12 @@ export class Bot {
     const ids = sites.map((id) => stationAt(s, idx(s, siteById(s, id).cx, siteById(s, id).cy))?.id);
     const same = (a: (number | undefined)[], b: (number | undefined)[]) => a.length === b.length && a.every((x, i) => x === b[i]);
     return s.lines.find((l) => same(l.stops, ids) || same(l.stops, ids.slice().reverse()));
+  }
+
+  /** the train on the line through these sites, the nth one bought (the first when no nth is given) */
+  trainOn(s: SimState, sites: string[], nth = 0) {
+    const line = this.lineFor(s, sites);
+    return line ? s.trains.filter((t) => t.lineId === line.id)[nth] : undefined;
   }
 
   lineBetween(s: SimState, a: string, b: string) {
@@ -330,7 +339,7 @@ export class Bot {
       return { price: (st && platformPrice(s, st.id)) || 0, productive: true };
     }
     if (step.kind === 'engine') {
-      const tr = s.trains[step.train];
+      const tr = this.trainOn(s, step.line, step.nth);
       return { price: tr ? ENGINES[step.engine].price - Math.round(ENGINES[tr.engine].price * RESALE) : 0, productive: true };
     }
     return { price: 0, productive: false };
@@ -395,7 +404,7 @@ export class Bot {
       this.done++;
       this.log.push(`${t}: train ${tr.id} ${step.engine ?? 'hilma'} ${[step.wagons].flat().join('+')} on ${step.line.join('-')}${tr.parked ? ' (parked)' : ''}, cash ${s.cash.toFixed(0)}`);
     } else if (step.kind === 'wagon') {
-      const tr = s.trains[step.train];
+      const tr = this.trainOn(s, step.line, step.nth);
       if (!tr) {
         this.done++;
         return;
@@ -404,7 +413,7 @@ export class Bot {
       this.done++;
       this.log.push(`${t}: wagon on train ${tr.id}, cash ${s.cash.toFixed(0)}`);
     } else if (step.kind === 'drop') {
-      const tr = s.trains[step.train];
+      const tr = this.trainOn(s, step.line, step.nth);
       const at = tr ? tr.wagons.lastIndexOf(step.type) : -1;
       if (!tr || at < 0 || !removeWagon(s, tr.id, at)) {
         this.done++;
@@ -444,10 +453,134 @@ export class Bot {
       this.done++;
       this.log.push(`${t}: train ${tr.id} to ${step.line.join('-')}`);
     } else if (step.kind === 'engine') {
-      const tr = s.trains[step.train];
+      const tr = this.trainOn(s, step.line, step.nth);
       if (!tr || !setEngine(s, tr.id, step.engine)) return;
       this.done++;
       this.log.push(`${t}: engine ${step.engine} on train ${tr.id}, cash ${s.cash.toFixed(0)}`);
+    }
+  }
+}
+
+/**
+ * Plan D, the sensible player: a hand that does what the tip under the HUD says and nothing more
+ * (src/game/advice.ts). It lays the track a tip names when the cash pays for the track and a train,
+ * on the cheapest route, and lengthens the line when the tip says so. It buys one train for every
+ * new line with the consist the buy card offers, never borrows, buys no siding, crane, crew or
+ * platform, takes no contract, and passes tips that ask for those. A coach tip adds a coach where
+ * there is room, or buys a train of coaches and a mail van. If it cannot act on a tip it waits.
+ */
+declare const process: { env: Record<string, string | undefined> };
+export class TipBot extends Bot {
+  /** the train owed to a line that was just laid: the consist and the line's id */
+  private owed: { line: number; wagons?: WagonType[] } | null = null;
+  private restUntil = 0;
+  /** a train owed for this long and not placed is given up: the platform tip comes instead */
+  private owedUntil = 0;
+  /** the tips acted on, for the log */
+  tips = 0;
+  constructor() {
+    super({ steps: [] }, false);
+  }
+
+  /** the tip a player would follow: the top one that asks for track or a coach (the others ask for extras this player does not buy) */
+  private tip(s: SimState): Advice | undefined {
+    return advice(s).find((a) => a.kind === 'first' || a.kind === 'stuck' || a.kind === 'starved' || a.kind === 'cash' || a.kind === 'more' || a.kind === 'platform' || a.kind === 'people');
+  }
+
+  act(s: SimState): void {
+    if (s.result) return;
+    if (s.yearEnd) {
+      this.years.push({ ...s.yearEnd, trains: s.trains.length, next: 0, ceiling: loanCeiling(s), offered: s.offer, took: false });
+      this.log.push(`${s.yearEnd.year}: goal ${s.goalCount}, profit ${s.yearEnd.profit}, cash ${s.yearEnd.cash}, worth ${s.yearEnd.worth}, grew ${s.yearEnd.grew.join(' ') || '-'}`);
+      if (process.env.TIPS === '1') this.log.push(`   advice: ${advice(s).map((a) => `${a.kind} ${a.site}>${a.to ?? ''} ${a.good ?? ''} cost ${a.cost ?? ''}`).join(' | ') || 'none'}; towns ${s.sites.filter((x) => x.kind === 'town').map((x) => `${x.id} ${x.size} vis ${visited(s, x)} g${x.growth.toFixed(2)} store ${Object.entries(x.store).map(([k, v]) => `${k[0]}${v.toFixed(1)}`).join(',')}`).join('; ')}`);
+      closeYearEnd(s, false);
+      return;
+    }
+    // the player looks once a second
+    if (Math.round(s.time * 60) % 60 !== 0) return;
+    const t = `t=${s.time.toFixed(0)}`;
+    if (this.owed && s.time > this.owedUntil) this.owed = null;
+    if (this.owed) {
+      const line = s.lines.find((l) => l.id === this.owed!.line);
+      const wagons = this.owed.wagons ?? (line ? defaultConsist(s, line) : []);
+      if (!line) this.owed = null;
+      else if (s.cash >= trainPrice('hilma', wagons.length) && trainSpot(s, line, wagons.length) && !trainSpot(s, line, wagons.length)!.parked) {
+        const tr = buyTrain(s, line.id, wagons);
+        if (tr) {
+          this.log.push(`${t}: train ${tr.id} ${wagons.join('+')} on line ${line.id}, cash ${s.cash.toFixed(0)}`);
+          this.owed = null;
+        }
+      }
+      return;
+    }
+    if (s.time < this.restUntil) return;
+    const a = this.tip(s);
+    if (a?.kind === 'platform') {
+      const st = s.stations.find((x) => x.siteId === a.site);
+      if (st && s.cash >= (a.cost ?? Infinity) && buyPlatform(s, st.id)) {
+        this.tips++;
+        this.log.push(`${t}: tip platform at ${a.site}, cash ${s.cash.toFixed(0)}`);
+      }
+      return;
+    }
+    if (!a || !a.to) return;
+    const train = trainPrice('hilma', WAGONS_DEFAULT);
+    if (a.kind === 'more' && a.onLine !== undefined && a.good) {
+      // a wagon of the good's type where a train of the line has room, otherwise one more train with the consist the card offers
+      const line = s.lines.find((l) => l.id === a.onLine);
+      const type = wagonFor(a.good);
+      const own = s.trains.find((o) => o.lineId === a.onLine && o.nWagons < 4 && o.wagons.includes(type));
+      if (own && s.cash >= WAGON_PRICE) {
+        if (addWagon(s, own.id, type)) {
+          this.tips++;
+          this.restUntil = s.time + 60;
+          this.log.push(`${t}: tip ${a.kind} ${a.site}>${a.to}: ${type} wagon on train ${own.id}, cash ${s.cash.toFixed(0)}`);
+        }
+      } else if (!own && line && s.cash >= train) {
+        this.tips++;
+        this.restUntil = s.time + 60;
+        this.owed = { line: line.id };
+        this.owedUntil = s.time + 120;
+      }
+      return;
+    }
+    if (a.kind === 'people' && a.onLine !== undefined) {
+      const line = s.lines.find((l) => l.id === a.onLine);
+      const own = s.trains.find((o) => o.lineId === a.onLine && o.nWagons < 4);
+      if (own && s.cash >= WAGON_PRICE) {
+        if (addWagon(s, own.id, 'coach')) {
+          this.tips++;
+          this.log.push(`${t}: tip ${a.kind} ${a.site}>${a.to}: coach on train ${own.id}, cash ${s.cash.toFixed(0)}`);
+        }
+      } else if (line && !own && s.cash >= trainPrice('hilma', 3)) {
+        this.tips++;
+        this.owed = { line: line.id, wagons: ['coach', 'coach', 'mailvan'] };
+        this.owedUntil = s.time + 120;
+      }
+      return;
+    }
+    const from = stationAt(s, idx(s, siteById(s, a.site).cx, siteById(s, a.site).cy)) ? siteById(s, a.site) : siteById(s, a.to);
+    const to = from.id === a.site ? siteById(s, a.to) : siteById(s, a.site);
+    const start = idx(s, from.cx, from.cy);
+    const ext = a.lengthen !== undefined ? s.lines.find((l) => l.id === a.lengthen) : undefined;
+    const options = plan(s, start, idx(s, to.cx, to.cy), ext ? freeSide(s, ext, start) : undefined).filter((r) => !ext || canExtend(s, r, ext.id));
+    const r = options.find((o) => o.mode === 'cheap') ?? options[0];
+    if (!r) {
+      this.restUntil = s.time + 60;
+      return;
+    }
+    // the track, and a train to run on it when the line is new
+    if (s.cash < r.cost + (ext ? 0 : train)) return;
+    const line = build(s, r, ext?.id);
+    if (!line) {
+      this.restUntil = s.time + 60;
+      return;
+    }
+    this.tips++;
+    this.log.push(`${t}: tip ${a.kind} ${a.site}>${a.to} ${ext ? 'lengthens line ' + ext.id : 'new line'}, ${r.mode}, cost ${r.cost}, cash ${s.cash.toFixed(0)}`);
+    if (!ext) {
+      this.owed = { line: line.id, wagons: a.kind === 'people' ? ['coach', 'coach', 'mailvan'] : undefined };
+      this.owedUntil = s.time + 120;
     }
   }
 }

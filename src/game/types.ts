@@ -67,7 +67,7 @@ export interface ScenarioDef {
   cash: number;
   startYear: number;
   goal: Goal;
-  /** net worth at the end for two and for three stars */
+  /** the last year a win may end in for two stars and for three (a win is one star); the result year is the year after the last one played */
   stars: [number, number];
   /** the engines on sale */
   engines: EngineId[];

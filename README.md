@@ -185,7 +185,13 @@ kaksi sopimusta.
   1872, ja se vaatii tavaran lisäksi matkustajia. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
   tulot tavaroittain, matkustajittain ja postin mukaan sekä nettovarallisuuden vuosi vuodelta. Kaupunkien kasvuun tarvitaan matkustajarata kahden kaupungin välille.
 
-Nettovarallisuus lopussa antaa yhdestä kolmeen tähteä: kassa, junat ja
-asemat sekä radat puoleen hintaan, miinus laina. Taukovalikko näyttää
-nettovarallisuuden kesken pelin. Puhelimen voi kääntää kesken
+Voitto antaa yhdestä kolmeen tähteä sen mukaan, minä vuonna se tulee: yksi
+mistä tahansa voitosta, kaksi Harjussa vuoteen 1870 ja kolme vuoteen 1869
+mennessä (Sahassa 1864 ja 1863). Lopputulos kertoo vuoden, mitä kukin tähti
+vaati, nettovarallisuuden, mitä rakensit (radat, junat ja talo kunkin
+kaupungin kokoa kohti) ja tappiossa sen yhden asian, joka puuttui, esimerkiksi
+»Tampere tarvitsi matkustajia». Napeilla pelaa uudelleen tai valitsee kentän.
+Vihje ruudun yläreunassa kertoo myös, kun tavara jää kasaan eikä junille ole
+tilaa tai kun kaupunki kaipaa matkustajia. Nettovarallisuus on kassa, junat ja
+asemat sekä radat puoleen hintaan, miinus laina, ja se näkyy taukovalikossa kesken pelin. Puhelimen voi kääntää kesken
 pelin: näkymä sovittuu uuteen asentoon ja peli jatkuu.

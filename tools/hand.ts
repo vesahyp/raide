@@ -106,6 +106,8 @@ interface TipRun {
 
 /** sim seconds the hand's own step may stand still before the thumb reads the tip */
 const STALL_SECONDS = 20;
+/** the cash that counts as idle: the thumb reads the tip only with this much in hand */
+const IDLE_CASH = 200;
 /** sim seconds one tip may take, and the taps it may use, before the thumb gives it up */
 const TIP_SECONDS = 150;
 const TIP_TAPS = 40;
@@ -230,7 +232,8 @@ export class Hand {
       this.mark = mark;
       this.markAt = v.time;
     }
-    if (!this.tipRun && !v.yearEnd && v.card !== 'yearEnd' && v.time - this.markAt >= STALL_SECONDS && v.time >= this.tipRestUntil) this.beginTip(v);
+    // the thumb turns to the tip when its own step has stood still for 20 s and the cash lies idle: a step that waits for a moving train is not a reason
+    if (!this.tipRun && !v.yearEnd && v.card !== 'yearEnd' && v.time - this.markAt >= STALL_SECONDS && v.cash > IDLE_CASH && v.time >= this.tipRestUntil) this.beginTip(v);
     if (this.tipRun) return this.followTip(v);
     return this.own(v);
   }
@@ -389,9 +392,12 @@ export class Hand {
       return { kind: 'openSite', site: step.site };
     }
     if (step.kind === 'wagon' || step.kind === 'drop' || step.kind === 'engine' || (step as { kind: string }).kind === 'fullload') {
-      const idx = (step as { train: number }).train;
-      const id = step.kind === 'wagon' || step.kind === 'drop' || step.kind === 'engine' ? v.trains[idx]?.id : idx;
-      const wagonType = step.kind === 'wagon' || step.kind === 'drop' ? step.type ?? v.trains[idx]?.wagons[v.trains[idx].wagons.length - 1] : undefined;
+      // the train is named by its line (and its place among that line's trains), so a train a tip bought does not shift it
+      const fl = step as { train?: number; line?: string[]; nth?: number };
+      const mine = fl.line ? v.trains.filter((t) => same(t.line, fl.line!)) : [];
+      const tr = fl.line ? mine[fl.nth ?? 0] : v.trains.find((t) => t.id === fl.train);
+      const id = tr?.id;
+      const wagonType = step.kind === 'wagon' || step.kind === 'drop' ? step.type ?? tr?.wagons[tr.wagons.length - 1] : undefined;
       if (id === undefined) {
         this.done++;
         return { kind: 'wait' };
@@ -400,7 +406,7 @@ export class Hand {
       if (step.kind === 'wagon' && this.wagonAt) {
         const was = this.wagonAt;
         this.wagonAt = null;
-        if (was.step === this.done && (v.trains[idx]?.wagons.length ?? 0) > was.count) {
+        if (was.step === this.done && (tr?.wagons.length ?? 0) > was.count) {
           this.done++;
           return { kind: 'wait' };
         }
@@ -408,7 +414,7 @@ export class Hand {
       const need = step.kind === 'wagon' ? WAGON_PRICE : step.kind === 'engine' ? 80 : 0;
       if (v.cash < need) return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
       if (v.card === 'train' && v.cardTrain === id) {
-        if (step.kind === 'wagon') this.wagonAt = { step: this.done, count: v.trains[idx].wagons.length };
+        if (step.kind === 'wagon') this.wagonAt = { step: this.done, count: tr!.wagons.length };
         else this.done++;
         return { kind: 'act', what: step.kind === 'wagon' ? 'wagon' : step.kind === 'drop' ? 'drop' : step.kind === 'engine' ? `engine-${step.engine}` : 'fullload', type: wagonType };
       }

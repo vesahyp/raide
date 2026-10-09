@@ -9,7 +9,7 @@ export const YEAR_SECONDS = 90;
 export const MONTHS = 12;
 
 /** what a delivery pays before demand and distance */
-export const BASE_PRICE: Record<Good, number> = { timber: 8, boards: 6.5, grain: 7.3, flour: 6.5 };
+export const BASE_PRICE: Record<Good, number> = { timber: 8.4, boards: 6.83, grain: 7.67, flour: 6.83 };
 
 /** demand falls towards this as a site fills with recent deliveries of a good */
 export const DEMAND_FLOOR = 0.4;
@@ -35,13 +35,13 @@ export const SERVED_MEMORY = 2;
 /** a town's store of each good holds this many loads for every size it has; a full store pays the floor price */
 export const TOWN_STORE_CAP = 4;
 /** loads of each good a town eats a month for every size it has, taken continuously from its store */
-export const TOWN_EATS = 0.25;
+export const TOWN_EATS = 0.13;
 /** a town of size n eats TOWN_EATS times (1 + EAT_GROWTH times (n - 1)): twice the size is not twice the appetite */
 export const EAT_GROWTH = 0.25;
 /** a refinery keeps its own input model: loads taken in lately set the price, and they decay this much a month */
 export const MILL_EATS = 1.5;
 /** supplied months (every good the town wants had stock at the month's start) that fill the growth meter */
-export const GROW_MONTHS = 8;
+export const GROW_MONTHS = 4;
 /** what a short month takes off the growth meter, as a share of the whole meter */
 export const GROW_LOSS = 1 / 24;
 export const TOWN_MAX = 5;
@@ -88,7 +88,7 @@ export const FARE_FLOOR = 0.25;
 /** a town from this size on wants travellers to arrive, besides its goods, to count a month as supplied */
 export const PAX_GROW_SIZE = 2;
 /** travellers who arrived within this many months keep a town supplied: a train calls once a round trip, which is several months on a long line */
-export const PAX_MEMORY = 12;
+export const PAX_MEMORY = 24;
 
 export interface EngineDef {
   id: EngineId;
@@ -127,7 +127,7 @@ export const GRADE_LOAD = 0.07;
 /** a wagon's price; twice the first prices, so money is tight (docs/economy.md) */
 export const WAGON_PRICE = 20;
 /** every wagon on a train adds this to the cost of a tile run: a longer train burns more */
-export const WAGON_RUN = 0.095;
+export const WAGON_RUN = 0.11;
 export const WAGONS_DEFAULT = 2;
 export const WAGONS_MAX = 4;
 /** the most stops a line has: a line is extended by a drag from its end station */
@@ -204,7 +204,7 @@ export const CONTRACT_MONTHS = 8;
 export const CONTRACT_SHARE = 0.4;
 export const CONTRACT_MIN = 3;
 /** the share of its free-running trips a train makes on a busy map, for the count a contract asks */
-export const CONTRACT_PACE = 0.75;
+export const CONTRACT_PACE = 0.6;
 
 /** seconds the Cancel button stays under the thumb after a build */
 export const UNDO_SECONDS = 1.5;

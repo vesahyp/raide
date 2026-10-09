@@ -1445,7 +1445,8 @@ export function closeYearEnd(s: SimState, take = false): void {
 
 function finish(s: SimState, won: boolean, reason: 'goal' | 'time' | 'bankrupt'): void {
   const worth = Math.round(netWorth(s));
-  const stars = won ? 1 + s.scenario.stars.filter((x) => worth >= x).length : 0;
+  // a win is one star, and a win in the year of the second or the third star's limit, or before it, is a star each
+  const stars = won ? 1 + s.scenario.stars.filter((limit) => s.year <= limit).length : 0;
   s.result = { won, year: s.year, cash: Math.round(s.cash), worth, stars, reason };
   s.sounds.push(won ? 'win' : 'lose');
 }

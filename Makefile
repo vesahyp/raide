@@ -16,6 +16,7 @@
 #   make advice         # the tip, the marker and the arc, the goal chip and card, into shots/advice/
 #   make goods          # piles, chips, badges, the site card and pick mode, portrait and landscape, into shots/goods/
 #   make mixed          # the economy step 4 pictures: the extend card, a three-stop line, the buy card with a mixed consist, a mixed train at its middle stop, the train card, into shots/mixed/
+#   make result         # the result card, won and lost, portrait and landscape, fi and en, into shots/result/
 #   make people         # the line card and the buy sheet
 buy-sheet: build
 	node scripts/buysheet.mjs
@@ -46,7 +47,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed people buy-sheet drag-look icon money-look touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed people buy-sheet drag-look icon money-look touch-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -106,6 +107,10 @@ upgrades: build
 # the economy step 4 pictures: lengthening a line, a mixed consist, a mixed train unloading and loading
 mixed: build
 	node scripts/mixed.mjs
+
+# the result card, won and lost, Harju and Sawmill, portrait and landscape, fi and en, into shots/result/; fails when the card scrolls, a button is small or the lost card names nothing
+result: build
+	node scripts/result.mjs
 
 # the economy step 5 pictures: travellers on a platform, a coach train arriving, the town card, the buy card, the ledger
 people: build

@@ -39,6 +39,12 @@ export function tipText(s: SimState, a: Advice): string {
       return tr(`${here}: ${a.amount} ${some(g!)} odottaa eikä rataa ole. Vedä rata: ${there} (${linkFi})`, `${here} has ${a.amount} ${some(g!)} and no way out: lay track to ${there} (${linkEn})`);
     case 'starved':
       return tr(`${here} tarvitsee ${some(g!)} kasvuun: tuo niitä paikasta ${there} (${linkFi})`, `${here} needs ${some(g!)} to grow: bring it from ${there} (${linkEn})`);
+    case 'more':
+      return tr(`${here}: ${a.amount} ${some(g!)} odottaa ja ${there} on tyhjä: lisää vaunu tai juna linjalle`, `${here} has ${a.amount} ${some(g!)} waiting and ${there} has none: add a wagon or a train to its line`);
+    case 'people':
+      return a.onLine !== undefined
+        ? tr(`${here} tarvitsee matkustajia kasvuun: lisää henkilövaunu junaan, joka ajaa kohteeseen ${there}`, `${here} needs travellers to grow: put a coach on a train that runs to ${there}`)
+        : tr(`${here} tarvitsee matkustajia kasvuun: vedä rata kohteeseen ${there}${a.cost ? ` (${a.cost})` : ''} (${linkFi}) ja osta henkilövaunuja`, `${here} needs travellers to grow: lay track to ${there}${a.cost ? ` (${a.cost})` : ''} (${linkEn}) and add coaches`);
     case 'platform':
       return tr(`${here} tarvitsee toisen laiturin toista junaa varten`, `${here} needs a second platform for the second train`);
     case 'cash':

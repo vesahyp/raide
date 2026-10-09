@@ -1391,30 +1391,87 @@ function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClos
   );
 }
 
+/** the one thing a lost game was missing, in words: the town closest to the goal and what it lacked, or the loads short */
+function missingText(s: SimState): string {
+  const r = s.result!;
+  const goal = s.scenario.goal;
+  if (r.reason === 'bankrupt') return tr('Kassa oli miinuksella kahdesti peräkkäin ja laina täynnä.', 'Cash was below zero twice in a row with the loan full.');
+  if (goal.kind === 'deliver') return tr(`Perille ehti ${s.goalCount} lautakuormaa ${goal.count}:stä.`, `${s.goalCount} of ${goal.count} loads of boards arrived.`);
+  const served = (x: Site) => s.stations.some((st) => st.siteId === x.id);
+  const towns = s.sites.filter((x) => x.kind === 'town' && x.size < goal.size).sort((a, b) => Number(served(b)) - Number(served(a)) || b.size - a.size || b.growth - a.growth);
+  const done = s.sites.filter((x) => x.kind === 'town' && x.size >= goal.size).length;
+  const town = towns[0];
+  if (!town) return '';
+  const name = tt(town.name);
+  // a town no train had reached, then one short of a good, then one short of travellers, then one that was only slow
+  if (!served(town)) return tr(`${name} ei saanut rataa.`, `${name} never got a railway.`);
+  const lacks = townLacks(s, town);
+  if (lacks.length) return tr(`${name} tarvitsi ${lacks.map((g) => tr(NONE_OF[g][0], NONE_OF[g][1])).join(' ja ')}.`, `${name} needed ${lacks.map((g) => NONE_OF[g][1]).join(' and ')}.`);
+  if (wantsPeople(s, town) && !visited(s, town)) return tr(`${name} tarvitsi matkustajia.`, `${name} needed travellers.`);
+  return tr(`${name} kasvoi kokoon ${town.size}/${goal.size}.`, `${name} reached size ${town.size} of ${goal.size}${done ? `, ${done} of ${goal.count} towns made it` : ''}.`);
+}
+
+function House({ on }: { on: boolean }) {
+  return (
+    <svg className={`house${on ? ' on' : ''}`} viewBox="0 0 24 24" aria-hidden>
+      <path d="M3 12.5 L12 4 L21 12.5 L21 21 L3 21 Z" />
+      <rect x="10" y="14" width="4" height="7" />
+    </svg>
+  );
+}
+
 function ResultCard({ s, onAgain, onQuit }: { s: SimState; onAgain: () => void; onQuit: () => void }) {
   const r = s.result!;
-  const years = r.year - s.scenario.startYear + (r.won ? 1 : 0);
   const goal = s.scenario.goal;
-  const what =
-    goal.kind === 'deliver'
-      ? r.won
-        ? `${num(s.goalCount)} ${tr('lautakuormaa vuoteen', 'loads of boards by')} ${r.year}`
-        : `${num(s.goalCount)}/${goal.count} ${tr('lautakuormaa', 'loads of boards')}`
-      : s.sites.filter((x) => x.kind === 'town').map((x) => `${tt(x.name)} ${tr('koko', 'size')} ${x.size}`).join(', ');
+  const towns = s.sites.filter((x) => x.kind === 'town');
+  const need = goal.kind === 'towns' ? goal.size : 0;
+  const rows = [
+    { n: 1, text: tr('Voitto', 'A win') },
+    { n: 2, text: tr(`Voitto vuoteen ${s.scenario.stars[0]} mennessä`, `Win by ${s.scenario.stars[0]}`) },
+    { n: 3, text: tr(`Voitto vuoteen ${s.scenario.stars[1]} mennessä`, `Win by ${s.scenario.stars[1]}`) },
+  ];
   return (
-    <div className="card result overlay" data-ui>
+    <div className="card result overlay" data-ui data-result={r.won ? 'won' : r.reason}>
       <h2>{r.won ? tr('Tavoite täyttyi', 'Goal reached') : r.reason === 'bankrupt' ? tr('Konkurssi', 'Bankrupt') : tr('Aika loppui', 'Out of time')}</h2>
-      <div className="stars">{'★'.repeat(r.stars)}{'☆'.repeat(3 - r.stars)}</div>
-      <p>
-        {what}, {tr('nettovarallisuus', 'net worth')} {num(r.worth)}, {years} {years === 1 ? tr('vuosi', 'year') : tr('vuotta', 'years')}
-      </p>
-      {r.reason === 'bankrupt' && <p className="small">{tr('Kassa miinuksella kahdesti peräkkäin ja laina täynnä.', 'Cash below zero twice in a row with the loan full.')}</p>}
-      <button className="btn primary wide" onClick={onAgain} data-track="result-again">
-        {tr('Pelaa uudelleen', 'Play again')}
-      </button>
-      <button className="btn wide" onClick={onQuit}>
-        {tr('Alkuun', 'Title')}
-      </button>
+      <div className="res-year" data-sec="year">{r.year}</div>
+      <div className="res-cols">
+        <div className="res-stars" data-sec="stars">
+          {rows.map((o) => (
+            <div key={o.n} className={`res-star${r.stars >= o.n ? ' got' : ''}`} data-star={o.n}>
+              <span className="mark">{r.stars >= o.n ? '★' : '☆'}</span>
+              <span>{o.text}</span>
+            </div>
+          ))}
+          <p className="worth">
+            {tr('Nettovarallisuus', 'Net worth')} <b>{num(r.worth)}</b>
+          </p>
+        </div>
+        <div className="res-built" data-sec="built">
+          <p className="built-head">{tr('Rakensit', 'You built')}</p>
+          <p className="built-count">
+            <b>{s.lines.length}</b> {s.lines.length === 1 ? tr('rata', 'line') : tr('rataa', 'lines')}, <b>{s.trains.length}</b> {s.trains.length === 1 ? tr('juna', 'train') : tr('junaa', 'trains')}
+          </p>
+          {towns.map((x) => (
+            <div key={x.id} className={`res-town${need && x.size >= need ? ' done' : ''}`} data-town={x.id}>
+              <span className="tn">{tt(x.name)}</span>
+              <span className="houses" aria-label={`${x.size}`}>
+                {Array.from({ length: x.size }, (_, i) => (
+                  <House key={i} on={!need || x.size >= need} />
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {!r.won && <p className="res-missing" data-sec="missing">{missingText(s)}</p>}
+      <div className="res-buttons">
+        <button className="btn primary wide" onClick={onAgain} data-track="result-again">
+          {tr('Pelaa uudelleen', 'Play again')}
+        </button>
+        <button className="btn wide" onClick={onQuit} data-track="result-choose">
+          {tr('Valitse kenttä', 'Choose a scenario')}
+        </button>
+      </div>
     </div>
   );
 }
