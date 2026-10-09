@@ -68,9 +68,21 @@ export function stopSite(s: SimState, line: Line, i: number): Site {
   return siteById(s, st.siteId);
 }
 
-/** whether a stop other than `except` takes the good */
-function takenElsewhere(s: SimState, line: Line, good: Good, except: number): boolean {
-  return line.stops.some((_, j) => j !== except && TAKES[stopKind(s, line, j)].includes(good));
+/** whether a train with these orders passes the stop through: only a middle stop can be passed, both ends always stop */
+export function skips(line: Line, skip: readonly number[], i: number): boolean {
+  return i > 0 && i < line.stops.length - 1 && skip.includes(line.stops[i]);
+}
+
+/** the next stop a train at stop `idx` going `dir` stops at, past the stops it passes through */
+export function nextStopFrom(line: Line, skip: readonly number[], idx: number, dir: 1 | -1): number {
+  let k = idx + dir;
+  while (skips(line, skip, k)) k += dir;
+  return k;
+}
+
+/** whether a stop other than `except` that the train stops at takes the good */
+function takenElsewhere(s: SimState, line: Line, good: Good, except: number, skip: readonly number[] = []): boolean {
+  return line.stops.some((_, j) => j !== except && !skips(line, skip, j) && TAKES[stopKind(s, line, j)].includes(good));
 }
 
 /** whether a stop of the line is a town */
@@ -79,8 +91,8 @@ function stopIsTown(s: SimState, line: Line, i: number): boolean {
 }
 
 /** the indexes of the stops of a line that are towns: where travellers and mail get on and off */
-export function townStops(s: SimState, line: Line): number[] {
-  return line.stops.map((_, i) => i).filter((i) => stopIsTown(s, line, i));
+export function townStops(s: SimState, line: Line, skip: readonly number[] = []): number[] {
+  return line.stops.map((_, i) => i).filter((i) => stopIsTown(s, line, i) && !skips(line, skip, i));
 }
 
 /**
@@ -89,33 +101,33 @@ export function townStops(s: SimState, line: Line): number[] {
  * carries between the first and the last town on the line. An empty list means the wagon is a waste
  * on this line.
  */
-export function wagonRoutes(s: SimState, line: Line, type: WagonType): { good: Cargo; from: number; to: number }[] {
+export function wagonRoutes(s: SimState, line: Line, type: WagonType, skip: readonly number[] = []): { good: Cargo; from: number; to: number }[] {
   const out: { good: Cargo; from: number; to: number }[] = [];
   const fare = WAGON_FARE[type];
   if (fare) {
-    const towns = townStops(s, line);
+    const towns = townStops(s, line, skip);
     if (towns.length >= 2) out.push({ good: fare, from: towns[0], to: towns[towns.length - 1] });
     return out;
   }
   for (let i = 0; i < line.stops.length; i++) {
     const good = MAKES[stopKind(s, line, i)];
-    if (!good || !WAGON_GOODS[type].includes(good)) continue;
+    if (!good || skips(line, skip, i) || !WAGON_GOODS[type].includes(good)) continue;
     let to = -1;
-    for (let j = 0; j < line.stops.length; j++) if (j !== i && TAKES[stopKind(s, line, j)].includes(good) && (to < 0 || Math.abs(j - i) < Math.abs(to - i))) to = j;
+    for (let j = 0; j < line.stops.length; j++) if (j !== i && !skips(line, skip, j) && TAKES[stopKind(s, line, j)].includes(good) && (to < 0 || Math.abs(j - i) < Math.abs(to - i))) to = j;
     if (to >= 0) out.push({ good, from: i, to });
   }
   return out;
 }
 
 /** whether a wagon of this type has nothing to carry anywhere on the line */
-export function wagonWaste(s: SimState, line: Line, type: WagonType): boolean {
-  return wagonRoutes(s, line, type).length === 0;
+export function wagonWaste(s: SimState, line: Line, type: WagonType, skip: readonly number[] = []): boolean {
+  return wagonRoutes(s, line, type, skip).length === 0;
 }
 
 /** the wagons of a train that are a waste on its line, counted from the front */
 export function wasteWagons(s: SimState, t: Train): number[] {
   const line = lineOf(s, t);
-  return t.wagons.map((w, i) => (wagonWaste(s, line, w) ? i : -1)).filter((i) => i >= 0);
+  return t.wagons.map((w, i) => (wagonWaste(s, line, w, t.skip) ? i : -1)).filter((i) => i >= 0);
 }
 
 const WAGON_TYPES: WagonType[] = ['flat', 'box', 'hopper', 'coach', 'mailvan'];
@@ -231,11 +243,12 @@ export interface Cycle {
  * stop makes if some other stop takes it. The cargo on each leg sets the speed on the grades. Run
  * twice so the second pass shows the steady state, with wagons loaded on the way back.
  */
-export function consistCycle(s: SimState, line: Line, engine: EngineId, wagons: WagonType[]): Cycle {
+export function consistCycle(s: SimState, line: Line, engine: EngineId, wagons: WagonType[], skip: readonly number[] = []): Cycle {
   const n = line.stops.length;
   const seq: number[] = [];
-  for (let i = 0; i < n; i++) seq.push(i);
-  for (let i = n - 2; i >= 1; i--) seq.push(i);
+  // only the stops the train stops at; a stop it passes through costs no dwell
+  for (let i = 0; i < n; i++) if (!skips(line, skip, i)) seq.push(i);
+  for (let i = n - 2; i >= 1; i--) if (!skips(line, skip, i)) seq.push(i);
   const loads: (Cargo | null)[] = wagons.map(() => null);
   // the stop a coach or a van boarded at, so it gets off at the next town
   const origin: number[] = wagons.map(() => -1);
@@ -260,14 +273,14 @@ export function consistCycle(s: SimState, line: Line, engine: EngineId, wagons: 
         if (pass === 1) moved++;
       }
       const make = MAKES[kind];
-      if (make && takenElsewhere(s, line, make, i))
+      if (make && takenElsewhere(s, line, make, i, skip))
         for (let w = 0; w < loads.length; w++)
           if (!loads[w] && WAGON_GOODS[wagons[w]].includes(make)) {
             work += dwellAt(s, cell, make);
             loads[w] = make;
           }
       // a coach or a van takes on travellers or mail at a town when another town lies ahead on the way
-      if (kind === 'town' && line.stops.some((_, k) => k !== i && stopIsTown(s, line, k) && (dir === 1 ? k > i : k < i)))
+      if (kind === 'town' && line.stops.some((_, k) => k !== i && !skips(line, skip, k) && stopIsTown(s, line, k) && (dir === 1 ? k > i : k < i)))
         for (let w = 0; w < loads.length; w++) {
           const fare = WAGON_FARE[wagons[w]];
           if (!loads[w] && fare) {
@@ -277,11 +290,13 @@ export function consistCycle(s: SimState, line: Line, engine: EngineId, wagons: 
           }
         }
       if (pass === 1) stands[i] += STOP_SECONDS + work;
-      const leg = Math.min(i, j);
-      const a = line.stopAt[leg];
-      const b = line.stopAt[leg + 1];
-      const t = railTime(s, line.rail.slice(a, b + 1), line.dist.slice(a, b + 1), engine, loads.filter(Boolean).length, dir);
-      if (pass === 1) legs[leg][dir === 1 ? 'out' : 'back'] += t;
+      // the train runs every leg between the two stops, the ones past a skipped stop too
+      for (let leg = Math.min(i, j); leg < Math.max(i, j); leg++) {
+        const a = line.stopAt[leg];
+        const b = line.stopAt[leg + 1];
+        const t = railTime(s, line.rail.slice(a, b + 1), line.dist.slice(a, b + 1), engine, loads.filter(Boolean).length, dir);
+        if (pass === 1) legs[leg][dir === 1 ? 'out' : 'back'] += t;
+      }
     }
   }
   const total = legs.reduce((a, l) => a + l.out + l.back, 0) + stands.reduce((a, x) => a + x, 0);
@@ -292,8 +307,8 @@ export function consistCycle(s: SimState, line: Line, engine: EngineId, wagons: 
  * Round trips a year an engine makes on a built line, by the cycle of its consist: the wagons
  * given, or a count of the line's first carrying type.
  */
-export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons: number | WagonType[] = WAGONS_DEFAULT): number {
-  return YEAR_SECONDS / consistCycle(s, line, engine, consistOf(s, line, wagons)).total;
+export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons: number | WagonType[] = WAGONS_DEFAULT, skip: readonly number[] = []): number {
+  return YEAR_SECONDS / consistCycle(s, line, engine, consistOf(s, line, wagons), skip).total;
 }
 
 /**
@@ -304,21 +319,21 @@ export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons: num
  * that only queues shows as nothing added.
  */
 export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wagons: number | WagonType[] }, withSiding = false): { trips: number; each: number[]; limit: 'free' | 'block' | 'platform' | 'parked'; /** the station that holds the line back, for the platform and parked limits */ at: number } {
-  const mine = s.trains.filter((o) => o.lineId === line.id).map((o) => ({ t: o as Train | null, engine: o.engine, wagons: o.wagons, parked: o.parked }));
-  if (extra) mine.push({ t: null, engine: extra.engine, wagons: consistOf(s, line, extra.wagons), parked: mine.filter((m) => !m.parked).length >= lineCapacity(s, line) });
+  const mine = s.trains.filter((o) => o.lineId === line.id).map((o) => ({ t: o as Train | null, engine: o.engine, wagons: o.wagons, skip: o.skip, parked: o.parked }));
+  if (extra) mine.push({ t: null, engine: extra.engine, wagons: consistOf(s, line, extra.wagons), skip: [], parked: mine.filter((m) => !m.parked).length >= lineCapacity(s, line) });
   // a passing siding: the block is two blocks, split where the loop lies, and two trains meet there, one waiting while the other passes
   const siding = !!line.siding || withSiding;
   const split = line.siding ? (line.siding.s0 + line.siding.s1) / 2 / line.dist[line.dist.length - 1] : 0.5;
   const meets = siding && mine.filter((m) => !m.parked).length > 1;
-  const free = (l: Line, e: EngineId, w: WagonType[]) => {
-    const c = consistCycle(s, l, e, w);
+  const free = (l: Line, e: EngineId, w: WagonType[], sk: readonly number[]) => {
+    const c = consistCycle(s, l, e, w, sk);
     // the meeting costs the train that waits for the other to pass the points
     const wait = meets && l === line ? SIDING_MEET : 0;
     return { c, f: YEAR_SECONDS / (c.total + wait) };
   };
-  const active = mine.filter((m) => !m.parked).map((m) => ({ ...m, ...free(line, m.engine, m.wagons) }));
+  const active = mine.filter((m) => !m.parked).map((m) => ({ ...m, ...free(line, m.engine, m.wagons, m.skip) }));
   // the other trains that use the same blocks, and the same stations, at their free pace
-  const others = s.trains.filter((o) => o.lineId !== line.id && !o.parked).map((o) => ({ line: lineOf(s, o), ...free(lineOf(s, o), o.engine, o.wagons) }));
+  const others = s.trains.filter((o) => o.lineId !== line.id && !o.parked).map((o) => ({ line: lineOf(s, o), ...free(lineOf(s, o), o.engine, o.wagons, o.skip) }));
   const leg = (c: Cycle, k: number) => c.legs[k].out + c.legs[k].back;
   const legLoad = line.legs.map((lg, k) => {
     const own = active.reduce((a, m) => a + m.f * leg(m.c, k), 0);
@@ -335,7 +350,7 @@ export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wa
   const byBerth = Math.min(...berth);
   const k = Math.min(1, byBlock, byBerth);
   const limit = k >= 1 ? 'free' : byBlock <= byBerth ? 'block' : 'platform';
-  const each = mine.map((m) => (m.parked ? 0 : k * free(line, m.engine, m.wagons).f));
+  const each = mine.map((m) => (m.parked ? 0 : k * free(line, m.engine, m.wagons, m.skip).f));
   const parked = mine.some((m) => m.parked);
   // the stop with the fewest platforms, or the one the trains crowd most
   const fewest = cells.reduce((best, c) => (platformsAt(s, c) < platformsAt(s, best) ? c : best), cells[0]);
@@ -366,6 +381,37 @@ export function dwellAt(s: SimState, cell: number, good?: Cargo | null): number 
 }
 
 /** the good that moves at a stop of a line: what the stop loads for another stop, or what it unloads from another */
+/**
+ * What a consist moves at stop `i` when it stops there on a line with these orders: the goods that
+ * come off (a stop it takes, made at another stop it stops at, by a wagon that carries it) and the
+ * goods that go on (what the stop makes, when a wagon carries it and another stop it stops at takes
+ * it). Travellers and mail load and unload at a town when another town it stops at lies on the line.
+ * Empty for a stop the train passes through.
+ */
+export function stopWork(s: SimState, line: Line, wagons: readonly WagonType[], skip: readonly number[], i: number): { loads: Cargo[]; unloads: Cargo[] } {
+  const loads: Cargo[] = [];
+  const unloads: Cargo[] = [];
+  if (skips(line, skip, i)) return { loads, unloads };
+  const kind = stopKind(s, line, i);
+  const carried = (g: Cargo) => wagons.some((w) => (WAGON_FARE[w] ? WAGON_FARE[w] === g : WAGON_GOODS[w].includes(g as Good)));
+  const make = MAKES[kind];
+  if (make && carried(make) && takenElsewhere(s, line, make, i, skip)) loads.push(make);
+  for (const g of TAKES[kind]) {
+    if (!carried(g)) continue;
+    const made = line.stops.some((_, j) => j !== i && !skips(line, skip, j) && MAKES[stopKind(s, line, j)] === g);
+    if (made) unloads.push(g);
+  }
+  if (kind === 'town' && townStops(s, line, skip).length >= 2)
+    for (const w of wagons) {
+      const fare = WAGON_FARE[w];
+      if (fare && !loads.includes(fare)) {
+        loads.push(fare);
+        unloads.push(fare);
+      }
+    }
+  return { loads, unloads };
+}
+
 export function stopGood(s: SimState, line: Line, i: number): Good | null {
   const kind = stopKind(s, line, i);
   const makes = MAKES[kind];
@@ -842,6 +888,7 @@ function lengthen(s: SimState, line: Line, r: Route, fromStation: number, newSta
     for (const t of s.trains) if (t.lineId === line.id) {
       t.s += shift;
       t.idx += 1;
+      t.to += 1;
     }
     undo.shift = shift;
   }
@@ -863,6 +910,7 @@ export function undo(s: SimState): boolean {
         for (const t of s.trains) if (t.lineId === line.id) {
           t.s -= b.extend.shift;
           t.idx -= 1;
+          t.to -= 1;
         }
     }
   }
@@ -951,6 +999,8 @@ export function buyTrain(s: SimState, lineId: number, wagons: WagonType | WagonT
     fullLoad: false,
     dir: first ? 1 : -1,
     idx,
+    to: first ? 1 : line.stops.length - 2,
+    skip: [],
     s: stopS(line, idx),
     state: 'stop',
     stopLeft: STOP_SECONDS / 2,
@@ -1013,6 +1063,8 @@ export function moveTrain(s: SimState, trainId: number, lineId: number): boolean
   const k = stopIndexAt(line, at);
   const here = stationAt(s, at);
   const site = here && siteById(s, here.siteId);
+  // the orders belong to a line: a train on another line stops everywhere again
+  t.skip = [];
   for (let w = 0; w < t.loads.length; w++) {
     const l = t.loads[w];
     if (!l) continue;
@@ -1025,6 +1077,7 @@ export function moveTrain(s: SimState, trainId: number, lineId: number): boolean
   t.lineId = lineId;
   t.idx = k;
   t.dir = k === line.stops.length - 1 ? -1 : 1;
+  t.to = k + t.dir;
   t.s = stopS(line, k);
   t.odometer = Math.max(t.odometer, 0.001);
   t.dock = null;
@@ -1087,6 +1140,24 @@ export function setEngine(s: SimState, trainId: number, engine: EngineId): boole
   return true;
 }
 
+/**
+ * A train's order for one station of its line: stop there (the default) or pass through. Only a
+ * middle station can be passed, both ends always stop because the train turns there. The order
+ * takes effect when the train next sets out from a stop, so a train on its way keeps its run.
+ * Returns whether the order changed.
+ */
+export function setStop(s: SimState, trainId: number, stationId: number, stop: boolean): boolean {
+  const t = s.trains.find((o) => o.id === trainId);
+  if (!t) return false;
+  const line = lineOf(s, t);
+  const i = line.stops.indexOf(stationId);
+  if (i <= 0 || i >= line.stops.length - 1) return false;
+  const passes = t.skip.includes(stationId);
+  if (passes === !stop) return false;
+  t.skip = stop ? t.skip.filter((k) => k !== stationId) : [...t.skip, stationId];
+  return true;
+}
+
 export function setFullLoad(s: SimState, trainId: number, on: boolean): void {
   const t = s.trains.find((o) => o.id === trainId);
   if (t) t.fullLoad = on;
@@ -1127,18 +1198,105 @@ export function activeOn(s: SimState, line: Line, except?: Train): number {
   return s.trains.filter((o) => o.lineId === line.id && !o.parked && o !== except).length;
 }
 
-/** the stop a running train heads for, as an index into its line's stops */
-function nextStop(t: Train): number {
-  return t.idx + t.dir;
+/** the stop a running train heads for, as an index into its line's stops: the next one it stops at */
+export function nextStop(t: Train): number {
+  return t.to;
 }
 
 function nextStopCell(s: SimState, t: Train): number {
   return stopCell(lineOf(s, t), nextStop(t));
 }
 
-/** the leg a running train is on: the stretch between the stop it left and the stop it heads for */
-function legOfTrain(t: Train): number {
-  return t.dir === 1 ? t.idx : t.idx - 1;
+const spans = new WeakMap<Leg[], Map<number, Leg>>();
+
+/**
+ * The stretch of a line from stop `lo` to stop `hi`. One leg when the stops are neighbours; when a
+ * train passes stops through it is one longer block made of the legs and the stations between,
+ * which the train holds as a whole: no other train of the line can stand in it.
+ */
+function spanLeg(line: Line, lo: number, hi: number): Leg {
+  if (hi - lo === 1) return line.legs[lo];
+  let m = spans.get(line.legs);
+  if (!m) spans.set(line.legs, (m = new Map()));
+  const key = lo * 16 + hi;
+  let g = m.get(key);
+  if (!g) {
+    const block = new Set<number>();
+    for (let k = lo; k < hi; k++) {
+      for (const c of line.legs[k].block) block.add(c);
+      if (k > lo) block.add(line.path[line.legs[k].a]);
+    }
+    g = { a: line.legs[lo].a, b: line.legs[hi - 1].b, block, worst: Math.max(...line.legs.slice(lo, hi).map((l) => l.worst)) };
+    m.set(key, g);
+  }
+  return g;
+}
+
+/** the stretch a running train is on: from the stop it left to the stop it heads for, past the stops it passes */
+function trainSpan(s: SimState, t: Train): Leg {
+  return spanLeg(lineOf(s, t), Math.min(t.idx, t.to), Math.max(t.idx, t.to));
+}
+
+/** the stretch a train at a stop would run if it set out now */
+function departSpan(t: Train, line: Line): { leg: Leg; dir: 1 | -1; to: number } {
+  const dir = departDir(t, line);
+  const to = nextStopFrom(line, t.skip, t.idx, dir);
+  return { leg: spanLeg(line, Math.min(t.idx, to), Math.max(t.idx, to)), dir, to };
+}
+
+/** the stations a running train passes through on its way to the stop it heads for, as cells */
+function passedCells(s: SimState, t: Train): number[] {
+  const line = lineOf(s, t);
+  const out: number[] = [];
+  for (let k = Math.min(t.idx, t.to) + 1; k < Math.max(t.idx, t.to); k++) out.push(stopCell(line, k));
+  return out;
+}
+
+/**
+ * Whether a train other than `self` holds the station at `cell` so that nothing may run through it:
+ * one that stands at a platform, one that runs in to stop, or one that has just pulled out.
+ * A parked train stands beside the station, not on its track.
+ */
+function holdsThrough(s: SimState, self: Train, cell: number, len: number): Train | null {
+  for (const o of s.trains) {
+    if (o === self || o.parked) continue;
+    if (o.state === 'stop') {
+      if (o.at === cell) return o;
+      continue;
+    }
+    const line = lineOf(s, o);
+    if (o.claimed && stopCell(line, o.to) === cell) return o;
+    if (stopCell(line, o.idx) === cell && Math.abs(o.s - stopS(line, o.idx)) < (drawnLength(o) + len) / 2 + QUEUE_GAP) return o;
+  }
+  return null;
+}
+
+/** whether a train that would set out over this stretch finds a station it passes through held */
+function passBusy(s: SimState, t: Train, line: Line, leg: Leg): boolean {
+  for (let k = 0; k < line.stops.length; k++) {
+    if (line.stopAt[k] <= leg.a || line.stopAt[k] >= leg.b) continue;
+    if (holdsThrough(s, t, stopCell(line, k), drawnLength(t))) return true;
+  }
+  return false;
+}
+
+/** whether a train of any line runs through the station at `cell` and has not yet cleared it, within a stretch of the station */
+function passerAt(s: SimState, self: Train | null, cell: number, len: number): Train | null {
+  for (const o of s.trains) {
+    if (o === self || o.state !== 'run') continue;
+    if (!passedCells(s, o).includes(cell)) continue;
+    const line = lineOf(s, o);
+    const k = line.stops.findIndex((_, j) => stopCell(line, j) === cell);
+    const ahead = o.dir === 1 ? stopS(line, k) - o.s : o.s - stopS(line, k);
+    // from the gate where it waits for the station to be free, to the point its tail is past
+    if (ahead < passHold(o, len) - 0.01 && ahead > -((drawnLength(o) + len) / 2 + QUEUE_GAP)) return o;
+  }
+  return null;
+}
+
+/** how far before a station a train that passes through waits for a train that holds it: the two half-lengths and the gap */
+function passHold(passer: Train, len: number): number {
+  return (drawnLength(passer) + len) / 2 + QUEUE_GAP;
 }
 
 /** whether two legs share a block: cells in common between their stations */
@@ -1183,6 +1341,8 @@ function takenSlots(s: SimState, cell: number, self: Train | null, len: number):
  * has let onto a siding may take a siding track when no platform is free.
  */
 function claimSlot(s: SimState, t: Train, cell: number): number {
+  // a train that runs through the station without stopping has the track there; wait until its tail is clear
+  if (passerAt(s, t, cell, drawnLength(t))) return -1;
   const taken = takenSlots(s, cell, t, drawnLength(t));
   for (let k = 0; k < platformsAt(s, cell); k++) if (!taken.has(k)) return k;
   if (t.siding) for (let k = platformsAt(s, cell); k < SLOTS_MAX; k++) if (!taken.has(k)) return k;
@@ -1193,12 +1353,14 @@ function claimSlot(s: SimState, t: Train, cell: number): number {
 function holdFront(s: SimState, t: Train, cell: number): number {
   let half = 0;
   for (const o of takenSlots(s, cell, t, drawnLength(t)).values()) half = Math.max(half, drawnLength(o) / 2);
+  const passer = passerAt(s, t, cell, drawnLength(t));
+  if (passer) half = Math.max(half, drawnLength(passer) / 2);
   return half + QUEUE_GAP;
 }
 
 /** whether a train on a line that shares a block with this one runs or waits to run in to the station */
 function arriving(s: SimState, self: Train | null, cell: number, line: Line): boolean {
-  return s.trains.some((o) => o !== self && o.state === 'run' && nextStopCell(s, o) === cell && sharesBlock(lineOf(s, o), line));
+  return s.trains.some((o) => o !== self && o.state === 'run' && (nextStopCell(s, o) === cell || passedCells(s, o).includes(cell)) && sharesBlock(lineOf(s, o), line));
 }
 
 /** whether a train is waiting on its line for a platform at this station */
@@ -1212,7 +1374,7 @@ function queuedFor(s: SimState, cell: number): boolean {
  * other must leave over, and neither could move, so it waits at its own station instead.
  */
 function destBlocked(s: SimState, t: Train, line: Line, dir: 1 | -1): boolean {
-  const target = t.idx + dir;
+  const target = nextStopFrom(line, t.skip, t.idx, dir);
   const cell = stopCell(line, target);
   const taken = takenSlots(s, cell, t, drawnLength(t));
   if (taken.size < platformsAt(s, cell)) return false;
@@ -1323,19 +1485,18 @@ function sidingBusy(s: SimState, t: Train, line: Line, dir: 1 | -1): boolean {
  * waiting train is passed over by one other train at most, never starved. Otherwise the block is
  * taken when another train runs on a leg that shares a cell, or waits on its line over the cells.
  */
-function blockBusy(s: SimState, t: Train | null, line: Line, leg: number): boolean {
+function blockBusy(s: SimState, t: Train | null, line: Line, leg: Leg): boolean {
   if (t)
     for (const o of s.trains) {
       if (o === t || o.state !== 'stop' || o.parked || o.gate <= t.gate) continue;
       const ol = lineOf(s, o);
-      const od = departDir(o, ol);
-      const oleg = od === 1 ? o.idx : o.idx - 1;
-      if (!legsShare(ol.legs[oleg], line.legs[leg])) continue;
+      const { leg: oleg, dir: od } = departSpan(o, ol);
+      if (!legsShare(oleg, leg)) continue;
       // this train is itself in the way of the one that has waited longer: it must go first, or the two would hold each other
-      if (standsOver(s, t, ol, oleg)) continue;
+      if (standsOver(s, t, ol, oleg, o)) continue;
       if (!departHeld(s, o, ol, od, oleg, o.gate <= GATE_RESERVE)) return true;
     }
-  return blockTaken(s, t, line, leg);
+  return blockTaken(s, t, line, leg) || (!!t && passBusy(s, t, line, leg));
 }
 
 /**
@@ -1346,8 +1507,8 @@ function blockBusy(s: SimState, t: Train | null, line: Line, leg: number): boole
  * trains of a line apart) does not count then, it will be gone soon, and the trains behind this one
  * stop starting on its legs so that it gets the block the moment it is free.
  */
-function departHeld(s: SimState, t: Train, line: Line, dir: 1 | -1, leg: number, running: boolean): boolean {
-  return blockTaken(s, t, line, leg, running) || (running && !!line.siding && sidingBusy(s, t, line, dir));
+function departHeld(s: SimState, t: Train, line: Line, dir: 1 | -1, leg: Leg, running: boolean): boolean {
+  return blockTaken(s, t, line, leg, running) || passBusy(s, t, line, leg) || (running && !!line.siding && sidingBusy(s, t, line, dir));
 }
 
 /**
@@ -1356,35 +1517,37 @@ function departHeld(s: SimState, t: Train, line: Line, dir: 1 | -1, leg: number,
  * another line ends: the cells are shared, so the train on the leg waits until the standing one has left.
  * A line that stops at that station shares it by platform tracks instead, and a line never waits on itself.
  */
-function standsOver(s: SimState, o: Train, line: Line, leg: number): boolean {
+function standsOver(s: SimState, o: Train, line: Line, leg: Leg, asker: Train | null = null): boolean {
   if (o.state !== 'stop' || o.at === null || lineOf(s, o) === line) return false;
-  if (line.stops.some((k) => s.stations.find((st) => st.id === k)?.cell === o.at)) return false;
+  // a station the asking train passes through is no stop for it, so a train standing there is in its way
+  if (line.stops.some((k, i) => s.stations.find((st) => st.id === k)?.cell === o.at && !(asker && skips(line, asker.skip, i)))) return false;
   const body = bodyCells(s, o);
-  for (let k = line.legs[leg].a + 1; k < line.legs[leg].b; k++) if (body.has(line.path[k])) return true;
+  for (let k = leg.a + 1; k < leg.b; k++) if (body.has(line.path[k])) return true;
   return false;
 }
 
 /** whether the block of a leg has a running train on it (when `moving`), or a waiting one over its cells, other than this train */
-function blockTaken(s: SimState, t: Train | null, line: Line, leg: number, moving = true): boolean {
-  const mine = line.legs[leg];
+function blockTaken(s: SimState, t: Train | null, line: Line, leg: Leg, moving = true): boolean {
+  const mine = leg;
   for (const o of s.trains) {
     if (o === t) continue;
     // a train that stands at a station lies over the first cells of its line, and it clears by itself, so it holds a train that sets out now but not the queue order
     if (o.state === 'stop') {
-      if (moving && standsOver(s, o, line, leg)) return true;
+      if (moving && standsOver(s, o, line, leg, t)) return true;
       continue;
     }
     if (o.state !== 'run') continue;
     // the trains of a line with a passing siding share its track by the rules of the siding
     if (line.siding && o.lineId === line.id) continue;
     const ol = lineOf(s, o);
+    const span = trainSpan(s, o);
     if (!o.queued) {
-      if (moving && legsShare(ol.legs[legOfTrain(o)], mine)) return true;
+      if (moving && legsShare(span, mine)) return true;
       continue;
     }
-    if (ol === line && legOfTrain(o) === leg) return true;
+    if (ol === line && span === leg) return true;
     const body = bodyCells(s, o);
-    for (let k = line.legs[leg].a; k <= line.legs[leg].b; k++) if (body.has(line.path[k])) return true;
+    for (let k = leg.a; k <= leg.b; k++) if (body.has(line.path[k])) return true;
   }
   return false;
 }
@@ -1696,6 +1859,7 @@ function fareTarget(s: SimState, t: Train, site: Site, fare: Fare): string | nul
   let best: string | null = null;
   let most = 0.999;
   for (let j = t.idx + dir; j >= 0 && j < line.stops.length; j += dir) {
+    if (skips(line, t.skip, j)) continue;
     const o = stopSite(s, line, j);
     const n = site[fare][o.id] ?? 0;
     if (o.kind === 'town' && n > most) {
@@ -1717,10 +1881,10 @@ function wagonLoads(s: SimState, t: Train, w: number, site: Site): boolean {
   if (fare) {
     const line = lineOf(s, t);
     const dir = departDir(t, line);
-    return site.kind === 'town' && line.stops.some((_, j) => (dir === 1 ? j > t.idx : j < t.idx) && stopIsTown(s, line, j));
+    return site.kind === 'town' && line.stops.some((_, j) => (dir === 1 ? j > t.idx : j < t.idx) && !skips(line, t.skip, j) && stopIsTown(s, line, j));
   }
   const makes = MAKES[site.kind];
-  return !!makes && WAGON_GOODS[t.wagons[w]].includes(makes) && takenElsewhere(s, lineOf(s, t), makes, t.idx);
+  return !!makes && WAGON_GOODS[t.wagons[w]].includes(makes) && takenElsewhere(s, lineOf(s, t), makes, t.idx, t.skip);
 }
 
 /** whether the wagon is empty, could take a load here, and the site has one ready now */
@@ -1845,9 +2009,8 @@ function waitingForLoad(s: SimState, t: Train): boolean {
 }
 
 function depart(s: SimState, t: Train, line: Line): boolean {
-  // a train turns at the ends and runs on through a middle stop
-  const dir = departDir(t, line);
-  const leg = dir === 1 ? t.idx : t.idx - 1;
+  // a train turns at the ends and runs on through a middle stop; it runs to the next stop it stops at
+  const { leg, dir, to } = departSpan(t, line);
   if (blockBusy(s, t, line, leg) || (line.siding && sidingBusy(s, t, line, dir))) {
     t.gate += DT;
     return false;
@@ -1868,6 +2031,7 @@ function depart(s: SimState, t: Train, line: Line): boolean {
   t.loop = 0;
   // the leading end is the stop's own point; the engine starts at the station, the wagons stand behind it on the siding the renderer draws
   t.dir = dir;
+  t.to = to;
   t.s = stopS(line, t.idx);
   t.state = 'run';
   t.at = null;
@@ -1888,6 +2052,7 @@ function runTrain(s: SimState, t: Train): void {
   if (t.state === 'stop') {
     // a parked train waits on its siding until the line has room for it and a platform is free
     if (t.parked) {
+      // arriving() counts a train that runs through the station too: it needs the track
       if (activeOn(s, line, t) < lineCapacity(s, line) && !arriving(s, t, t.at!, line)) {
         const k = claimSlot(s, t, t.at!);
         if (k >= 0) {
@@ -1937,6 +2102,15 @@ function runTrain(s: SimState, t: Train): void {
         }
       }
     }
+  }
+  // a station the train passes through: wait before it while a train holds the track there
+  for (let k = Math.min(t.idx, target) + 1; k < Math.max(t.idx, target); k++) {
+    const ahead = t.dir === 1 ? stopS(line, k) - t.s : t.s - stopS(line, k);
+    if (ahead < 0) continue;
+    const holder = holdsThrough(s, t, stopCell(line, k), drawnLength(t));
+    if (!holder) continue;
+    const hold = passHold(t, drawnLength(holder));
+    if (ahead - step < hold) step = Math.max(0, Math.min(step, ahead - hold));
   }
   if (line.siding) step = sidingStep(s, t, line, step);
   if (step <= 0) t.speed = 0;

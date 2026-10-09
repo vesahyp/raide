@@ -8,7 +8,7 @@
  */
 import type { Contract, EngineId, Good, SimState, WagonType } from '../src/game/types';
 import type { Route, RouteMode } from '../src/game/grid';
-import { removeWagon, build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, buyCrew, buyCrane, buyPlatform, buySiding, defaultConsist, platformPrice, borrow, repay, loanCeiling, netWorth, visited, extendable, freeSide, canExtend } from '../src/game/sim';
+import { removeWagon, build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, setStop, buyCrew, buyCrane, buyPlatform, buySiding, defaultConsist, platformPrice, borrow, repay, loanCeiling, netWorth, visited, extendable, freeSide, canExtend } from '../src/game/sim';
 import { advice, type Advice } from '../src/game/advice';
 import { wagonFor, WAGONS_DEFAULT, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, MAKES, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
 import type { YearEnd } from '../src/game/types';
@@ -36,6 +36,8 @@ export type Step =
   | { kind: 'engine'; line: string[]; nth?: number; engine: EngineId }
   /** the train, by its place in the list of trains, goes to another line while it stands at a station both serve */
   | { kind: 'move'; train: number; line: string[] }
+  /** the train's order for a middle station of its line: pass it through, or with `stop` stop there again */
+  | { kind: 'pass'; line: string[]; nth?: number; site: string; stop?: boolean }
   /** the loading crew at a site's station */
   | { kind: 'crew'; site: string }
   /** one more platform at a site's station */
@@ -200,6 +202,9 @@ export const HARJU_PLANS: Record<string, BotPlan> = {
       { kind: 'platform', site: 'sawmill' },
       { kind: 'platform', site: 'farm' },
       { kind: 'train', line: ['tampere', 'mill', 'lahti'], wagons: ['box', 'box', 'box', 'box'] },
+      // the orders, tried and put back at once: the train passes the mill through and then stops there again
+      { kind: 'pass', line: ['tampere', 'mill', 'lahti'], nth: 1, site: 'mill' },
+      { kind: 'pass', line: ['tampere', 'mill', 'lahti'], nth: 1, site: 'mill', stop: true },
       { kind: 'platform', site: 'farm' },
       { kind: 'crane', site: 'sawmill' },
       { kind: 'platform', site: 'sawmill' },
@@ -452,6 +457,13 @@ export class Bot {
       if (!moveTrain(s, tr.id, line.id)) return;
       this.done++;
       this.log.push(`${t}: train ${tr.id} to ${step.line.join('-')}`);
+    } else if (step.kind === 'pass') {
+      const tr = this.trainOn(s, step.line, step.nth);
+      const st = stationAt(s, idx(s, siteById(s, step.site).cx, siteById(s, step.site).cy));
+      // a train that is not there, or a station that is no middle stop, leaves the step done: nothing to order
+      if (tr && st) setStop(s, tr.id, st.id, !!step.stop);
+      this.done++;
+      this.log.push(`${t}: train ${tr?.id} ${step.stop ? 'stops at' : 'passes'} ${step.site}`);
     } else if (step.kind === 'engine') {
       const tr = this.trainOn(s, step.line, step.nth);
       if (!tr || !setEngine(s, tr.id, step.engine)) return;

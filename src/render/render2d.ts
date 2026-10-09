@@ -17,7 +17,7 @@ import type { Cargo, Contract, Good, Line, Load, ScenarioDef, Siding, SimState, 
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
-import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, waitingTotal, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS } from '../game/sim';
+import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, waitingTotal, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS, stopSite, skips } from '../game/sim';
 import { createState } from '../game/state';
 import type { Advice } from '../game/advice';
 import { Clouds } from './clouds';
@@ -519,7 +519,7 @@ export class Renderer2D {
   private slotCells(t: Train): [number, number][] {
     const line = lineOf(this.s, t);
     if (t.state === 'stop') return [[t.at ?? stopCell(line, t.idx), t.slot]];
-    return [[stopCell(line, t.idx + t.dir), t.slot], [stopCell(line, t.idx), t.slotFrom]];
+    return [[stopCell(line, t.to), t.slot], [stopCell(line, t.idx), t.slotFrom]];
   }
 
   private computeAprons(): Apron[] {
@@ -1184,7 +1184,9 @@ export class Renderer2D {
   /** the platform track a train uses at a stop of its line: where it stands or runs to, or where it left */
   private slotAtStop(t: Train, stop: number): number {
     if (t.state === 'stop') return t.idx === stop ? t.slot : t.slotFrom;
-    return stop === t.idx + t.dir ? t.slot : t.slotFrom;
+    if (stop === t.to) return t.slot;
+    // a stop it passes through lies on the through track, platform 0
+    return stop === t.idx ? t.slotFrom : 0;
   }
 
   /** the drawn length of a train, a little more than the sum of its parts for the gaps */
@@ -2744,6 +2746,59 @@ export class Renderer2D {
     }
     this.routePlate(drag, pending);
     this.loadTags(lod);
+    this.orderMarks(lod);
+  }
+
+  /**
+   * The orders of trains on the map. A train that passes any station through wears a small
+   * "express" tag. While a train is followed, each station it stops at gets a numbered pill on the
+   * platform (1, 2, 3 in the order of the line) and each station it passes through a faint ring
+   * with a stroke through it. A station nobody follows a train through shows nothing special.
+   */
+  private orderMarks(lod: boolean): void {
+    const s = this.s;
+    const seen = new Set<string>();
+    if (!lod)
+      for (const t of s.trains) {
+        const line = lineOf(s, t);
+        if (!line.stops.some((_, i) => skips(line, t.skip, i))) continue;
+        const key = `express:${t.id}`;
+        seen.add(key);
+        const el = this.label(key, 'tag express-tag');
+        const html = tr('pika', 'express');
+        if (el.dataset.html !== html) {
+          el.textContent = html;
+          el.dataset.html = html;
+        }
+        el.classList.toggle('followed', this.followId === t.id);
+        const vs = this.vehicles(t);
+        const mid = vs[Math.floor(vs.length / 2)];
+        el.style.display = '';
+        el.style.transform = `translate(${mid.px.toFixed(1)}px, ${(mid.py + this.cam.s * 0.45).toFixed(1)}px)`;
+      }
+    const followed = !lod && this.followId !== null ? s.trains.find((o) => o.id === this.followId) : undefined;
+    if (followed) {
+      const line = lineOf(s, followed);
+      if (line.stops.length > 2) {
+        let n = 0;
+        line.stops.forEach((_, i) => {
+          const site = stopSite(s, line, i);
+          const skipped = skips(line, followed.skip, i);
+          const key = `order:${i}`;
+          seen.add(key);
+          const el = this.label(key, 'tag order-mark');
+          el.classList.toggle('skip', skipped);
+          const text = skipped ? '' : String(++n);
+          if (el.textContent !== text) el.textContent = text;
+          // the pill sits on the platform, the ring around the station
+          const p = this.project(site.cx + 0.5, site.cy - 0.15, 0);
+          const px = Math.max(30, Math.min(64, this.cam.s * 2.1));
+          el.style.width = el.style.height = skipped ? `${px.toFixed(0)}px` : '';
+          this.place(el, p);
+        });
+      }
+    }
+    for (const [key, el] of this.labels) if ((key.startsWith('express:') || key.startsWith('order:')) && !seen.has(key)) el.style.display = 'none';
   }
 
   /**

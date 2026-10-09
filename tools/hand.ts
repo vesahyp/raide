@@ -8,7 +8,7 @@
  * page and turns what it asks for into touch events. It asks in screen
  * coordinates, so the same hand plays portrait and landscape.
  */
-import { PLANS, planServes, countOf, type Step } from './bot';
+import { PLANS, HARJU_PLANS, planServes, countOf, type Step } from './bot';
 import { PLATFORM_PRICE, CREW_PRICE, CRANE_PRICE, SIDING_PRICE, ENGINES, RESALE, WAGON_PRICE, WAGONS_DEFAULT } from '../src/game/content/economy';
 
 export { PLANS };
@@ -18,7 +18,7 @@ export interface HandView {
   /** the lines on the map, each as its site ids in order of the stops */
   lines: string[][];
   /** the trains, in order, each with its line and its wagons front to back */
-  trains: { id: number; line: string[]; stopped?: boolean; wagons: string[] }[];
+  trains: { id: number; line: string[]; stopped?: boolean; wagons: string[]; /** the sites of the stations it passes through */ skip?: string[] }[];
   yearEnd: boolean;
   result: boolean;
   card: 'line' | 'train' | 'site' | 'choice' | 'yearEnd' | 'result' | 'money' | 'none';
@@ -66,6 +66,8 @@ export type HandAction =
   | { kind: 'consist'; remove?: number; add?: string }
   | { kind: 'buy'; engine: string }
   | { kind: 'openTrain'; train: number }
+  /** on the train card: a tap on the station's row in the orders strip (the site it stands at) */
+  | { kind: 'order'; site: string }
   | { kind: 'openSite'; site: string }
   | { kind: 'crew' }
   | { kind: 'platform' }
@@ -129,13 +131,15 @@ export interface Glass {
 }
 
 /** one move to bring points into view, made by a real touch */
-export type Framing = { kind: 'ok' } | { kind: 'zoom' } | { kind: 'pan'; dx: number; dy: number };
+export type Framing = { kind: 'ok' } | { kind: 'zoom' } | { kind: 'in' } | { kind: 'pan'; dx: number; dy: number };
 
 /** a margin the thumb keeps from the edges of the glass, in px: more than the edge scroll's reach, so a drag that ends here stands still; the bottom one clears the zoom buttons */
 const MARGIN = 72;
 const BOTTOM = 90;
 /** at or under this many px a tile the thumb cannot zoom out further without the whole-map look */
 const ROUTE_SCALE = 16;
+/** under this many px a tile the map is in its whole-map look, where a drag only pans: the thumb zooms in before any drag or pick */
+const PLAY_MIN = 14;
 
 /** the same line: the same sites in the same order, or in the reverse order */
 const same = (a: string[], b: string[]) => a.length === b.length && (a.every((x, i) => x === b[i]) || a.every((x, i) => x === b[b.length - 1 - i]));
@@ -182,7 +186,9 @@ export class Hand {
     scenario: string,
     public skill = 0.6,
   ) {
-    this.steps = PLANS[scenario].steps;
+    // "harju:C" is the plan C of Harju
+    const [id, variant] = scenario.split(':');
+    this.steps = (variant && id === 'harju' ? HARJU_PLANS[variant] : PLANS[id]).steps;
     this.reaction = 0.6 - 0.4 * skill;
     this.speed = 450 + 500 * skill;
     this.jitter = 12 - 10 * skill;
@@ -391,6 +397,27 @@ export class Hand {
       if (v.card !== 'none') return { kind: 'close' };
       return { kind: 'openSite', site: step.site };
     }
+    if (step.kind === 'pass') {
+      // the train is named like the wagon steps name it; the thumb opens its card and taps the station's row
+      const mine = v.trains.filter((t) => same(t.line, step.line));
+      const tr = mine[step.nth ?? 0];
+      if (!tr) {
+        this.done++;
+        return { kind: 'wait' };
+      }
+      const passes = (tr.skip ?? []).includes(step.site);
+      if (passes === !step.stop) {
+        this.done++;
+        return v.card !== 'none' ? { kind: 'close' } : { kind: 'wait' };
+      }
+      if (v.card === 'train' && v.cardTrain === tr.id) return { kind: 'order', site: step.site };
+      if (v.card !== 'none') return { kind: 'close' };
+      if (tr.stopped === false) {
+        this.why = `train ${tr.id} is not at a platform`;
+        return { kind: 'wait' };
+      }
+      return { kind: 'openTrain', train: tr.id };
+    }
     if (step.kind === 'wagon' || step.kind === 'drop' || step.kind === 'engine' || (step as { kind: string }).kind === 'fullload') {
       // the train is named by its line (and its place among that line's trains), so a train a tip bought does not shift it
       const fl = step as { train?: number; line?: string[]; nth?: number };
@@ -435,6 +462,8 @@ export class Hand {
    * first point alone when they cannot fit, so the drag can scroll on from there).
    */
   frame(pts: Pt[], g: Glass): Framing {
+    // at the whole-map zoom a drag pans and a tap picks nothing: one tap on the + button first
+    if (g.scale < PLAY_MIN) return { kind: 'in' };
     const x0 = g.l + MARGIN;
     const x1 = g.l + g.w - MARGIN;
     const y0 = g.t + MARGIN;

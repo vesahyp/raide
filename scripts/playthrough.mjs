@@ -73,7 +73,7 @@ const look = (page) =>
       const seg = l.dist[k] - l.dist[k - 1];
       const f = seg > 0 ? Math.max(0, Math.min(1, (d - l.dist[k - 1]) / seg)) : 0;
       const ax = (a % s.w) + 0.5, ay = Math.floor(a / s.w) + 0.5, bx = (b % s.w) + 0.5, by = Math.floor(b / s.w) + 0.5;
-      return { id: t.id, line: pair(l), at: toS(ax + (bx - ax) * f, ay + (by - ay) * f), stopped: t.state === 'stop', wagons: t.wagons.slice() };
+      return { id: t.id, line: pair(l), at: toS(ax + (bx - ax) * f, ay + (by - ay) * f), stopped: t.state === 'stop', wagons: t.wagons.slice(), skip: t.skip.map((id) => siteOf(s.stations.find((st) => st.id === id).cell)) };
     });
     const glass = { ...r.area(), scale: r.scale };
     const el = (q) => document.querySelector(q);
@@ -178,6 +178,18 @@ async function run(orient) {
       const pts = pointsOf(v);
       const m = await page.evaluate(({ pts, g }) => window.__hand.frame(pts, g), { pts, g: v.glass });
       if (m.kind === 'ok') return true;
+      if (m.kind === 'in') {
+        // the whole-map look: a drag only pans there, so one tap on the + button first
+        await tapButton(page.locator('[data-zoom="in"]'));
+        let last = -1;
+        for (let k = 0; k < 40; k++) {
+          await page.waitForTimeout(200);
+          const now = (await look(page)).glass.scale;
+          if (Math.abs(now - last) < 0.01) break;
+          last = now;
+        }
+        continue;
+      }
       if (m.kind === 'zoom') {
         await tapButton(page.locator('[data-zoom="out"]'));
         // the zoom eases: look again only when the picture has stopped changing
@@ -223,7 +235,7 @@ async function run(orient) {
   try {
     await page.goto(`http://localhost:${port}/raide/?lang=en${SPEED !== 1 ? `&speed=${SPEED}` : ''}`);
     await page.addScriptTag({ content: HAND_JS });
-    await page.evaluate((sc) => { window.__hand = new window.__Hand(sc, 0.6); }, SCENARIO);
+    await page.evaluate((sc) => { window.__hand = new window.__Hand(sc, 0.6); }, process.env.PLAN ? `${SCENARIO}:${process.env.PLAN}` : SCENARIO);
     await page.waitForTimeout(800);
     await tapButton(page.locator(`[data-scenario="${SCENARIO}"]`));
     await page.waitForFunction(() => window.__sim && window.__renderer, null, { timeout: 10000 });
@@ -249,6 +261,7 @@ async function run(orient) {
       if (doneKey !== lastKey) { lastKey = doneKey; lastDoneAt = v.time; }
       if (v.cash > 200 && v.time - lastDoneAt > 20 && lastTime >= 0) idleRich += v.time - Math.max(lastTime, lastDoneAt + 20);
       lastTime = v.time;
+      if (process.env.ACTS) console.log(`[${orient}] t=${v.time.toFixed(1)} scale=${v.glass.scale.toFixed(1)} card=${v.card} act=${JSON.stringify(act)}`);
       acts[act.kind + (act.what ? ':' + act.what : '')] = (acts[act.kind + (act.what ? ':' + act.what : '')] ?? 0) + 1;
       if (v.time - lastLog >= 60) {
         lastLog = v.time;
@@ -410,6 +423,13 @@ async function run(orient) {
         await page.waitForTimeout(300);
         const after = await look(page);
         if (after.card !== 'train' && after.card !== 'none') { await tapButton(page.locator('.round.close')); await page.waitForTimeout(200); }
+      } else if (act.kind === 'order') {
+        // the orders strip on the train card: one tap on the station's row
+        const id = await page.evaluate((site) => { const s = window.__sim; const o = s.sites.find((x) => x.id === site); return s.stations.find((st) => st.cell === o.cy * s.w + o.cx)?.id; }, act.site);
+        if (await tapButton(page.locator(`.train-card [data-order-station="${id}"]`))) stats.acts++;
+        await page.waitForTimeout(300);
+        await tapButton(page.locator('.round.close'));
+        await page.waitForTimeout(200);
       } else if (act.kind === 'openSite') {
         await frameOn((w) => [w.sites[act.site]]);
         const p = (await look(page)).sites[act.site];

@@ -52,7 +52,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed people buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed orders-check people buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -112,6 +112,10 @@ upgrades: build
 # the economy step 4 pictures: lengthening a line, a mixed consist, a mixed train unloading and loading
 mixed: build
 	node scripts/mixed.mjs
+
+# train orders by touch on an iPhone 16: a train passes Koskensaha through, then stops there again; pictures into shots/orders/
+orders-check: build
+	node scripts/orders-check.mjs
 
 # the result card, won and lost, Harju and Sawmill, portrait and landscape, fi and en, into shots/result/; fails when the card scrolls, a button is small or the lost card names nothing
 result: build

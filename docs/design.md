@@ -297,6 +297,30 @@ a wagon, a tap on a wagon in the strip takes it off. On the train card a wagon
 of any type is added, and one taken off returns half its price. The trips a year
 count every stop.
 
+**Train orders.** A train has one more setting: the middle stations of its
+line it passes through. Only a middle stop can be passed, both ends always
+stop because the train turns there. The setting is a list of station ids on the
+train (`skip`) and `setStop(s, trainId, stationId, stop)` is the player's move.
+It applies from the train's next departure: when a train sets out it looks for
+the next stop it stops at and runs to it, so the change never reshapes a run
+already under way. A train that passes a station does not stop, load, unload or
+take a platform there. It runs on the line's through track at line speed and
+holds the block of the whole stretch from the stop it left to the stop it runs
+to, so no other train of the line is in that stretch. It does not set out while
+a train stands at the station it would pass or runs in to it, and on the way it
+waits before such a station until the track is clear. A train of another line
+that wants a platform at a station a passer is crossing waits on its line until
+the passer's tail is clear. A wagon loads only what a later stop on the train's
+way takes, counting only the stops it stops at, and the trip time counts only
+the dwell at those stops. The card shows the stations as a vertical strip, the
+map shows the stops of a followed train as numbered pills and the passed
+stations as struck rings, and a train that passes any station wears the tag
+"express". Known edge, not covered by sim-check: a train of another line
+that comes to stand at a passed station just after the passer set out, when the
+two lines share track beyond the station, can hold the passer while it waits for
+the passer to go. Trains of the passer's own line cannot do this, because the
+passer holds both legs.
+
 **Wagons** are typed, one type per good family, and a train's wagons decide
 what it carries: flat wagon (timber), box wagon (boards, flour), hopper
 (grain, later ore and coal), tank wagon (tar, oil, later), **coach**

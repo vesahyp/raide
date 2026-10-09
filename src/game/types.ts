@@ -194,6 +194,10 @@ export interface Train {
   dir: 1 | -1;
   /** the stop (an index into the line's stops) the train stands at, or left last */
   idx: number;
+  /** the stop the train runs to, set when it leaves: the next stop it stops at, which may lie past stations it skips */
+  to: number;
+  /** station ids the train passes through without stopping; only a middle station of the line counts, the ends always stop */
+  skip: number[];
   /** the leading end of the train, as a distance along the line's path in cells */
   s: number;
   state: TrainState;

@@ -7,7 +7,7 @@
  */
 import { createState, siteById, stationAt } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth } from '../src/game/sim';
+import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, setStop, consistCycle, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth } from '../src/game/sim';
 import { idx, route, APPROACH, turnsBack } from '../src/game/grid';
 import { Bot, type Step, type YearRecord } from './bot';
 import { ENGINE_LEN, WAGON_LEN, YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
@@ -846,7 +846,7 @@ class Watch {
           // the stop the cell is nearest to: the platform track the train uses there is the one it runs to or left
           let near = 0;
           for (let k = 1; k < l.stops.length; k++) if (dist(c, stopCell(l, k)) < dist(c, stopCell(l, near))) near = k;
-          return near === o.idx + o.dir ? o.slot : o.slotFrom;
+          return near === o.to ? o.slot : near === o.idx ? o.slotFrom : 0;
         };
         const throat = (c: number) => trackAt(a.o, c) !== trackAt(b.o, c) && s.stations.some((st) => dist(st.cell, c) <= 8);
         // the vehicles themselves: the drawn centre of the engine and of each wagon, less than 0.6 tile from one of another train
@@ -866,9 +866,10 @@ class Watch {
       for (let j = i + 1; j < running.length; j++) {
         const a = lineOf(s, running[i]);
         const b = lineOf(s, running[j]);
-        const la = running[i].dir === 1 ? running[i].idx : running[i].idx - 1;
-        const lb = running[j].dir === 1 ? running[j].idx : running[j].idx - 1;
-        if (a === b && la === lb && !a.siding) this.overlap++;
+        // the legs a train covers: all between the stop it left and the stop it runs to, past the stops it passes
+        const ra = [Math.min(running[i].idx, running[i].to), Math.max(running[i].idx, running[i].to)];
+        const rb = [Math.min(running[j].idx, running[j].to), Math.max(running[j].idx, running[j].to)];
+        if (a === b && ra[0] < rb[1] && rb[0] < ra[1] && !a.siding) this.overlap++;
       }
     // no two trains stand on one platform track of a station
     const seen = new Set<string>();
@@ -882,7 +883,7 @@ class Watch {
     for (const o of s.trains) {
       if (!o.queued) continue;
       const line = lineOf(s, o);
-      const front = (o.dir === 1 ? stopS(line, o.idx + o.dir) - o.s : o.s - stopS(line, o.idx + o.dir)) - drawnLength(o) / 2;
+      const front = (o.dir === 1 ? stopS(line, o.to) - o.s : o.s - stopS(line, o.to)) - drawnLength(o) / 2;
       if (front < QUEUE_GAP) this.apart++;
     }
     // a train is moving or working, or it is not: the longest it goes without either
@@ -897,6 +898,86 @@ class Watch {
       if (!prev || prev.mark !== mark) this.seen.set(o.id, { mark, since: s.time });
       else this.longest = Math.max(this.longest, s.time - prev.since);
     }
+  }
+}
+
+// train orders: a train passes a middle station through, ends always stop
+{
+  const build3 = () => {
+    const s = createState(HARJU);
+    s.cash = 99999;
+    const line = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+    build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'), 1).filter((r) => canExtend(s, r, line.id))[0], line.id);
+    for (const id of line.stops) buyPlatform(s, id);
+    return { s, line, mid: line.stops[1], midCell: line.path[line.stopAt[1]] };
+  };
+  // one train alone on the line, one year after another: the stopper and the skipper
+  const trips = (skip: boolean) => {
+    const { s, line, mid, midCell } = build3();
+    const t = buyTrain(s, line.id, defaultConsist(s, line))!;
+    if (skip) check(setStop(s, t.id, mid, false) && t.skip.join() === `${mid}`, 'a middle station can be set to pass through');
+    siteById(s, 'forest').stock = 99;
+    siteById(s, 'sawmill').stock = 99;
+    let round = 0;
+    let wasStopped = false;
+    let atMid = 0;
+    let loadsAfter = 0;
+    for (let k = 0; k < 3 * YEAR_SECONDS * 60; k++) {
+      if (s.yearEnd) closeYearEnd(s);
+      step(s);
+      if (t.state === 'stop' && t.at === midCell) atMid++;
+      if (t.state === 'stop' && !wasStopped && t.idx === 0) round++;
+      wasStopped = t.state === 'stop';
+      if (skip && t.cargo > 0) loadsAfter++;
+    }
+    return { round, atMid, loadsAfter, delivered: siteById(s, 'sawmill').delivered, pickups: siteById(s, 'sawmill').lastPickup, t };
+  };
+  const stops = trips(false);
+  const passes = trips(true);
+  check(stops.atMid > 0 && stops.delivered > 0, `a train that stops at Koskensaha stands there and unloads (${stops.atMid} frames, ${stops.delivered} loads)`);
+  check(passes.atMid === 0 && passes.delivered === 0 && passes.loadsAfter === 0 && passes.pickups === -Infinity, `a train that passes Koskensaha through never stops, loads or unloads there (${passes.atMid} frames, ${passes.delivered} loads, ${passes.loadsAfter} frames with a load)`);
+  check(passes.round > stops.round, `and makes more trips than one that stops (${passes.round} against ${stops.round} round trips in three years)`);
+  {
+    const { s, line } = build3();
+    const t = buyTrain(s, line.id, defaultConsist(s, line))!;
+    check(!setStop(s, t.id, line.stops[0], false) && !setStop(s, t.id, line.stops[2], false) && t.skip.length === 0, 'the ends of a line cannot be set to pass through');
+    check(setStop(s, t.id, line.stops[1], false) && !setStop(s, t.id, line.stops[1], false) && setStop(s, t.id, line.stops[1], true) && t.skip.length === 0, 'a station set to pass through can be set to stop again, and a repeat changes nothing');
+    const two = createState(HARJU);
+    two.cash = 9999;
+    const l2 = build(two, plan(two, cell(two, 'forest'), cell(two, 'sawmill'))[0])!;
+    const t2 = buyTrain(two, l2.id, 'flat', 'hilma', 2)!;
+    check(!setStop(two, t2.id, l2.stops[0], false) && !setStop(two, t2.id, l2.stops[1], false), 'a line of two stops has no station to pass');
+    // the cycle counts the skipped dwell
+    const stand = consistCycle(s, line, 'hilma', t.wagons).stands[1];
+    const skipped = consistCycle(s, line, 'hilma', t.wagons, [line.stops[1]]);
+    check(stand > 0 && skipped.stands[1] === 0 && skipped.total < consistCycle(s, line, 'hilma', t.wagons).total && lineTrips(s, line, 'hilma', t.wagons, [line.stops[1]]) > lineTrips(s, line, 'hilma', t.wagons), 'the trip time counts the dwell a skipped station saves');
+  }
+  // a skipper and a stopper on one line for ten years: no overlap, no wait over 40 s
+  {
+    const { s, line, mid, midCell } = build3();
+    const a = buyTrain(s, line.id, defaultConsist(s, line))!;
+    const b = buyTrain(s, line.id, defaultConsist(s, line))!;
+    setStop(s, b.id, mid, false);
+    const watch = new Watch();
+    let passedMid = 0;
+    let heldMid = 0;
+    let stoppedMid = 0;
+    for (let k = 0; k < 10 * YEAR_SECONDS * 60; k++) {
+      if (k % 60 === 0) {
+        siteById(s, 'forest').stock = Math.max(siteById(s, 'forest').stock, 3);
+        siteById(s, 'sawmill').stock = Math.max(siteById(s, 'sawmill').stock, 3);
+      }
+      if (s.yearEnd) closeYearEnd(s);
+      step(s);
+      watch.check(s);
+      if (b.state === 'stop' && b.at === midCell) stoppedMid++;
+      if (b.state === 'run' && Math.abs(b.s - stopS(line, 1)) < 0.05) passedMid++;
+      if (b.state === 'run' && b.speed === 0) heldMid++;
+    }
+    check(stoppedMid === 0 && a.odometer > 0 && b.odometer > 0 && s.trains.every((t) => !t.parked), `the skipper never stops at the station while the stopper serves it (${stoppedMid} frames, odometers ${a.odometer.toFixed(0)} and ${b.odometer.toFixed(0)})`);
+    check(watch.overlap === 0 && watch.near === 0 && watch.shared === 0 && watch.apart === 0, `ten years of a skipper and a stopper on one line: no overlap, no vehicles closer than 0.6 tile, none over a station (${watch.overlap}, ${watch.near}, ${watch.shared}, ${watch.apart} frames; the skipper ran through ${passedMid} frames at the station and waited ${heldMid})`);
+    check(watch.gate <= 40 && watch.longest <= 30, `and no wait over 40 s (${watch.gate.toFixed(1)} s) and no train stuck (${watch.longest.toFixed(1)} s)`);
+    check(a.earned > 0, `the stopper earned (${Math.round(a.earned)})`);
   }
 }
 

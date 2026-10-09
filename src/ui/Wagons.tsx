@@ -20,13 +20,13 @@ export const NONE_OF: Record<Cargo, [string, string]> = { timber: ['tukkeja', 't
 export const WAGON_ORDER: WagonType[] = ['flat', 'box', 'hopper', 'coach', 'mailvan'];
 
 /** what a wagon type carries on the line: one entry per good, with the stop it loads at and the one that takes it; empty when it is a waste */
-export function carries(s: SimState, line: Line, type: WagonType): { good: Cargo; from: string; to: string }[] {
-  return wagonRoutes(s, line, type).map((r) => ({ good: r.good, from: tt(stopSite(s, line, r.from).name), to: tt(stopSite(s, line, r.to).name) }));
+export function carries(s: SimState, line: Line, type: WagonType, skip: readonly number[] = []): { good: Cargo; from: string; to: string }[] {
+  return wagonRoutes(s, line, type, skip).map((r) => ({ good: r.good, from: tt(stopSite(s, line, r.from).name), to: tt(stopSite(s, line, r.to).name) }));
 }
 
 /** "carries timber Kuusikko → Koskensaha", "carries travellers Hämeenlinna ↔ Tampere", or "carries nothing on this line" in red */
-export function CarryText({ s, line, type }: { s: SimState; line: Line; type: WagonType }) {
-  const list = carries(s, line, type);
+export function CarryText({ s, line, type, skip }: { s: SimState; line: Line; type: WagonType; skip?: readonly number[] }) {
+  const list = carries(s, line, type, skip);
   if (!list.length) return <small className="red nothing" data-carries="nothing">{tr('ei kuljeta mitään täällä', 'carries nothing here')}</small>;
   return (
     <small className="carry" data-carries="some">

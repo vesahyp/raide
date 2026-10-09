@@ -55,7 +55,7 @@ src/
                         the passing siding (two blocks, a loop to wait in), the crane's dwell, the year-end
                         contract (seeded offer, count, reward, deadline);
                         plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/buyPlatform/
-                        buyCrew/buyCrane/buySiding/closeYearEnd are the player's moves, the UI and the bot call the same ones
+                        setStop (a train passes a middle station through)/buyCrew/buyCrane/buySiding/closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
       economy.ts      every number the balance is made of: prices, demand, the tile in metres
                         (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth, the travellers and the mail
@@ -81,6 +81,7 @@ src/
                         that met the lake or the ridge, the line (its trains, buy with wagons and
                         engine), the train (wagon, engine swap, full load, sell), the site (has,
                         wants, pays, growth), the year end, the result
+    Orders.tsx        the train card's Orders: the line's stations as a vertical strip, a tap passes a middle station through
     Ledger.tsx        the year-end card: income bars (goods, travellers, mail), the cash line, the towns that grew, the contract on offer
     Screens.tsx       the title and the scenario list
     Update.tsx        the newer-build banner; ErrorBoundary.tsx the crash screen
@@ -118,6 +119,7 @@ scripts/
                         choice card; the check for a change to the route plate or the ghost route
   shots.mjs           phone screenshots with Playwright, the bot playing
   touch-check.mjs     lays track and buys a train by real touches on an emulated phone
+  orders-check.mjs    make orders-check: iPhone 16, a three-stop line by touch, a train told to pass Koskensaha through and back, pictures into shots/orders/
   rotate-check.mjs    turns the phone mid-game: the state stays, the canvas and the HUD fit
   playthrough.mjs     a scenario by thumb (SCENARIO=harju by default), portrait and landscape, a
                         video and frame sheets

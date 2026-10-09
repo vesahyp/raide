@@ -108,6 +108,8 @@ tyhjänä, tämän ja viime vuoden tulot, jokaisen vaunun kuorma ja se, mitä va
 sen linjan asemalla) tai myynti puoleen hintaan. Kortti kertoo myös, mitä juna on tuottanut ja
 maksanut tänä vuonna.
 
+**Junan pysähdykset.** Kolmen tai neljän pysäkin radalla juna voi ohittaa välipysäkin. Junan kortin Pysähdykset-osa listaa radan asemat järjestyksessä pystynauhana, aivan kuin reittikartta: jokaisella asemalla on piste. Päät, joissa juna kääntyy, ovat aina pysäkkejä, eikä niitä voi napauttaa. Välipysäkki on yksi iso painike: yksi napautus vaihtaa sen välillä "pysähtyy" (täysi piste, nimi lihavoitu) ja "ohittaa" (tyhjä piste, nimi yliviivattu ja himmeä, nuoli sen ohi). Pysähtyvän aseman alla näkyy, mitä juna siinä purkaa ja lastaa. Muutos alkaa junan seuraavasta lähdöstä. Ohittava juna ei pysähdy, ei lastaa eikä pura eikä ota laituria, vaan ajaa aseman läpi pääraiteella radan nopeudella. Se odottaa aseman edessä, jos siellä seisoo toinen juna. Vaunu lastaa vain sen, minkä jokin myöhempi pysäkki, jolla juna oikeasti pysähtyy, ottaa vastaan, ja ohitettu seisonta-aika säästyy matka-ajasta. Kun seuraat junaa napauttamalla sitä, kartalla jokaisen pysäkin laiturilla on numeroitu pilleri (1, 2, 3) ja ohitetulla asemalla himmeä yliviivattu rengas. Ohituksia tekevän junan alla lukee "pika".
+
 **Tavara liikkuu.** Metsä kasvattaa tukkeja, saha tekee tukeista lautoja;
 maatila kasvattaa viljaa, mylly jauhaa siitä jauhoja. Kaupungit ostavat
 laudat ja jauhot. Varasto näkyy pinona radan vieressä ja kuorma vaunuissa.

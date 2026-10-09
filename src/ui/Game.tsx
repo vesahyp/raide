@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Cargo, EngineId, Good, Line, Load, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
 import { createState, siteById, siteAt, goodsOnMap, stationAt } from '../game/state';
 import { DT, freeSide, canExtend, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, setFullLoad, sellTrain, fillOf, storeCap, eatsPerMonth, growthOutlook, goalProgress, lineOf, buyers, moveTrain, buyCrew, canMove, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, farePay, visited, townEats, fareTargets, wantsPeople, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice, buySiding, buyCrane, craneSite, sidingAt, defaultConsist, consistCycle, stopSite, stopGood, stopS, wagonRoutes, wagonWaste, wasteWagons, WAGON_BACK } from '../game/sim';
+import { Orders } from './Orders';
 import { HOUSES_PER_SIZE } from '../render/town';
 import { WAGON_GOODS, CRANE_GOODS, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, SIDING_LEN, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, YEAR_SECONDS, TOWN_MAX, TOWN_STORE_CAP, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
@@ -985,7 +986,7 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
   const swapCost = other ? ENGINES[other].price - Math.round(ENGINES[t.engine].price * RESALE) : 0;
   const resale = Math.round((ENGINES[t.engine].price + t.nWagons * WAGON_PRICE) * RESALE);
   const tt2 = tripTimes(s, line, t.engine, t.nWagons);
-  const stands = consistCycle(s, line, t.engine, t.wagons).stands.reduce((a, x) => a + x, 0);
+  const stands = consistCycle(s, line, t.engine, t.wagons, t.skip).stands.reduce((a, x) => a + x, 0);
   const net = t.earnedYear - t.runYear - ENGINES[t.engine].upkeep * s.yearFrac;
   const waste = wasteWagons(s, t);
   // the lines that share a station with this one
@@ -1005,6 +1006,7 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
       <div className="consist-row">
         <Consist engine={t.engine} wagons={t.wagons} loads={t.loads} />
       </div>
+      <Orders s={s} train={t} line={line} />
       <div className="facts" data-sec="facts">
         <div className="fact">
           <span className="fl">{tr('Kuorma', 'Load')}</span>
@@ -1034,7 +1036,7 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
                       <small>{tr('tyhjä', 'empty')}</small>
                     )}
                   </span>
-                  <CarryText s={s} line={line} type={w} />
+                  <CarryText s={s} line={line} type={w} skip={t.skip} />
                 </span>
                 {isWaste && <b className="mark" data-sec="waste">!</b>}
                 <button className="btn act small-act" data-act="drop-wagon" data-wagon-at={i} disabled={t.nWagons <= 1} onClick={() => removeWagon(s, t.id, i)}>
