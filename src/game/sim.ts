@@ -696,6 +696,47 @@ export function farePay(fare: Fare, cells: number, seconds: number): number {
   return Math.round(BASE_FARE[fare] * distanceFactor(cells) * keep);
 }
 
+/** the months a delivery counts as recent in a want chip */
+export const SUPPLY_MONTHS = 3;
+
+/** how a site's want stands: a train brings it (ok), a line reaches the site but it is not arriving (short), or no line brings it (none) */
+export type Supply = 'ok' | 'short' | 'none';
+
+/** the goods a site wants that the map makes, then travellers when a town of size 2 or more wants people */
+export function wantsOf(s: SimState, site: Site): (Good | 'pax')[] {
+  const goods = TAKES[site.kind].filter((g) => s.sites.some((o) => MAKES[o.kind] === g));
+  return wantsPeople(s, site) ? [...goods, 'pax'] : goods;
+}
+
+/** whether a line stops at this site and at another site that `from` accepts */
+function lineJoins(s: SimState, site: Site, from: (o: Site) => boolean): boolean {
+  return s.lines.some((l) => {
+    const stops = l.stops.map((_, i) => stopSite(s, l, i));
+    return stops.includes(site) && stops.some((o) => o !== site && from(o));
+  });
+}
+
+/**
+ * The state of one want of a site, for its chip. A good: no line from a maker of it to the site is
+ * `none`; with a line it is `ok` when a load arrived in the last SUPPLY_MONTHS months and a town's store
+ * is not empty, `short` otherwise. Travellers: `none` with no line to another town, `ok` when travellers
+ * arrived within the growth rule's memory, `short` otherwise.
+ */
+export function supplyState(s: SimState, site: Site, want: Good | 'pax'): Supply {
+  if (want === 'pax') {
+    if (!lineJoins(s, site, (o) => o.kind === 'town')) return 'none';
+    return visited(s, site) ? 'ok' : 'short';
+  }
+  if (!lineJoins(s, site, (o) => MAKES[o.kind] === want)) return 'none';
+  const recent = s.time - site.lastDelivery[want] <= SUPPLY_MONTHS * (YEAR_SECONDS / MONTHS);
+  return recent && (site.kind !== 'town' || site.store[want] > 0.001) ? 'ok' : 'short';
+}
+
+/** how much of the travellers' welcome is left, 1 right after a load arrived down to 0 when the memory ends */
+export function paxFill(s: SimState, site: Site): number {
+  return Math.max(0, Math.min(1, 1 - (s.time - site.lastArrival) / (PAX_MEMORY * (YEAR_SECONDS / MONTHS))));
+}
+
 /**
  * A town's growth at its present stock: the months until it grows if every month stays supplied,
  * the good that is missing now, whether travellers are what is missing, and the good whose store runs
@@ -1972,6 +2013,7 @@ function tickDock(s: SimState, t: Train): boolean {
       if (site.kind === 'town') site.store[good] = Math.min(storeCap(site), site.store[good] + 1);
       else site.taken[good] += 1;
       site.delivered += 1;
+      site.lastDelivery[good] = s.time;
       contractLoad(s, site, good);
       // a refinery turns the input into its output at once
       if (MAKES[site.kind]) site.stock += 1;

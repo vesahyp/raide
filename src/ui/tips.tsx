@@ -6,7 +6,7 @@ import type { Good, Line, SimState, Site } from '../game/types';
 import type { Advice } from '../game/advice';
 import { goalTowns, townLacks } from '../game/advice';
 import { siteById } from '../game/state';
-import { stopSite } from '../game/sim';
+import { stopSite, growthOutlook, supplyState } from '../game/sim';
 import { MONTHS } from '../game/content/economy';
 import { tr, t as tt, num } from '../i18n';
 import { GoodIcon, NONE_OF } from './Wagons';
@@ -71,22 +71,63 @@ export function readGoalTowns(s: SimState): GoalTown[] {
   return goalTowns(s).map((x: Site) => ({ id: x.id, size: x.size, growth: x.growth, lacks: x.kind === 'town' ? townLacks(s, x) : [] }));
 }
 
-/** the chip's body for a towns goal: each chosen town with its size against the goal and a tiny icon per good it lacks */
-export function GoalTowns({ s, towns, size }: { s: SimState; towns: GoalTown[]; size: number }) {
+/** a pip row for a size against the goal size: filled up to the size, empty up to the goal */
+function Pips({ size, goal }: { size: number; goal: number }) {
   return (
-    <div className="goal-towns">
-      <div className="gts">
-        {towns.map((t) => (
-          <div key={t.id} className={`gt${t.size >= size ? ' done' : ''}`} data-goal-town={t.id}>
-            <span className="gn">{name(s, t.id)}</span>
-            <small className="sz">{t.size >= size ? '✓' : t.size}</small>
-            <small className="sz2">{t.size >= size ? '✓' : `${t.size}→${size}`}</small>
-            {t.size < size && t.lacks.map((g) => <GoodIcon key={g} good={g} />)}
+    <span className="pips" aria-label={`${size}/${goal}`}>
+      {Array.from({ length: goal }, (_, i) => <i key={i} className={i < size ? 'on' : ''} />)}
+    </span>
+  );
+}
+
+/** what a goal town is doing now, in two or three words, and whether it is good news, a wait or a stop */
+function townState(s: SimState, site: Site, goalSize: number): { text: string; tone: 'ok' | 'wait' | 'stop' } {
+  if (site.size >= goalSize) return { text: tr('valmis', 'done'), tone: 'ok' };
+  if (!s.stations.some((st) => st.siteId === site.id)) return { text: tr('ei asemaa', 'no station'), tone: 'stop' };
+  const o = growthOutlook(s, site);
+  if (o.missing) return { text: tr(`${NONE_OF[o.missing][0]} puuttuu`, `short of ${NONE_OF[o.missing][1]}`), tone: 'wait' };
+  if (o.lacksPeople) return { text: tr('matkustajia puuttuu', 'needs travellers'), tone: 'wait' };
+  return { text: tr('kasvaa', 'growing'), tone: 'ok' };
+}
+
+/**
+ * The goal strip under the HUD, always on the screen: for a towns goal one row per goal town with its
+ * size as pips against the goal size, its growth meter as a bar and a tiny state; for a deliver goal one
+ * row with the count and what the line to the town is doing. A tap opens the goal card.
+ */
+export function GoalStrip({ s, onOpen }: { s: SimState; onOpen: () => void }) {
+  const goal = s.scenario.goal;
+  const label = tr('Tavoite', 'Goal');
+  if (goal.kind === 'deliver') {
+    const site = siteById(s, goal.site);
+    const station = s.stations.some((st) => st.siteId === site.id);
+    const sup = supplyState(s, site, goal.good);
+    const state = !station ? { text: tr('ei asemaa', 'no station'), tone: 'stop' } : sup === 'none' ? { text: tr('ei rataa', 'no line'), tone: 'stop' } : sup === 'short' ? { text: tr(`odottaa ${NONE_OF[goal.good][0]}`, `waiting for ${NONE_OF[goal.good][1]}`), tone: 'wait' } : { text: tr('toimitus käy', 'delivering'), tone: 'ok' };
+    return (
+      <button className="hud-goal goal-strip" data-act="goal" aria-label={label} onClick={onOpen}>
+        <div className="gs-row count" data-goal-town={site.id}>
+          <span className="gn"><GoodIcon good={goal.good} />{tr(NONE_OF[goal.good][0], NONE_OF[goal.good][1])} <b className="num">{s.goalCount}/{goal.count}</b></span>
+          <span className="gm"><i style={{ width: `${Math.min(100, (100 * s.goalCount) / goal.count)}%` }} /></span>
+          <span className={`gst ${state.tone}`}>{state.text}</span>
+        </div>
+      </button>
+    );
+  }
+  return (
+    <button className="hud-goal goal-strip" data-act="goal" aria-label={label} onClick={onOpen}>
+      {goalTowns(s).map((x) => {
+        const st = townState(s, x, goal.size);
+        const done = x.size >= goal.size;
+        return (
+          <div key={x.id} className={`gs-row${done ? ' done' : ''}`} data-goal-town={x.id}>
+            <span className="gn">{name(s, x.id)}</span>
+            <Pips size={x.size} goal={goal.size} />
+            <span className="gm"><i style={{ width: `${Math.round(100 * (done ? 1 : x.growth))}%` }} /></span>
+            <span className={`gst ${st.tone}`}>{st.text}</span>
           </div>
-        ))}
-      </div>
-      <b className="gto">→{size}</b>
-    </div>
+        );
+      })}
+    </button>
   );
 }
 

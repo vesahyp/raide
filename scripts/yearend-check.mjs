@@ -82,7 +82,7 @@ async function fresh(orient = 'portrait') {
   await page.waitForFunction(() => window.__sim && window.__renderer, null, { timeout: 10000 });
   await page.waitForTimeout(400);
   // the camera shows Kuusikko to Tampere at once
-  await page.evaluate(([w, h]) => { const r = window.__renderer; r.follow(null); (w < h ? r.setView(25, 51, Math.min(w / 26, (h - 170) / 43)) : r.setView(25.5, 32, 15)); }, [viewport.width, viewport.height]);
+  await page.evaluate(([w, h]) => { const r = window.__renderer; r.follow(null); (w < h ? r.setView(25, 51, Math.min(w / 26, (h - 230) / 43)) : r.setView(25.5, 32, 15)); }, [viewport.width, viewport.height]);
   await page.waitForTimeout(300);
   // Harju starts with a station at Korpela: the first line (Korpela to Kuusikko) is laid by the game's own move, the rest by touch
   await page.evaluate(() => {
@@ -91,7 +91,7 @@ async function fresh(orient = 'portrait') {
     window.__act.build(window.__act.plan(cell('korpela'), cell('forest'))[0]);
   });
   await page.waitForTimeout(900);
-  await page.evaluate(([w, h]) => { const r = window.__renderer; r.follow(null); (w < h ? r.setView(25, 51, Math.min(w / 26, (h - 170) / 43)) : r.setView(25.5, 32, 15)); }, [viewport.width, viewport.height]);
+  await page.evaluate(([w, h]) => { const r = window.__renderer; r.follow(null); (w < h ? r.setView(25, 51, Math.min(w / 26, (h - 230) / 43)) : r.setView(25.5, 32, 15)); }, [viewport.width, viewport.height]);
   await page.waitForTimeout(400);
   let p = await pos();
   await touch('touchStart', [{ x: p.forest.x, y: p.forest.y, id: 1 }]);

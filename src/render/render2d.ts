@@ -17,7 +17,8 @@ import type { Cargo, Contract, Good, Line, Load, ScenarioDef, Siding, SimState, 
 import type { Route } from '../game/grid';
 import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perYear, routeKm, tripsByEngine } from '../ui/routeinfo';
-import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, waitingTotal, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS, stopSite, skips } from '../game/sim';
+import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, waitingTotal, SLOTS_MAX, workingWagon, sidingSpans, sidingAt, stopCell, stopS, stopSite, skips, supplyState, wantsOf, paxFill } from '../game/sim';
+import type { Supply } from '../game/sim';
 import { createState } from '../game/state';
 import type { Advice } from '../game/advice';
 import { Clouds } from './clouds';
@@ -170,7 +171,10 @@ function intake(site: Site, good: Good): number {
 /** the nodes of one site label or badge that change between frames */
 /** one wants chip: its nodes, and what it has shown so far, so a delivery can be seen landing */
 interface WantRefs {
-  good: Good;
+  /** the good wanted, or 'pax' for the travellers a town of size 2 or more wants */
+  good: Good | 'pax';
+  /** the supply state the chip shows now */
+  state: Supply | '';
   b: HTMLElement;
   i: HTMLElement;
   chip: HTMLElement;
@@ -183,7 +187,7 @@ interface WantRefs {
   change: { from: number; to: number; until: number } | null;
   /** the bar width in percent now */
   bar: number;
-  /** the red "!" of a good the town has none of */
+  /** the state badge: a tick, an "!" or a dash */
   short: HTMLElement | null;
 }
 
@@ -1659,9 +1663,9 @@ export class Renderer2D {
 
   /** the screen's free area: under the HUD bar in portrait, right of the HUD column in landscape */
   area(): { l: number; t: number; w: number; h: number } {
-    // the landscape HUD column is 150 px wide at an 8 px margin
+    // the landscape HUD column is 150 px wide at an 8 px margin; in portrait the HUD bar and the goal strip under it take the top 120 px
     const l = this.landscape && !this.backdrop ? 160 : 0;
-    const t = this.landscape || this.backdrop ? 0 : 68;
+    const t = this.landscape || this.backdrop ? 0 : 120;
     return { l, t, w: this.w - l, h: this.h - t };
   }
 
@@ -2551,6 +2555,7 @@ export class Renderer2D {
     const badge = this.label(`badge:${site.id}`, 'badge');
     const makes = MAKES[site.kind];
     const takes = TAKES[site.kind].filter((g) => s.sites.some((o) => MAKES[o.kind] === g));
+    const wants = wantsOf(s, site);
     const cts = s.contracts.filter((c) => c.site === site.id);
     const ctKey = cts.map((c) => c.id).join();
     if (lod) {
@@ -2559,13 +2564,14 @@ export class Renderer2D {
       const floors = takes.filter((g) => fillOf(site, g) >= 1 - 1e-6);
       const town = site.kind === 'town';
       const railed = s.stations.some((st) => st.siteId === site.id);
-      const starved = town && railed ? takes.filter((g) => site.store[g] <= 0.001) : [];
-      const key = `b|${makes}|${takes.join()}|${raw}|${mk.kind}|${mk.cost}|${floors.join()}|${starved.join()}|${town && railed && site.size < TOWN_MAX}|${ctKey}`;
+      // each want in one of three states: a train brings it, a line reaches but nothing arrives, no line
+      const states = wants.map((w) => supplyState(s, site, w));
+      const key = `b|${makes}|${wants.join()}|${raw}|${mk.kind}|${mk.cost}|${floors.join()}|${states.join()}|${town && railed && site.size < TOWN_MAX}|${ctKey}`;
       let refs = this.tags.get(`badge:${site.id}`);
       if (!refs || refs.key !== key) {
         const icon = makes ? this.goodIcon(makes) : '<svg class="gi" viewBox="0 0 24 24"><path d="M3 11 L12 3 L21 11 V21 H3 Z" fill="#b5382c"/><path d="M1 12 L12 2 L23 12" stroke="#4a2f24" stroke-width="2.5" fill="none"/></svg>';
         const ring = town && railed && site.size < TOWN_MAX ? '<i class="ring"></i>' : '';
-        badge.innerHTML = `<span class="c">${ring}${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${takes.length ? `<span class="wd">${takes.map((g) => `<span class="wg${floors.includes(g) ? ' floor' : ''}${starved.includes(g) ? ' short' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}${town && railed ? `<span class="folk">${this.goodIcon('pax')}<b></b></span>` : ''}${cts.map((c) => `<span class="ct">${this.goodIcon(c.good)}<b></b></span>`).join('')}`;
+        badge.innerHTML = `<span class="c">${ring}${icon}${raw ? '<em class="n"></em>' : ''}</span><span class="nm">${tt(site.name)}</span>${wants.length ? `<span class="wd">${wants.map((g, k) => `<span class="wg s-${states[k]}${g !== 'pax' && floors.includes(g) ? ' floor' : ''}">${this.goodIcon(g)}</span>`).join('')}</span>` : ''}${cost}${town && railed ? `<span class="folk">${this.goodIcon('pax')}<b></b></span>` : ''}${cts.map((c) => `<span class="ct">${this.goodIcon(c.good)}<b></b></span>`).join('')}`;
         const ctNodes = Array.from(badge.querySelectorAll<HTMLElement>('.ct b'));
         refs = { key, has: null, wants: [], n: badge.querySelector('.n'), grow: badge.querySelector<HTMLElement>('.ring'), gv: -1, folk: badge.querySelector<HTMLElement>('.folk'), cts: cts.map((c, k) => ({ b: ctNodes[k], c })) };
         this.tags.set(`badge:${site.id}`, refs);
@@ -2588,22 +2594,28 @@ export class Renderer2D {
     const rail = mk.kind === 'start' ? RAIL_BADGE : '';
     const town = site.kind === 'town';
     const railed = s.stations.some((st) => st.siteId === site.id);
-    const key = `t|${makes}|${takes.join()}|${mk.kind}|${mk.cost}|${site.size}|${town && railed}|${ctKey}`;
+    const key = `t|${makes}|${wants.join()}|${mk.kind}|${mk.cost}|${site.size}|${town && railed}|${ctKey}`;
     let refs = this.tags.get(`site:${site.id}`);
     if (!refs || refs.key !== key) {
       let html = `<div class="name">${rail}${tt(site.name)}${town ? ` <small>${site.size}</small>` : ''}${cost}</div>${town && railed && site.size < TOWN_MAX ? '<div class="grow"><i></i></div>' : ''}<div class="chips">`;
+      // what the site has: cream chips. What it wants is a second row of dark chips, one gauge and one state badge each
       if (makes) html += `<span class="chip has">${this.goodIcon(makes)}<b></b><i></i></span>`;
-      for (const g of takes) html += `<span class="chip wants">${this.goodIcon(g)}<b></b><i></i>${town ? '<em>!</em>' : ''}</span>`;
       if (town && railed) html += `<span class="chip folk" data-folk>${this.goodIcon('pax')}<b></b></span>`;
       for (const c of cts) html += `<span class="chip contract">${this.goodIcon(c.good)}<b></b><small>${c.deadline}</small></span>`;
-      el.innerHTML = html + '</div>';
+      html += '</div>';
+      if (wants.length) {
+        html += `<div class="needs"><u>${tr('tarvitsee', 'needs')}</u>`;
+        for (const g of wants) html += `<span class="chip wants${g === 'pax' ? ' pax' : ''}">${this.goodIcon(g)}<span class="gg"><i></i></span>${g === 'pax' ? '<b hidden></b>' : '<b></b>'}<em></em></span>`;
+        html += '</div>';
+      }
+      el.innerHTML = html;
       const ctNodes = Array.from(el.querySelectorAll<HTMLElement>('.chip.contract b'));
       const chips = Array.from(el.querySelectorAll<HTMLElement>('.chip.wants'));
       const has = el.querySelector<HTMLElement>('.chip.has');
       refs = {
         key,
         has: has ? { b: has.querySelector('b')!, i: has.querySelector('i')! } : null,
-        wants: takes.map((good, k) => ({ good, chip: chips[k], b: chips[k].querySelector('b')!, i: chips[k].querySelector('i')!, short: chips[k].querySelector('em'), taken: intake(site, good), price: price(s, good, site.id, 0), at: -9, change: null, bar: -1 })),
+        wants: wants.map((good, k) => ({ good, state: '', chip: chips[k], b: chips[k].querySelector('b')!, i: chips[k].querySelector('i')!, short: chips[k].querySelector('em'), taken: good === 'pax' ? 0 : intake(site, good), price: good === 'pax' ? 0 : price(s, good, site.id, 0), at: -9, change: null, bar: -1 })),
         n: null,
         grow: el.querySelector<HTMLElement>('.grow i'),
         gv: -1,
@@ -2619,6 +2631,23 @@ export class Renderer2D {
       refs.has.i.style.width = `${Math.min(100, (100 * site.stock) / site.rawCap)}%`;
     }
     for (const w of refs.wants) {
+      // the state first: it colours the whole chip (green supplied, amber short, grey dashed with no line)
+      const state = supplyState(s, site, w.good);
+      if (state !== w.state) {
+        w.state = state;
+        w.chip.classList.remove('s-ok', 's-short', 's-none');
+        w.chip.classList.add(`s-${state}`);
+        w.chip.classList.toggle('short', state === 'short');
+        if (w.short) w.short.textContent = state === 'ok' ? '\u2713' : state === 'short' ? '!' : '\u2013';
+      }
+      if (w.good === 'pax') {
+        const bar = Math.round(1000 * paxFill(s, site)) / 10;
+        if (bar !== w.bar) {
+          w.i.style.width = `${bar}%`;
+          w.bar = bar;
+        }
+        continue;
+      }
       const taken = intake(site, w.good);
       const p = price(s, w.good, site.id, 0);
       // a delivery landed: the price steps down, and the chip says from what to what for a moment
@@ -2633,9 +2662,9 @@ export class Renderer2D {
           w.at = this.time;
         }
       }
-      this.setText(w.b, showing ? `${showing.from} → ${showing.to}` : String(w.price));
+      this.setText(w.b, showing ? `${showing.from} \u2192 ${showing.to}` : String(w.price));
       w.chip.classList.toggle('chg', !!showing);
-      // the bar eases down quickly when a load lands and refills slowly as the town eats
+      // the gauge is the store against its cap: it eases down quickly when the town eats a load and refills slowly
       const fill = fillOf(site, w.good);
       const bar = Math.round(1000 * fill) / 10;
       if (bar !== w.bar) {
@@ -2645,8 +2674,6 @@ export class Renderer2D {
       }
       w.chip.classList.toggle('low', fill > 0.75);
       w.chip.classList.toggle('floor', fill >= 1 - 1e-6);
-      // a town with the railway that has none of a good: the chip says which good holds it back
-      w.chip.classList.toggle('short', town && railed && site.store[w.good] <= 0.001);
     }
     if (refs.grow) {
       if (Math.abs(site.growth - refs.gv) > 0.004) {

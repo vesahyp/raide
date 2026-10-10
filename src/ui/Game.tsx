@@ -24,7 +24,7 @@ import { saveStars } from '../results';
 import { YearEndCard } from './Ledger';
 import { townLacks } from '../game/advice';
 import { advice, adviceKey, type Advice } from '../game/advice';
-import { tipText, lineName, readGoalTowns, GoalTowns, untilText, type GoalTown } from './tips';
+import { tipText, lineName, readGoalTowns, GoalStrip, untilText, type GoalTown } from './tips';
 import { GoodIcon, NONE_OF, WagonStrip, WagonPicker, CarryText } from './Wagons';
 
 /** how much faster the clock runs while the fast button is on */
@@ -286,25 +286,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
             ))}
           </span>
         </div>
-        <button className="hud-goal" data-act="goal" aria-label={tr('Tavoite', 'Goal')} onClick={() => setCard({ kind: 'goal' })}>
-          {goal.kind === 'towns' ? (
-            <>
-              <GoalTowns s={s} towns={hud.towns} size={goal.size} />
-              <span className="bar">
-                <i style={{ width: `${Math.min(100, 100 * hud.goal)}%` }} />
-              </span>
-            </>
-          ) : (
-            <div className="goal-row">
-              <span className="label">{tr('Laudat', 'Boards')}</span>
-              <span className="num">{hud.goalText}</span>
-              <span className="bar">
-                <i style={{ width: `${Math.min(100, 100 * hud.goal)}%` }} />
-              </span>
-              <span className="until">{tr('ennen', 'before')} {goal.beforeYear}</span>
-            </div>
-          )}
-        </button>
+        <span className="hud-until">{tr('ennen', 'before')} {goal.beforeYear}</span>
         <button className={`hud-cash num${hud.cash < 0 ? ' red' : ''}`} data-act="money" aria-label={tr('Raha', 'Money')} onClick={() => setCard({ kind: 'money' })}>
           {num(hud.cash)}
         </button>
@@ -312,6 +294,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           <svg viewBox="0 0 24 24" className="glyph"><rect x="6" y="5" width="4" height="14" fill="currentColor" /><rect x="14" y="5" width="4" height="14" fill="currentColor" /></svg>
         </button>
         <div className="hud-sub">
+        <GoalStrip s={s} onOpen={() => setCard({ kind: 'goal' })} />
         {tip && (
           <div className="hud-tip" data-sec="tip" data-tip={tip.kind} data-lengthen={lineSiteIds(s, tip.lengthen)}>
             <button

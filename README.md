@@ -17,9 +17,11 @@ game follows your browser's language.*
 tehdä seuraavaksi. Kartalla vihjeen paikan päällä keinuu keltainen
 huutomerkki, ja jumissa olevasta paikasta vie kaareva katkoviiva ratkaisuun.
 Napauta vihjettä, niin kamera vie paikalle ja kortti aukeaa. **×** piilottaa
-vihjeet loppuvuodeksi. Tavoitelaatta nimeää kaupungit ja näyttää pikkukuvalla,
-mitä kultakin puuttuu; napauta sitä, niin tavoitekortti näyttää koon,
-kasvumittarin ja vuosirajan.
+vihjeet loppuvuodeksi. Vihjeen yläpuolella on aina näkyvä tavoiteraita:
+jokaisesta tavoitekaupungista nimi, koko palloina (●●○ on koko 2 tavoitteesta 3),
+kasvumittari, joka täyttyy livenä, ja pieni tila ("kasvaa", "jauhoja puuttuu",
+"ei asemaa"). Lautatavoitteessa raidassa on laudat 7/15 ja rata-tila. Napauta
+raitaa, niin tavoitekortti näyttää koon, kasvumittarin ja vuosirajan.
 
 **Katso karttaa.** Kartta on iso maasto ylhäältä päin: joki, järvi, metsä
 ja harjut. Mäet näkyvät portaina: jokainen porras on kymmenen metriä
@@ -126,13 +128,21 @@ ja millä hinnalla, ja miksi se seisoo, jos seisoo. Kortin **Vedä rata
 täältä** -napista kartta näyttää, minne radan voi vetää; napauta kohdetta,
 niin rata rakentuu.
 
+**Mitä paikka tarvitsee.** Jokaisen paikan nimen alla on rivi "tarvitsee":
+yksi tumma kuvake jokaista tarvittua tavaraa kohti (koosta 2 alkaen myös
+matkustajat). Mittari kuvakkeessa on paikan varasto, ja merkki kertoo, tuleeko
+tavaraa. Vihreä ruksi: juna on tuonut sitä viimeisen kolmen kuukauden aikana
+eikä varasto ole tyhjä. Keltainen huutomerkki: rata vie paikalle, mutta tavaraa ei
+tule. Harmaa katkoviiva ja viiva merkkinä: yksikään rata ei tuo sitä. Kaiken
+sen, mitä paikalla on itsellään, näyttää vaalea kuvake nimen alla. Koko kartalla
+jokaisella nimikilvellä on pieni rivi samanvärisiä pyöreitä merkkejä.
+
 **Kaupunki kasvaa mittarilla.** Jokaisen kuukauden alussa kaupunki saa
 kasvua, jos sen varastossa on kaikkea, mitä kartalla tehdään (laudat ja
 jauhot). Noin kahdeksan hyvää kuukautta täyttää mittarin, ja kaupunki kasvaa
 heti, kesken vuoden: talot nousevat ja ruudulle tulee teksti. Huono kuukausi
 syö mittaria vähän. Mittari näkyy kaupungin nimen alla (koko kartalla
-kehänä nimikilven ympärillä), ja jos varasto on tyhjä, sen tavaran kuvake on
-punainen ja siinä on huutomerkki. Kaupungin kortti kertoo, kauanko kasvuun
+kehänä nimikilven ympärillä). Kaupungin kortti kertoo, kauanko kasvuun
 menee tällä tarjonnalla tai mitä puuttuu. **Koosta 2 alkaen kaupunki haluaa
 myös väkeä:** kuukausi kelpaa vain, jos tavaroiden lisäksi kaupunkiin on
 saapunut matkustajia (kortti: "matkustajia: 4 saapui tässä kuussa", ja kun

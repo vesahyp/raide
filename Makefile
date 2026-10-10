@@ -17,6 +17,7 @@
 #   make goods          # piles, chips, badges, the site card and pick mode, portrait and landscape, into shots/goods/
 #   make mixed          # the economy step 4 pictures: the extend card, a three-stop line, the buy card with a mixed consist, a mixed train at its middle stop, the train card, into shots/mixed/
 #   make result         # the result card, won and lost, portrait and landscape, fi and en, into shots/result/
+#   make wants          # what each site wants and whether it is coming, the goal strip, Harju start and mid-game and Sawmill on iPhone 16, into shots/wants/
 #   make people         # the line card and the buy sheet
 buy-sheet: build
 	node scripts/buysheet.mjs
@@ -53,7 +54,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice ledger upgrades mixed orders-check people buy-check buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice wants ledger upgrades mixed orders-check people buy-check buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -101,6 +102,10 @@ goods: build
 # the tip, the marker and the arc, the goal chip and card, portrait and landscape, into shots/advice/; fails when a tip, the marker or the chip's towns are missing
 advice: build
 	node scripts/advice.mjs
+
+# what each site wants and whether a train brings it, and the goal strip, Harju at the start and after two years of the bot, and Sawmill, into shots/wants/
+wants: build
+	node scripts/wants.mjs
 
 # the year-end charts, towns growing house by house, the chip price step
 ledger: build

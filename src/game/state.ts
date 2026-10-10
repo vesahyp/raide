@@ -19,6 +19,8 @@ export function yardOf(s: { w: number; h: number }, site: { kind: Site['kind']; 
   return out;
 }
 
+/** the time of the last delivery of each good, before any: minus infinity */
+export const lastNever = (): Record<Good, number> => Object.fromEntries(GOODS.map((g) => [g, -Infinity])) as Record<Good, number>;
 export const zeroGoods = (): Record<Good, number> => Object.fromEntries(GOODS.map((g) => [g, 0])) as Record<Good, number>;
 
 export const zeroCargo = (): Record<Cargo, number> => Object.fromEntries(CARGOS.map((g) => [g, 0])) as Record<Cargo, number>;
@@ -42,6 +44,7 @@ export function createState(sc: ScenarioDef): SimState {
     stock: RAW_RATE[d.kind] ? (d.rawCap ? Math.round(d.rawCap * 0.75) : RAW_START) : 0,
     taken: zeroGoods(),
     delivered: 0,
+    lastDelivery: lastNever(),
     store: zeroGoods(),
     growth: d.kind === 'town' ? d.growth ?? 0 : 0,
     pax: {},

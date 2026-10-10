@@ -94,6 +94,8 @@ export interface Site extends SiteDef {
   lastArrival: number;
   /** loads delivered here, all time */
   delivered: number;
+  /** the sim time a load of each good last arrived here; minus infinity when none has */
+  lastDelivery: Record<Good, number>;
   /** production rate per month, raised by frequent pickups */
   rate: number;
   /** sim time of the last pickup here, for the served-rate rule */
