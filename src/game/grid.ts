@@ -388,8 +388,9 @@ export function turnsBack(s: { w: number }, cells: number[], span = 3): boolean 
 /** the routes a drag offers: the cheapest, and the shortest when it is a different path */
 export function routeOptions(s: SimState, from: number, to: number, startSide?: number): Route[] {
   const cheap = route(s, from, to, 'cheap', startSide);
-  if (!cheap) return [];
   const short = route(s, from, to, 'short', startSide);
+  // the search keeps one way into each cell, so through a level crossing one of the two can miss a way the other finds
+  if (!cheap) return short ? [short] : [];
   if (!short || short.length >= cheap.length - 0.5 || short.cells.join() === cheap.cells.join()) return [cheap];
   return [cheap, short];
 }

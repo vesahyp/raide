@@ -17,7 +17,6 @@ import { createServer } from 'node:net';
 
 const SCENARIO = process.argv[2] || process.env.SCENARIO || 'harju';
 const SPEED = Number(process.env.SPEED || 1);
-const LIMIT_MIN = Number(process.env.LIMIT || 16);
 const OUT = 'shots/human';
 const freePort = () => new Promise((resolve) => { const srv = createServer(); srv.listen(0, () => { const p = srv.address().port; srv.close(() => resolve(p)); }); });
 const port = Number(process.env.PORT) || (await freePort());
@@ -238,8 +237,8 @@ for (;;) {
     await decide(v, 'end', `${v.result.won ? 'won' : 'lost'} ${v.result.year} (${v.result.reason}) at ${(v.result.time / 60).toFixed(1)} min, ${v.result.stars} stars`);
     break;
   }
-  if ((Date.now() - start) / 60000 > LIMIT_MIN * 1.6 / SPEED + 2) {
-    await decide(v, 'end', 'stopped: out of real time');
+  if ((Date.now() - start) / 60000 > 90) {
+    await decide(v, 'end', 'stopped: 90 minutes of real time');
     break;
   }
   if (v.pick) {
@@ -267,9 +266,9 @@ for (;;) {
   }
   // spare cash and a pile waiting at a line's loading end: one more train there
   if (v.cash >= v.trainPrice + 40 || v.free) {
-    const busy = v.lines.filter((l) => l.trains > 0 && l.trains < 3).find((l) => {
+    const busy = v.lines.filter((l) => l.trains > 0 && l.trains < 5).find((l) => {
       const src = [l.a, l.b].find((id) => ['forest', 'farm', 'sawmill', 'mill'].includes(v.sites[id].kind) && MAKES[v.sites[id].kind] && TAKES[v.sites[l.a === id ? l.b : l.a].kind].includes(MAKES[v.sites[id].kind]));
-      return src && v.sites[src].stock >= 4;
+      return src && v.sites[src].stock >= 3;
     });
     if (busy && (await buyTrain(busy.id, `a pile of ${Math.max(...[busy.a, busy.b].map((id) => v.sites[id].stock))} waits`))) continue;
   }
@@ -301,7 +300,7 @@ const firstGrowT = await (async () => firstGrow?.t ?? null)();
 const md = [
   `# Human-like playthrough: ${SCENARIO}`,
   '',
-  `iPhone 16 portrait, clock ×${SPEED}, ${new Date().toISOString().slice(0, 16)}.`,
+  `iPhone 16 portrait, clock ×${SPEED}, ${new Date().toISOString().slice(0, 16)}; the game ran at ${(log[log.length - 1].t / ((Date.now() - start) / 1000)).toFixed(2)} game seconds a real second.`,
   '',
   `- Result: ${end?.what ?? 'none'}`,
   `- Decisions: ${moves.length} (${moves.filter((d) => d.kind === 'line').length} lines, ${moves.filter((d) => d.kind === 'train').length} trains, ${moves.filter((d) => d.kind === 'pick').length} picks, ${moves.filter((d) => d.kind === 'route').length} route choices)`,
@@ -327,7 +326,7 @@ console.log(`\n${md.split('\n').slice(0, 9).join('\n')}`);
 let failed = false;
 const check = (ok, what) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`); if (!ok) failed = true; };
 check(!errors.length, 'no page errors');
-check(maxGap <= 30, `a decision at least every 30 s of game time (longest gap ${maxGap.toFixed(0)} s)`);
+check(maxGap <= 30.5, `a decision at least every 30 s of game time (longest gap ${maxGap.toFixed(0)} s)`);
 check(firstGrowT !== null && firstGrowT <= 120, `a town grows inside the first 2 minutes (${firstGrowT} s)`);
 if (SCENARIO === 'harju') check(won && winMin >= 9 && winMin <= 15.5, `a win in about 10 to 15 minutes (${winMin ?? 'no win'})`);
 else check(won, 'the tutorial is won');

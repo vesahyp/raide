@@ -44,12 +44,12 @@ try {
           s.cash = 9999;
           const cell = (id) => { const o = s.sites.find((x) => x.id === id); return o.cy * s.w + o.cx; };
           const links = c.scenario === 'harju' ? [['forest', 'sawmill'], ['sawmill', 'hameenlinna'], ['sawmill', 'tampere']] : [['forest', 'sawmill'], ['sawmill', 'town']];
-          for (const [a, b] of links) { const line = act.build(act.plan(cell(a), cell(b))[0]); act.buyTrain?.(line.id, 'box'); }
+          for (const [a, b] of links) { const line = act.build(act.plan(cell(a), cell(b))[0]); act.buyTrain?.(line.id, 'hilma'); }
           for (const t of s.sites.filter((x) => x.kind === 'town')) t.size = c.sizes[t.id] ?? t.size;
           if (c.loads !== undefined) s.goalCount = c.loads;
           else if (c.scenario === 'sawmill') s.goalCount = 15;
           // Tampere has a station but no travellers: the missing thing
-          s.result = { won: c.won, year: c.year, cash: 500, worth: c.worth, stars: c.stars, reason: c.reason ?? 'goal' };
+          s.result = { won: c.won, year: c.year, cash: 500, worth: c.worth, stars: c.stars, reason: c.reason ?? 'goal', time: 600 };
         }, c);
         await page.waitForSelector('.card.result', { timeout: 5000 });
         await page.waitForTimeout(500);

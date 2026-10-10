@@ -83,6 +83,7 @@ const FIT_PAD = 78;
 const SLOT_GAP = 0.8;
 const FAN1: [number, number] = [4.0, 4.9];
 const FAN2: [number, number] = [3.45, 4.0];
+const FAN3: [number, number] = [2.95, 3.45];
 const STUB = 4.0;
 /**
  * The double track (ADR 0005): every line has a second track beside the one its cells carry, from the
@@ -102,6 +103,7 @@ export function slotOffset(k: number, q: number): number {
   let off = 0;
   if (k >= 1) off += SLOT_GAP * (1 - smooth01((d - FAN1[0]) / (FAN1[1] - FAN1[0])));
   if (k >= 2) off += SLOT_GAP * (1 - smooth01((d - FAN2[0]) / (FAN2[1] - FAN2[0])));
+  if (k >= 3) off += SLOT_GAP * (1 - smooth01((d - FAN3[0]) / (FAN3[1] - FAN3[0])));
   return off;
 }
 
@@ -583,7 +585,10 @@ export class Renderer2D {
   private targetOf(items: TownItem[], site: Site): number {
     let n = 0;
     while (n < items.length && items[n].minSize <= site.size) n++;
-    return n;
+    // the next size's buildings rise one by one as the growth points come in (ADR 0006)
+    let next = n;
+    while (next < items.length && items[next].minSize === site.size + 1) next++;
+    return n + Math.floor(growFrac(site) * (next - n));
   }
 
   private layoutTown(look: SiteLook, add: (oy: number, ox0: number, ox1: number, draw: (v: View) => void) => void): void {

@@ -17,8 +17,8 @@ to the mill and flour to the towns, cash on every delivery, and every load
 grows the town it reaches. Every half minute the game holds and offers two
 upgrades to pick one of. Finland from 1862. Scenarios with one goal and a
 year limit: the sawmill (deliver 15 boards before 1865, the tutorial) and
-Harju (two chains, three towns, a lake and a ridge, grow two towns to size
-3 before 1872, about 10 to 15 minutes of play). The core loop is ADR 0005
+Harju (two chains, three towns, a lake and a ridge, grow all three towns
+to size 3 before 1872, about 10 to 15 minutes of play). The core loop is ADR 0005
 and ADR 0006. Raide is Finnish for a railway track.
 
 ## Stack
@@ -62,7 +62,7 @@ src/
     content/
       economy.ts      every number the balance is made of: prices, demand, distance, the engines, wagons, growth
                         (GROW_NEED, the variety bonus), the pick and its upgrades
-      scenarios.ts    the hand-made tile maps (Harju 30 by 42, Sawmill 30 by 36): the land as a height function in
+      scenarios.ts    the hand-made tile maps (Harju 34 by 42, Sawmill 30 by 36): the land as a height function in
                         metres (water below zero), the cover, sites, start, goal
   render/
     render2d.ts       the map in Canvas 2D: the camera (the whole map in portrait, as wide as the screen and panning

@@ -146,6 +146,29 @@ for (const sc of [SAWMILL, HARJU]) {
   check(addWagon(s, s.trains[0].id) || s.trains[0].nWagons >= 3, 'a wagon can be added up to the limit');
 }
 
+// on Harju every link the goal needs can be built in any order: own track never walls a town off
+{
+  const all = ['sawmill-hameenlinna', 'sawmill-lahti', 'sawmill-tampere', 'mill-lahti', 'mill-hameenlinna', 'mill-tampere'];
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  let bad = '';
+  for (let k = 0; k < 120 && !bad; k++) {
+    const s = createState(HARJU);
+    s.cash = 1e6;
+    const mode = rnd() < 0.5 ? 'cheap' : 'short';
+    for (const p of ['forest-sawmill', 'farm-mill', ...all.slice().sort(() => rnd() - 0.5)]) {
+      const [a, b] = p.split('-');
+      const o = plan(s, cell(s, a), cell(s, b));
+      if (!o.length) {
+        bad = `${p} after ${s.lines.length} lines (${mode})`;
+        break;
+      }
+      build(s, o.find((x) => x.mode === mode) ?? o[0]);
+    }
+  }
+  check(!bad, `harju: the eight links the goal needs build in any of 120 orders${bad ? `: ${bad} is walled off` : ''}`);
+}
+
 // lifting a line gives half its track back
 {
   const s = createState(SAWMILL);

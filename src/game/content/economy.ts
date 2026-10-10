@@ -48,7 +48,7 @@ export const MILL_EATS = 1.5;
  * take it to the next size. A load counts VARIETY_BONUS more when every other good the town takes
  * arrived within VARIETY_SECONDS too, so a second chain speeds growth. Nothing takes growth away.
  */
-export const GROW_NEED = [0, 95, 150, 200, 260];
+export const GROW_NEED = [0, 80, 125, 170, 230];
 export const VARIETY_BONUS = 0.5;
 export const VARIETY_SECONDS = 30;
 export const TOWN_MAX = 5;
@@ -112,7 +112,7 @@ export const WAGONS_DEFAULT = 2;
 /** the longest train: a platform holds an engine and three wagons between its switches */
 export const WAGONS_MAX = 3;
 /** the most lines one station takes: one platform track each */
-export const STATION_LINES = 3;
+export const STATION_LINES = 4;
 /** what a sold train or engine returns */
 export const RESALE = 0.5;
 /** seconds a train stands at a station */

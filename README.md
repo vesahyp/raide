@@ -36,8 +36,7 @@ päällä. Se voi ylittää toisen radan tasoristeyksessä, ja junat ajavat siit
 odottamatta. Rata on kaksiraiteinen: menevät ja tulevat junat ohittavat
 toisensa, ja saman suunnan junat pitävät väliä. Siksi uusi juna lisää aina
 kuljetuksia, kunnes metsä tai pelto ei tuota enempää; silloin junat odottavat
-kuormaa asemalla, ja kortti sanoo sen. Asemalle mahtuu kolme rataa, joten
-saha ja mylly eivät voi palvella kaikkia kaupunkeja: valitse, mitkä.
+kuormaa asemalla, ja kortti sanoo sen. Asemalle mahtuu neljä rataa.
 
 **Osta juna.** Kun rata on valmis, linjakortti aukeaa **Osta juna**
 -kohtaan. Valitse veturi (Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva
@@ -87,8 +86,8 @@ alakulman ⏩-napista aika kulkee kolme kertaa nopeammin.
 - **Harju:** metsä ja saha joen länsipuolella, maatila ja mylly sen
   itäpuolella, järvi keskellä, harju kaakossa ja kolme kaupunkia: Hämeenlinna,
   Lahti ja Tampere. Alussa sinulla on asema metsässä ja maatilalla. Tavoite:
-  kaksi kaupunkia kokoon 3 ennen vuotta 1872. Hyvä peli kestää noin 10–15
-  minuuttia.
+  kaikki kolme kaupunkia kokoon 3 ennen vuotta 1872. Hyvä peli kestää noin
+  10–15 minuuttia.
 
 Voitto antaa yhdestä kolmeen tähteä sen mukaan, minä vuonna se tulee: yksi
 mistä tahansa voitosta, kaksi Harjussa vuoteen 1869 ja kolme vuoteen 1868

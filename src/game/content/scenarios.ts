@@ -7,15 +7,14 @@
  * the grade comes from the cut and the fill. Below zero is water: a bridge to cross. Each site is
  * one tile with a yard of tiles to the north, and the land is flat around both.
  *
- * Both maps fit one portrait phone screen (ADR 0006): about 30 tiles across.
+ * Both maps fit one portrait phone screen (ADR 0006): 30 to 34 tiles across.
  *
  * Sawmill: a forest, a sawmill and a town across a river, one chain, deliver 15 boards before
  * 1865. The tutorial.
  *
  * Harju: a forest and a sawmill west of a river, a farm and a mill east of it, a lake in the
- * middle, a ridge in the south east, three towns. Grow two towns to size 3 before 1872: it
- * takes both chains to two towns, so a network. A station takes three lines, so the sawmill and
- * the mill each choose which towns they feed.
+ * middle, a ridge in the south east, three towns. Grow all three towns to size 3 before 1872:
+ * it takes both chains to every town, so a network that keeps growing to the end.
  */
 import type { ScenarioDef } from '../types';
 
@@ -124,20 +123,20 @@ export const SAWMILL: ScenarioDef = {
 
 // ---------- Harju: 30 by 50 tiles ----------
 
-const HARJU_W = 30;
+const HARJU_W = 34;
 const HARJU_H = 42;
 const HARJU_SITES: SiteDef[] = [
-  { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 5, cy: 5, rawRate: 1.1, rawCap: 8 },
-  { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 6, cy: 16 },
-  { id: 'farm', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 24, cy: 5, rawRate: 1.1, rawCap: 8 },
-  { id: 'mill', kind: 'mill', name: { fi: 'Myllykyl\u00e4', en: 'Myllykyl\u00e4' }, cx: 24, cy: 16 },
-  { id: 'hameenlinna', kind: 'town', name: { fi: 'H\u00e4meenlinna', en: 'H\u00e4meenlinna' }, cx: 7, cy: 29, size: 1 },
-  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 23, cy: 31, size: 2 },
-  { id: 'tampere', kind: 'town', name: { fi: 'Tampere', en: 'Tampere' }, cx: 15, cy: 40, size: 1 },
+  { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 5, cy: 5, rawRate: 1.7, rawCap: 10 },
+  { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 7, cy: 16 },
+  { id: 'farm', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 28, cy: 5, rawRate: 1.7, rawCap: 10 },
+  { id: 'mill', kind: 'mill', name: { fi: 'Myllykyl\u00e4', en: 'Myllykyl\u00e4' }, cx: 27, cy: 16 },
+  { id: 'hameenlinna', kind: 'town', name: { fi: 'H\u00e4meenlinna', en: 'H\u00e4meenlinna' }, cx: 7, cy: 30, size: 1 },
+  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 26, cy: 31, size: 2 },
+  { id: 'tampere', kind: 'town', name: { fi: 'Tampere', en: 'Tampere' }, cx: 17, cy: 40, size: 1 },
 ];
-const RIVER = [[15, -2], [14.5, 5], [15.5, 11], [15, 17]];
-const LAKE = { x: 15, y: 20, rx: 4.2, ry: 2.4 };
-const RIDGE = [[20, 23], [31, 24]];
+const RIVER = [[17, -2], [16.5, 5], [17.5, 11], [17, 17]];
+const LAKE = { x: 17, y: 20.5, rx: 4.2, ry: 2.4 };
+const RIDGE = [[23, 23.5], [35, 24.5]];
 
 /** the land in levels (one level is a terrace): the ridge in the south east, the hills, the noise */
 function rawHeight(x: number, y: number): number {
@@ -146,7 +145,7 @@ function rawHeight(x: number, y: number): number {
   h = Math.max(h, 3.4 * Math.max(0, Math.min(1, (2.6 - dr) / 1.6)));
   // the hill between the forest and the sawmill, the farm's rise
   h = Math.max(h, 2.4 * Math.exp(-(((x - 2) ** 2 + (y - 10.5) ** 2) / 6)));
-  h = Math.max(h, 1.8 * Math.exp(-(((x - 28) ** 2 + (y - 10.5) ** 2) / 8)));
+  h = Math.max(h, 1.8 * Math.exp(-(((x - 32) ** 2 + (y - 10.5) ** 2) / 8)));
   h += (vnoise(x * 0.14, y * 0.14) - 0.5) * 1.0;
   return h;
 }
@@ -167,15 +166,15 @@ function harjuCover(x: number, y: number): Cover {
     if (main || down) return 'street';
   }
   // Peltola's fields round the farm
-  if (Math.hypot((x - 25) / 1.4, y - 9.5) < 2.6 && L <= 1) return 'field';
-  const f = vnoise(x * 0.15 + 40, y * 0.15) + (x < 12 && y < 24 ? 0.25 : 0) + (L >= 2 ? 0.1 : 0) - (x > 18 && y < 16 ? 0.2 : 0);
+  if (Math.hypot((x - 29) / 1.4, y - 9.5) < 2.6 && L <= 1) return 'field';
+  const f = vnoise(x * 0.15 + 40, y * 0.15) + (x < 13 && y < 24 ? 0.25 : 0) + (L >= 2 ? 0.1 : 0) - (x > 20 && y < 16 ? 0.2 : 0);
   return f > 0.6 && !near(HARJU_SITES, x, y, 4.5) ? 'forest' : 'none';
 }
 
 export const HARJU: ScenarioDef = {
   id: 'harju',
   name: { fi: 'Harju', en: 'Harju' },
-  blurb: { fi: '1862. Kaksi kaupunkia kokoon 3 ennen vuotta 1872', en: '1862. Two towns to size 3 before 1872' },
+  blurb: { fi: '1862. Kolme kaupunkia kokoon 3 ennen vuotta 1872', en: '1862. Three towns to size 3 before 1872' },
   w: HARJU_W,
   h: HARJU_H,
   terrain: harjuLand,
@@ -185,7 +184,7 @@ export const HARJU: ScenarioDef = {
   startStations: ['farm'],
   cash: 420,
   startYear: 1862,
-  goal: { kind: 'towns', size: 3, count: 2, beforeYear: 1872 },
+  goal: { kind: 'towns', size: 3, count: 3, beforeYear: 1872 },
   stars: [1869, 1868],
   engines: ['hilma', 'jyry'],
 };

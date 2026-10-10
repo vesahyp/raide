@@ -42,7 +42,7 @@ export const PLANS: Record<string, BotPlan> = {
     ],
     perks: PERKS,
   },
-  // both chains to Lahti (already size 2) and Hämeenlinna
+  // both chains to Hämeenlinna and Lahti (already size 2), then Tampere
   harju: {
     steps: [
       { kind: 'line', from: 'forest', to: 'sawmill', mode: 'cheap' },
@@ -63,6 +63,12 @@ export const PLANS: Record<string, BotPlan> = {
       { kind: 'train', line: ['farm', 'mill'] },
       { kind: 'wagon', line: ['sawmill', 'lahti'] },
       { kind: 'wagon', line: ['mill', 'lahti'] },
+      { kind: 'line', from: 'sawmill', to: 'tampere', mode: 'cheap' },
+      { kind: 'train', line: ['sawmill', 'tampere'] },
+      { kind: 'line', from: 'mill', to: 'tampere', mode: 'cheap' },
+      { kind: 'train', line: ['mill', 'tampere'] },
+      { kind: 'train', line: ['forest', 'sawmill'] },
+      { kind: 'train', line: ['farm', 'mill'] },
     ],
     perks: PERKS,
   },
