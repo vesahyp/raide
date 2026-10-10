@@ -2,7 +2,7 @@
 adr: 4
 title: Track is a network the player lays freely; a line is a list of stops routed over it
 date: 2026-10-10
-status: Accepted
+status: Shared track superseded by 0005
 deciders: Vesa
 ---
 
@@ -61,3 +61,9 @@ ends.
   it must stay cheap on 12 000 cells. The bot keeps its station-to-station
   plans; a custom-layout plan is added to prove a branch and a shared
   trunk run without deadlock.
+
+## Update 2026-10-10
+
+The shared track of this decision is superseded by ADR 0005: every line
+has its own double track. The free track shapes were not finished and
+are kept on the branch `custom-track-wip`.
