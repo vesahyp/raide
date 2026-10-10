@@ -653,3 +653,22 @@ button.hud-goal > .bar { position: absolute; left: 0; right: 0; bottom: 0; heigh
   .goal-towns .gi { width: 11px; height: 11px; }
   button.hud-goal { padding: 6px 5px 8px; }
 }
+/* the round brass "+ engine" button on each line's track: buy a train from the map */
+.map-overlay > .buy-mark { pointer-events: auto; padding: 0; border: 0; background: none; width: 0; height: 0; z-index: 3; color: #2a2010; font: inherit; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.buy-mark .bm { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 0; background: radial-gradient(circle at 35% 30%, #f1cf6e, #d8a63a 60%, #a97a1f); border: 2.5px solid #16120e; box-shadow: 0 2px 0 rgba(22, 18, 14, 0.55); }
+.buy-mark .bm i { font: 900 19px/1 var(--f-body, inherit); font-style: normal; margin-right: -1px; }
+.buy-mark .eng { width: 19px; height: 19px; fill: #2a2010; }
+.buy-mark .n { position: absolute; left: 25px; top: -11px; min-width: 22px; padding: 1px 6px; border-radius: 11px; background: #16120e; color: #f1cf6e; font: 800 15px/20px var(--f-body, inherit); text-align: center; box-sizing: border-box; }
+.buy-mark .n:empty { display: none; }
+.buy-mark.idle .bm { left: -25px; top: -25px; width: 50px; height: 50px; animation: buy-pulse 1.6s ease-in-out infinite; }
+@keyframes buy-pulse { 0%, 100% { transform: scale(1); box-shadow: 0 2px 0 rgba(22, 18, 14, 0.55), 0 0 0 0 rgba(241, 207, 110, 0.7); } 50% { transform: scale(1.08); box-shadow: 0 2px 0 rgba(22, 18, 14, 0.55), 0 0 0 9px rgba(241, 207, 110, 0); } }
+/* the whole map: a small dot, with a wider hit area round it */
+.buy-mark.lod .bm { left: -7px; top: -7px; width: 14px; height: 14px; border-width: 2px; animation: none; }
+.buy-mark.lod .bm i, .buy-mark.lod .bm svg, .buy-mark.lod .n { display: none; }
+.buy-mark.lod.idle .bm { left: -8px; top: -8px; width: 16px; height: 16px; animation: buy-pulse 1.6s ease-in-out infinite; }
+.buy-mark.lod::before { content: ''; position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; }
+/* the site card's Lines here */
+.lines-here .lh-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; }
+.lines-here .lh-text { display: flex; flex-direction: column; min-width: 0; }
+.lines-here .lh-text small { color: var(--bone-dim); font-size: 13px; }
+.lines-here .btn.act { flex: 0 0 auto; min-height: 44px; }

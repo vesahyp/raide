@@ -31,7 +31,7 @@ import { GoodIcon, NONE_OF, WagonStrip, WagonPicker, CarryText } from './Wagons'
 const FAST = 3;
 
 type Card =
-  | { kind: 'line'; lineId: number }
+  | { kind: 'line'; lineId: number; /** open scrolled to "Buy a train" */ buy?: boolean }
   | { kind: 'train'; trainId: number }
   | { kind: 'site'; siteId: string }
   | { kind: 'choice'; options: Route[]; sx: number; sy: number; /** the lines the new stop could lengthen, each with the routes that do */ extend?: { lineId: number; options: Route[]; trainIds: number[] }[] }
@@ -111,7 +111,8 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       return line ? plan(s, a, b, freeSide(s, line, a)).filter((r) => canExtend(s, r, line.id)) : plan(s, a, b);
     };
     // the player's moves, for the scripts that set a scene up
-    w.__act = { plan: (a: number, b: number) => plan(s, a, b), build: (r: Route, ext?: number) => build(s, r, ext), buyTrain: (l: number, wg: WagonType | WagonType[], e: EngineId, n?: number) => buyTrain(s, l, wg, e, n), moveTrain: (t: number, l: number) => moveTrain(s, t, l), price: (e: EngineId, n: number) => trainPrice(e, n), ceiling: () => loanCeiling(s), buySiding: (l: number, cell?: number) => buySiding(s, l, cell), buyCrane: (st: number) => buyCrane(s, st), spotFree: (lineId: number, n: number) => { const l = s.lines.find((o) => o.id === lineId); const sp = l ? trainSpot(s, l, n) : null; return !!sp && !sp.parked; } };
+    w.__act = { plan: (a: number, b: number) => plan(s, a, b), build: (r: Route, ext?: number) => build(s, r, ext), buyTrain: (l: number, wg: WagonType | WagonType[], e: EngineId, n?: number) => buyTrain(s, l, wg, e, n), moveTrain: (t: number, l: number) => moveTrain(s, t, l), sellTrain: (t: number) => sellTrain(s, t), price: (e: EngineId, n: number) => trainPrice(e, n), ceiling: () => loanCeiling(s), buySiding: (l: number, cell?: number) => buySiding(s, l, cell), buyCrane: (st: number) => buyCrane(s, st), spotFree: (lineId: number, n: number) => { const l = s.lines.find((o) => o.id === lineId); const sp = l ? trainSpot(s, l, n) : null; return !!sp && !sp.parked; } };
+    renderer.onBuyLine = (lineId) => setCard({ kind: 'line', lineId, buy: true });
     const input = new Input(
       canvas,
       s,
@@ -318,7 +319,8 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
               data-act="tip"
               onClick={() => {
                 rendRef.current?.panToSite(tip.site);
-                setCard({ kind: 'site', siteId: tip.site });
+                // a line with no train: the tip opens the line card at "Buy a train"
+                setCard(tip.kind === 'idle-line' && tip.onLine !== undefined ? { kind: 'line', lineId: tip.onLine, buy: true } : { kind: 'site', siteId: tip.site });
               }}
             >
               <b>!</b>
@@ -443,9 +445,10 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       )}
       {line && (
         <LineCard
-          key={line.id}
+          key={`${line.id}:${card?.kind === 'line' && card.buy ? 'buy' : ''}`}
           s={s}
           line={line}
+          toBuy={card?.kind === 'line' && !!card.buy}
           onBuy={(wagons, engine) => {
             const t = buyTrain(s, line.id, wagons, engine);
             if (t) {
@@ -476,6 +479,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
             setCard(null);
             setLay({ siteId: site.id });
           }}
+          onBuyLine={(lineId) => setCard({ kind: 'line', lineId, buy: true })}
         />
       )}
       {card?.kind === 'yearEnd' && s.yearEnd && (
@@ -809,7 +813,7 @@ function limitText(limit: 'free' | 'block' | 'platform' | 'parked', at: string):
  * strip to take it off), what each type carries on this line, what one more train adds to the line, its
  * running cost and the price.
  */
-function LineCard({ s, line, onBuy, onTrain, onSiding, onLift, onClose }: { s: SimState; line: Line; onBuy: (w: WagonType[], e: EngineId) => void; onTrain: (t: Train) => void; onSiding: () => void; onLift: () => void; onClose: () => void }) {
+function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }: { s: SimState; line: Line; toBuy?: boolean; onBuy: (w: WagonType[], e: EngineId) => void; onTrain: (t: Train) => void; onSiding: () => void; onLift: () => void; onClose: () => void }) {
   const [consist, setConsist] = useState<WagonType[]>(() => defaultConsist(s, line));
   const count = consist.length;
   // the faster engine on this line is the one that makes more trips a year
@@ -831,6 +835,14 @@ function LineCard({ s, line, onBuy, onTrain, onSiding, onLift, onClose }: { s: S
   const net = earned - line.runYear - trackCost;
   const wastes = consist.filter((w) => wagonWaste(s, line, w)).length;
   const lift = trains.length === 0;
+  // opened from a "buy a train" button or tip: the list starts at the Buy a train heading
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const buyRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const box = scrollRef.current;
+    const head = buyRef.current;
+    if (toBuy && box && head) box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - 4;
+  }, []);
   return (
     <div className="card sheet buy-card" data-ui>
       <CardHead
@@ -842,7 +854,7 @@ function LineCard({ s, line, onBuy, onTrain, onSiding, onLift, onClose }: { s: S
         ))}
         onClose={onClose}
       />
-      <div className="buy-scroll" data-sec="buy-scroll">
+      <div className="buy-scroll" data-sec="buy-scroll" ref={scrollRef}>
         <div className="line-biz" data-sec="line-biz">
           {line.stops.length > 2 && <StopsRow s={s} line={line} />}
           <div className="money-row" data-sec="line-money">
@@ -891,7 +903,7 @@ function LineCard({ s, line, onBuy, onTrain, onSiding, onLift, onClose }: { s: S
           )}
           {line.stops.length === 2 && <SidingRow s={s} line={line} engine={engine} wagons={consist} onBuy={onSiding} />}
         </div>
-        <h3 className="buy-title">{tr('Osta juna', 'Buy a train')}</h3>
+        <h3 className="buy-title" data-sec="buy-title" ref={buyRef}>{tr('Osta juna', 'Buy a train')}</h3>
         <div className="buy-label">{tr('Veturi', 'Engine')}</div>
         <div className="wagons engines">
           {s.scenario.engines.map((e) => (
@@ -940,6 +952,42 @@ function LineCard({ s, line, onBuy, onTrain, onSiding, onLift, onClose }: { s: S
           <span>{!spot ? tr('Ei tilaa laiturilla', 'No room at the station') : `${tr('Osta juna', 'Buy train')}  ${cost}`}</span>
           {!!spot && <small data-sec="buy-trips">{added >= 0.05 ? '+' : ''}{added.toFixed(1)} {tr('matkaa/v', 'trips/yr')}</small>}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** a line's money this year so far: what it earned less the running cost and the track upkeep */
+const lineNet = (s: SimState, line: Line): number => line.earnedYear - line.runYear - lineTrackUpkeep(s, line) * s.yearFrac;
+
+/**
+ * "Lines here" on a station's site card: each line through the station with its stops, its trains
+ * and its net this year, and a button that opens the line card at "Buy a train".
+ */
+function LinesHere({ s, stationId, onBuy }: { s: SimState; stationId: number; onBuy: (lineId: number) => void }) {
+  const lines = s.lines.filter((l) => l.stops.includes(stationId));
+  if (!lines.length) return null;
+  return (
+    <div className="srow lines-here" data-sec="lines-here">
+      <span className="sl">{tr('Linjat täällä', 'Lines here')}</span>
+      <div className="sc">
+        {lines.map((l) => {
+          const n = s.trains.filter((t) => t.lineId === l.id).length;
+          const net = lineNet(s, l);
+          return (
+            <div key={l.id} className="lh-row" data-line={l.id}>
+              <div className="lh-text">
+                <b>{lineName(s, l)}</b>
+                <small>
+                  {n === 0 ? <span className="red">{tr('ei junaa', 'no train')}</span> : `${n} ${n === 1 ? tr('juna', 'train') : tr('junaa', 'trains')}`} · {tr('tulos', 'net')} <span className={Math.round(net) < 0 ? 'red' : 'gold'}>{signed(net)}</span>
+                </small>
+              </div>
+              <button className="btn act" data-act="buy-line" data-line={l.id} onClick={() => onBuy(l.id)}>
+                <span>{tr('Osta juna', 'Buy a train')}</span>
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1299,7 +1347,7 @@ function craneGoods(site: Site): Good[] {
  * The site card: what it has, what it wants and pays now, why it is stuck, who buys its output, and
  * a button that starts the track from here (or joins the site to the railway when it has no station).
  */
-function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClose: () => void; onLay: () => void }) {
+function SiteCard({ s, site, onClose, onLay, onBuyLine }: { s: SimState; site: Site; onClose: () => void; onLay: () => void; onBuyLine: (lineId: number) => void }) {
   const makes = MAKES[site.kind];
   const takes = TAKES[site.kind].filter((g) => goodsOnMap(s).includes(g));
   const cell = idx(s, site.cx, site.cy);
@@ -1352,6 +1400,7 @@ function SiteCard({ s, site, onClose, onLay }: { s: SimState; site: Site; onClos
       )}
       {takes.length > 0 && site.kind === 'town' && <TownRows s={s} site={site} takes={takes} railed={hasStation} />}
       {stuck && <p className="stuck">{stuck}</p>}
+      {station && <LinesHere s={s} stationId={station.id} onBuy={onBuyLine} />}
       {station && (
         <div className="srow" data-sec="crew">
           <span className="sl">{tr('Väki', 'Crew')}</span>

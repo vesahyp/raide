@@ -264,6 +264,10 @@ export class Renderer2D {
   fixed: { w: number; h: number } | null = null;
   /** the tip on show: its site gets a bobbing marker, and stuck and starved ones an arc to the answer; null for none */
   advice: Advice | null = null;
+  /** a tap on a line's "buy a train" button on the map; the UI opens the line card at Buy */
+  onBuyLine: ((lineId: number) => void) | null = null;
+  /** each line's round "+ engine" button on the map, and the path index it stood at last frame */
+  private buyEls = new Map<number, { el: HTMLElement; n: HTMLElement; at: number; idle: boolean; count: number; lod: boolean }>();
   private adviceEl: HTMLElement | null = null;
   /** a tile point the view eases to, with the zoom */
   private glide: { x: number; y: number } | null = null;
@@ -2396,6 +2400,88 @@ export class Renderer2D {
     this.place(this.adviceEl, at);
   }
 
+  /**
+   * One round brass "+ engine" button per line, on its track near the midpoint, so a train can be bought
+   * from the map. A line with no train pulses and is a little bigger; a line with trains shows its count
+   * beside the button. On the whole map it is a small dot. The place is the cell nearest the midpoint that
+   * covers no station, no site tag and no other button; the last place is kept while it stays free.
+   */
+  private buyMarks(drag: DragView | null, pending: Route[] | null, lod: boolean): void {
+    const s = this.s;
+    const off = !!drag || !!pending || this.picking || !!this.laying || !!this.sidingPick;
+    for (const [id, b] of this.buyEls) {
+      if (s.lines.some((l) => l.id === id)) continue;
+      b.el.remove();
+      this.buyEls.delete(id);
+    }
+    const r = (idle: boolean) => (lod ? 7 : idle ? 25 : 22);
+    const circles: { x: number; y: number; r: number }[] = [];
+    for (const st of s.stations) {
+      const site = s.sites.find((o) => o.id === st.siteId);
+      if (site) circles.push({ ...this.project(site.cx + 0.5, site.cy + 0.5, 0), r: lod ? 12 : 26 });
+    }
+    const boxes = lod ? [] : [...this.tagBox.values()];
+    const free = (x: number, y: number, rad: number): boolean => {
+      for (const c of circles) if (Math.hypot(c.x - x, c.y - y) < c.r + rad + 2) return false;
+      for (const b of boxes) if (x + rad > b.x0 - 2 && x - rad < b.x1 + 2 && y + rad > b.y0 - 2 && y - rad < b.y1 + 2) return false;
+      return true;
+    };
+    for (const line of s.lines) {
+      let b = this.buyEls.get(line.id);
+      if (!b) {
+        const el = document.createElement('button');
+        el.className = 'buy-mark';
+        el.dataset.buyLine = String(line.id);
+        el.setAttribute('aria-label', tr('Osta juna', 'Buy a train'));
+        el.innerHTML = '<span class="bm"><i>+</i><svg viewBox="0 0 24 24" class="eng"><rect x="2" y="10" width="13" height="7" rx="1.5"/><rect x="12" y="5" width="7" height="12" rx="1"/><rect x="4" y="5" width="3" height="5"/><circle cx="6" cy="18.5" r="2.6"/><circle cx="15" cy="18.5" r="2.6"/></svg></span><b class="n"></b>';
+        el.addEventListener('click', () => this.onBuyLine?.(line.id));
+        this.overlay.appendChild(el);
+        b = { el, n: el.querySelector<HTMLElement>('.n')!, at: -1, idle: false, count: -1, lod: false };
+        this.buyEls.set(line.id, b);
+      }
+      const count = s.trains.filter((t) => t.lineId === line.id).length;
+      const idle = count === 0;
+      if (b.idle !== idle || b.lod !== lod) {
+        b.el.classList.toggle('idle', idle);
+        b.el.classList.toggle('lod', lod);
+        b.idle = idle;
+        b.lod = lod;
+      }
+      if (b.count !== count) {
+        b.n.textContent = count > 0 ? String(count) : '';
+        b.count = count;
+      }
+      if (off) {
+        b.el.style.display = 'none';
+        continue;
+      }
+      // the cells nearest the midpoint first, the last place before them
+      const len = line.path.length;
+      const mid = (len - 1) / 2;
+      const order: number[] = [];
+      for (let i = 2; i < len - 2; i++) order.push(i);
+      order.sort((x, y) => Math.abs(x - mid) - Math.abs(y - mid));
+      if (b.at >= 2 && b.at < len - 2) order.unshift(b.at);
+      const rad = r(idle) + (lod ? 0 : 3);
+      let spot: { x: number; y: number; i: number } | null = null;
+      for (const i of order) {
+        const c = line.path[i];
+        const p = this.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
+        if (free(p.x, p.y, rad)) {
+          spot = { ...p, i };
+          break;
+        }
+      }
+      if (!spot) {
+        b.el.style.display = 'none';
+        continue;
+      }
+      b.at = spot.i;
+      circles.push({ x: spot.x, y: spot.y, r: rad });
+      this.place(b.el, spot);
+    }
+  }
+
   private fpsTick(t0: number): void {
     const now = performance.now();
     if (this.lastDraw) {
@@ -2700,6 +2786,7 @@ export class Renderer2D {
     this.layoutTags();
     this.layoutBadges();
     this.adviceMark(lod);
+    this.buyMarks(drag, pending, lod);
     const seen = new Set<object>();
     for (const f of s.floats) {
       seen.add(f);

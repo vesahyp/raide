@@ -49,6 +49,11 @@ export function tipText(s: SimState, a: Advice): string {
       return tr(`${here} tarvitsee toisen laiturin toista junaa varten`, `${here} needs a second platform for the second train`);
     case 'cash':
       return tr(`Rahaa ${num(a.amount ?? 0)}: rata ${here} → ${there} maksaa ${a.cost} (${linkFi})`, `You have ${num(a.amount ?? 0)}: a line ${here} → ${there} costs ${a.cost} (${linkEn})`);
+    case 'idle-line': {
+      const line = s.lines.find((l) => l.id === a.onLine);
+      const nm = line ? lineName(s, line) : '';
+      return tr(`Rata ${nm} on ilman junaa: napauta ja osta juna`, `The ${nm} line has no train: tap to buy one`);
+    }
     case 'contract':
       return tr(`Sopimus: ${a.amount} ${some(g!)} vielä kohteeseen ${here} ennen vuoden ${a.deadline} loppua`, `Contract: ${a.amount} more ${some(g!)} to ${here} before the end of ${a.deadline}`);
   }

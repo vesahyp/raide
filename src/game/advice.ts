@@ -10,7 +10,7 @@ import { siteById, siteAt, stationAt } from './state';
 import { idx, type Route } from './grid';
 import { plan, platformPrice, lineYear, trainPrice, wantedGoods, extendable, canExtend, freeSide, stopSite, townStops, wantsPeople, visited } from './sim';
 
-export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'people' | 'platform' | 'cash' | 'contract';
+export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'people' | 'platform' | 'cash' | 'contract' | 'idle-line';
 
 export interface Advice {
   kind: AdviceKind;
@@ -27,7 +27,7 @@ export interface Advice {
   deadline?: number;
   /** a tip that lays track: the id of the line the track would lengthen; absent when it starts a new line */
   lengthen?: number;
-  /** people: the id of a line that already joins the two towns and has no coach, where a coach would go. more: the line the goods wait on */
+  /** idle-line: the line that has no train. people: the id of a line that already joins the two towns and has no coach, where a coach would go. more: the line the goods wait on */
   onLine?: number;
   /** how much it matters, higher first; not for the words */
   score: number;
@@ -129,6 +129,12 @@ export function advice(s: SimState): Advice[] {
     const to = good ? bestBuyer(s, start, good, goal) : null;
     if (to) out.push({ kind: 'first', site: start.id, to: to.id, good: good!, cost: linkCost(s, start, to) ?? undefined, score: 1000 });
     return out;
+  }
+
+  // a line with no train earns nothing: the first thing to do with it is buy one
+  for (const line of s.lines) {
+    if (s.trains.some((t) => t.lineId === line.id)) continue;
+    out.push({ kind: 'idle-line', site: stopSite(s, line, 0).id, to: stopSite(s, line, line.stops.length - 1).id, onLine: line.id, score: 200 });
   }
 
   // stock that no line takes away
