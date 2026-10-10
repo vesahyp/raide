@@ -9,14 +9,17 @@ it before changing a rule, a price or a control.
 ## What this is
 
 **Raide** is a railroad tycoon for the phone, in the browser, played with one
-thumb. Drag from a station to a site and the game lays the track, bridges
-the water and shows the cost on the line. Buy a train, and it runs the line
-on its own: timber from the forest to the sawmill, boards from the sawmill
-to the town, grain to the mill and flour to the towns, cash on every
-delivery. Finland from 1862. Scenarios with one goal and a year limit: the
-sawmill (deliver 15 boards before 1866, the tutorial) and Harju (two
-chains, two towns, a lake and a ridge, grow both towns to size 3 before
-1872, which takes a network). Raide is Finnish for a railway track.
+thumb. The whole map fits a portrait screen. Drag from a station to a site
+and the game lays the line's own double track, bridges the water and shows
+the cost on the line. Buy a train, and it runs the line on its own: timber
+from the forest to the sawmill, boards from the sawmill to the town, grain
+to the mill and flour to the towns, cash on every delivery, and every load
+grows the town it reaches. Every half minute the game holds and offers two
+upgrades to pick one of. Finland from 1862. Scenarios with one goal and a
+year limit: the sawmill (deliver 15 boards before 1865, the tutorial) and
+Harju (two chains, three towns, a lake and a ridge, grow two towns to size
+3 before 1872, about 10 to 15 minutes of play). The core loop is ADR 0005
+and ADR 0006. Raide is Finnish for a railway track.
 
 ## Stack
 
@@ -26,113 +29,83 @@ The Räkkä architecture, copied from `sora` (ADR 0001):
   cards and the result. The map never goes through React.
 - **Canvas 2D** for the map (ADR 0003), in Höyry's style: top down with a
   3/4 lean, flat colours, dark outlines, sprites drawn with canvas paths.
-  A big tile map that scrolls, hills as one-tile terrace steps, four zoom
-  levels. No image assets, no WebGL.
+  A tile map that fits the portrait screen (ADR 0006), hills as one-tile
+  terrace steps. No image assets, no WebGL.
 - **A headless sim** under `src/game/`, stepped at a fixed `DT` of 1/60 s,
-  the one authority on money, goods, trains and blocks.
-- **The bot plays the checks.** `tools/bot.ts` plays the scenario headless
-  in `npm run sim-check`; the hand in `tools/hand.ts` plays it by touch in
-  `make playthrough` and leaves a video.
+  the one authority on money, goods, trains and growth.
+- **The bot plays the checks; a human-like player measures the fun.**
+  `tools/bot.ts` plays the scenario headless in `npm run sim-check`;
+  `scripts/human.mjs` plays Harju by touch in `make human`, logs every
+  decision with its game time and leaves a video.
 
 ## Where things live
 
 ```
 src/
   game/               the simulation, no DOM anywhere in here
-    types.ts          ScenarioDef, Site (a town's store, growth meter and the travellers and mail waiting), Station, Line (stops, legs, blocks), Train (wagons and a load each), SimState
-    grid.ts           the grid the player never sees: eight directions, A* routing two ways (the
-                        cheapest and the shortest, which bridges water and cuts through a hill),
-                        the rail profile (the land clamped to GRADE_MAX, cut and fill paid for),
-                        the costs per 100 m tile (track 0.5 plus the grade, earth per metre,
-                        bridge 2, station 20), the track links per cell; a yard is never crossed
-    state.ts          createState(scenario): the land cut into 10 m terraces, the cover layer, the
-                        yards; yardOf, siteAt, stationAt, siteById, goodsOnMap
-    sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
-                        rule, grades (a climb cuts the speed by the engine's climb share and the load),
-                        loading, the full-load wait, paying, demand, the towns' stores and growth meters, the
-                        travellers and mail (made monthly by the towns with a station, carried by coaches and
-                        mail vans, paid by distance and the seconds on board), the turn order at a shared block,
-                        the passing siding (two blocks, a loop to wait in), the crane's dwell, the year-end
-                        contract (seeded offer, count, reward, deadline);
-                        plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/buyPlatform/
-                        setStop (a train passes a middle station through)/buyCrew/buyCrane/buySiding/closeYearEnd are the player's moves, the UI and the bot call the same ones
+    types.ts          ScenarioDef, Site (stock, a town's store and growth points), Station, Line (two stops, its own
+                        path, a platform slot at each end), Train, Pick and Perks (the upgrades), SimState
+    grid.ts           the grid the player never sees: eight directions, A* routing two ways (the cheapest and the
+                        shortest), the rail profile (the land clamped to GRADE_MAX, cut and fill paid for), the costs per
+                        100 m tile; a route never runs along laid track, crosses it only straight over a straight piece
+                        (a level crossing) and shares only a station's straight approach (ADR 0005)
+    state.ts          createState(scenario): the land cut into 10 m terraces, the cover layer, the yards; yardOf,
+                        siteAt, stationAt, siteById, goodsOnMap
+    sim.ts            step(): months, production, upkeep, the trains (two one-way queues per line on its double
+                        track, a gap to the train ahead, a wait at the loading stop for a full load), loading and
+                        paying, growth per delivered load with the bonus for both goods, the year end (a record for
+                        the ledger, it does not hold the game), the pick every PICK_SECONDS; lineYear is the loads a
+                        minute a line's trains move, capped by what the source makes, the buy card's number.
+                        plan/build/undo/buyTrain/addWagon/removeWagon/setEngine/sellTrain/liftLine/takePick/borrow/repay
+                        are the player's moves, the UI and the bot call the same ones
+    advice.ts         what the player should look at next, data only: the tip and the goal towns
     content/
-      economy.ts      every number the balance is made of: prices, demand, the tile in metres
-                        (100), the terrace (10 m), the yard of each site kind, the grade limit, the two engines, the wagons and what they carry, growth, the travellers and the mail
-      scenarios.ts    the hand-made tile maps (Harju 120 by 100, Sawmill 64 by 48): the land as a
-                        height function in metres (water below zero), the cover (forest, field,
-                        street), sites, start, goal, the engines on sale
+      economy.ts      every number the balance is made of: prices, demand, distance, the engines, wagons, growth
+                        (GROW_NEED, the variety bonus), the pick and its upgrades
+      scenarios.ts    the hand-made tile maps (Harju 30 by 42, Sawmill 30 by 36): the land as a height function in
+                        metres (water below zero), the cover, sites, start, goal
   render/
-    render2d.ts       the map in Canvas 2D: the camera (scroll, pinch, four zoom levels, follow,
-                        pick and project), the terrain cached per chunk of 16 tiles and drawn in
-                        row order so a terrace in front hides what is behind, the trains, smoke and
-                        piles every frame, the route under the finger coloured by grade, the
-                        whole-map look under 9 px per tile, the HTML overlay (names, chips, badges,
-                        floats, the hand, the plate)
-    town.ts           a town's buildings laid out for all five sizes (four houses a size, church, second
-                        street, market, town hall); the renderer lets the new ones rise one by one
-    draw2d.ts         the sprites: tiles, faces, trees, track, bridges, buildings, piles, engines
-                        and wagons with their loads
-  input/input.ts      fingers: one from a station builds, one elsewhere pans, two pinch and twist,
-                        a tap opens a card and a tap on a train follows it; pointer events
+    render2d.ts       the map in Canvas 2D: the camera (the whole map in portrait, as wide as the screen and panning
+                        up and down in landscape), the terrain cached per chunk of 16 tiles, each line's second track,
+                        the trains (a train running back is on the second track), smoke and piles, the route under
+                        the finger, the HTML overlay (names, chips, floats, the hand, the plate, the buy buttons)
+    town.ts           a town's buildings laid out for all five sizes; the renderer raises them one by one as the
+                        town's growth points come in
+    draw2d.ts         the sprites: tiles, faces, trees, track, bridges, buildings, piles, engines and wagons
+  input/input.ts      fingers: one from a station builds, a tap opens a card; pointer events
   audio.ts            a few synthesised sounds; track.ts the tracker shim
   ui/
-    Game.tsx          the loop, the HUD (year, cash, goal), the cards: the route choice after a lift
-                        that met the lake or the ridge, the line (its trains, buy with wagons and
-                        engine), the train (wagon, engine swap, full load, sell), the site (has,
-                        wants, pays, growth), the year end, the result
-    Orders.tsx        the train card's Orders: the line's stations as a vertical strip, a tap passes a middle station through
-    Ledger.tsx        the year-end card: income bars (goods, travellers, mail), the cash line, the towns that grew, the contract on offer
+    Game.tsx          the loop, the HUD (year, cash, goal strip, tip), the cards: the route choice when the two
+                        ways differ, the line (its trains, buy with engine and wagons), the train, the site, the goal,
+                        money, the pick, the result
+    Ledger.tsx        the ledger of the last closed year, from the money card
+    tips.tsx          the tip's words and the goal strip
     Screens.tsx       the title and the scenario list
     Update.tsx        the newer-build banner; ErrorBoundary.tsx the crash screen
-  styles.css          the chrome: brass and dark green, large round buttons, a ledger page; the HUD
-                        is a bar on top in portrait and a column on the left in landscape
+  styles.css          the chrome: brass and dark green, large round buttons; the HUD is a bar on top in portrait
+                        and a column on the left in landscape, the tip sits at the bottom in portrait
   i18n.ts             fi and en, tr() and L(); version.ts the build id and the update check
 tools/
-  bot.ts              the player with no thumb: a plan per scenario, steps taken as the cash allows
-                        (a line with the cheap or the short route, a train, a wagon, an engine)
-  hand.ts             the thumb: the same plan as touches on the phone, with a hand's pace
-  sim-check.ts        npm run sim-check: the rules asserted headless, the bot must win both maps
-  balance.ts          npm run balance: the year by year numbers of the bot's game (SCENARIO=harju)
+  bot.ts              the player with no thumb: a plan per scenario, steps taken as the cash allows, a preference
+                        order at the pick
+  sim-check.ts        npm run sim-check: the rules asserted headless, the bot must win both maps in time
+  balance.ts          npm run balance: the bot's moves, the towns and the money (SCENARIO=harju)
 scripts/
-  look.mjs            make look: the bot plays on an emulated iPhone, screenshots in both orientations
-                        and one with the camera on a train; the check for a renderer change
-  ledger.mjs          make ledger: the nine sites, the year-end charts, a town at sizes 1 to 5 and rising, the chip
-                        price step and the floor, a town's store, card and growth
-                        meter, a town growing mid-year, the rings on the whole map, into shots/ledger/
-  spots.mjs           make spots: the bot plays Harju, six views in both orientations into shots/spots/, a
-                        check that every running train sits on its rails and that a frame at play zoom
-                        takes 12 ms or less; the check for a change to trains, track or the camera
-  buysheet.mjs        make buy-sheet: the line card and buy sheet on iPhone 16, portrait and landscape, fi and en, with and without a
-                        train; fails when the Buy footer covers the list, an engine card wraps, a wagon type that carries
-                        nothing can be added, or an action that cannot be done looks like a button
-  people.mjs          make people: a town's platform with its travellers and mail, a coach train arriving with its pay float, the
-                        town card with travellers per destination, the buy card with a coach and a mail van, the
-                        ledger's travellers and mail rows; the check for a change to fares, wagons or those cards
-  mixed.mjs           make mixed: the card that offers to lengthen a line, a three-stop line, the buy card with a mixed consist
-                        and a wagon that carries nothing, a mixed train unloading and loading at its middle stop, the train card
-                        with each wagon's load; the check for a change to lines, consists or those cards
-  upgrades.mjs        make upgrades: the passing siding in pick mode and bought, two trains passing at it, the
-                        crane loading, the site card rows, the contract offer and its chip and HUD line;
-                        the check for a change to the siding, the crane or the contracts
-  drag-look.mjs       make drag-look: a drag held mid-way and at the site, the lift and the route
-                        choice card; the check for a change to the route plate or the ghost route
+  human.mjs           make human: the measure of done, a human-like player on an iPhone 16 by touch, the decision
+                        log with game times, a picture per decision and a video into shots/human/
+  look.mjs            make look: the bot plays on an emulated iPhone 16, screenshots in both orientations
   shots.mjs           phone screenshots with Playwright, the bot playing
   touch-check.mjs     lays track and buys a train by real touches on an emulated phone
-  orders-check.mjs    make orders-check: iPhone 16, a three-stop line by touch, a train told to pass Koskensaha through and back, pictures into shots/orders/
+  buy-check.mjs       buys a train three ways by touch
   rotate-check.mjs    turns the phone mid-game: the state stays, the canvas and the HUD fit
-  playthrough.mjs     a scenario by thumb (SCENARIO=harju by default), portrait and landscape, a
-                        video and frame sheets
+  home.mjs, advice.mjs, wants.mjs, result.mjs   pictures of the start screen, the tip, the wants and the result
   icon.mjs            renders public/icon.svg to the PNG icons
   pwa-check.mjs       manifest, icons, service worker, offline, against the live site
 infra/                Terraform: the tracking pixel host (S3 + CloudFront + logs), see TRACKING.md
 docs/
   design.md           the research and the design
-  mockups/            the static screens the next build is judged against (README.md has the
-                        notes; `make mockups` renders mockups.html to png/ with Playwright)
-    3d/               the three.js look test, held on 2026-10-07 (ADR 0003); PNGs only, history
-    topdown/          the top-down look test Vesa picked: Höyry's flat style on a big scrolling
-                        map, four screens (`make topdown`); the game is judged against these
+  economy.md          the economy plan of 2026-10-08; history since ADR 0006, the numbers live in economy.ts
+  mockups/            the static screens the look is judged against (`make mockups`, `make topdown`)
   adr/                architecture decisions, one per file
 ```
 
@@ -148,17 +121,15 @@ docs/
    change in `economy.ts`, proved by `npm run balance` and
    `make playthrough` before it ships.
 4. **The player's moves are sim functions.** `plan`, `build`, `undo`,
-   `buyTrain`, `closeYearEnd` in `sim.ts`. The UI and the bot call the same
+   `buyTrain`, `takePick` in `sim.ts`. The UI and the bot call the same
    ones, so what the bot can do the thumb can do and the other way round.
-5. **No signals, no deadlock.** A block is the cells between two neighbouring stops (a leg);
-   one running train on it at a time, and two lines that share cells share
-   the block; trains wait at stations, and when several wait for a block the
-   one that has waited longest goes first (first come, first served, with a
-   bound: after `GATE_RESERVE` seconds the others stop starting over its cells). Nothing in the UI shows a signal. A
-   free line laid over other lines' track is slow for this reason, and
-   that is a choice the player can read on the map. A train that stands at a station holds the cells of its line beyond it, so a line that passes there without stopping waits for it, and a new route never crosses laid track in an X (two diagonals of one square), because an X shares no cell and so no block. A bought passing siding
-   splits its own line's block in two: a train waits in the loop, wholly on
-   it, while the other passes. Against other lines the old rule stands.
+5. **No signals, no deadlock, no line waits for another (ADR 0005).** Every
+   line owns its double track. Trains of a line in one direction keep
+   FOLLOW_GAP to the train ahead and wait behind it at the platform;
+   trains in opposite directions pass; lines meet only in level crossings
+   and at a station's approach, and never wait for each other. One more
+   train adds loads until the source's pile is the limit, and the buy card
+   says which.
 6. **Both orientations.** Every screen works in portrait and in landscape,
    and a turn of the phone mid-game keeps the state. `make rotate-check`
    holds this.
@@ -173,11 +144,13 @@ docs/
   pass.
 - **A renderer change is judged by looking at `make look`**, the pictures in
   `shots/look/`, in both orientations, against `docs/mockups/topdown/png/`.
-- **A control or balance change is proved by thumb, on video.**
-  `make playthrough` plays the scenario on an emulated iPhone in portrait
-  and in landscape with the hand in `tools/hand.ts`, every input a touch,
-  and leaves a video and frame sheets per run in `shots/playthrough/`. Read
-  the sheets and watch the video before claiming a change is felt.
+- **A control or balance change is proved by a human-like player, on
+  video.** `make human` plays Harju on an emulated iPhone 16 in portrait,
+  every input a touch, and leaves the decision log, a picture per decision
+  and a video in `shots/human/`. It fails unless a decision comes at least
+  every 30 s of game time, a town grows inside 2 minutes and the win takes
+  about 10 to 15 minutes. Look at the pictures before claiming a change
+  is felt.
 - `make touch-check` after touching `input.ts` or the cards;
   `make rotate-check` after touching the canvas sizing or the HUD layout.
 - Deploy is automatic: every push to `main` builds and publishes to GitHub

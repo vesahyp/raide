@@ -48,7 +48,7 @@ export const MILL_EATS = 1.5;
  * take it to the next size. A load counts VARIETY_BONUS more when every other good the town takes
  * arrived within VARIETY_SECONDS too, so a second chain speeds growth. Nothing takes growth away.
  */
-export const GROW_NEED = [0, 50, 80, 110, 150];
+export const GROW_NEED = [0, 95, 150, 200, 260];
 export const VARIETY_BONUS = 0.5;
 export const VARIETY_SECONDS = 30;
 export const TOWN_MAX = 5;
@@ -86,8 +86,8 @@ export interface EngineDef {
 }
 /** the engines of the wood era: a light wood burner, and a slow strong one for grades */
 export const ENGINES: Record<EngineId, EngineDef> = {
-  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 100, upkeep: 6, runCost: 0.055, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
-  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 180, upkeep: 14, runCost: 0.2, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
+  hilma: { id: 'hilma', name: { fi: 'Pikku-Hilma', en: 'Little Hilma' }, price: 70, upkeep: 6, runCost: 0.055, speed: 3.2, climb: 0.25, blurb: { fi: 'kevyt ja nopea, ryömii ylämäessä', en: 'light and fast, crawls uphill' } },
+  jyry: { id: 'jyry', name: { fi: 'Jyry', en: 'Jyry' }, price: 130, upkeep: 14, runCost: 0.2, speed: 2.5, climb: 0.9, blurb: { fi: 'hidas ja vahva, vetää mäen yli', en: 'slow and strong, pulls over a hill' } },
 };
 /** a cell's side in metres: grades and the distance factor are read in these */
 export const CELL_M = 100;
@@ -105,7 +105,7 @@ export const GRADE_MAX = 4;
 /** a loaded wagon takes this share off a train's speed on the grade limit */
 export const GRADE_LOAD = 0.07;
 /** a wagon's price; twice the first prices, so money is tight (docs/economy.md) */
-export const WAGON_PRICE = 20;
+export const WAGON_PRICE = 15;
 /** every wagon on a train adds this to the cost of a tile run: a longer train burns more */
 export const WAGON_RUN = 0.05;
 export const WAGONS_DEFAULT = 2;

@@ -13,199 +13,85 @@ game follows your browser's language.*
 
 ## Miten pelataan
 
-**Vihje ja tavoite.** Ylärivin alla on yksi vihje: mikä on jumissa ja mitä
-tehdä seuraavaksi. Kartalla vihjeen paikan päällä keinuu keltainen
-huutomerkki, ja jumissa olevasta paikasta vie kaareva katkoviiva ratkaisuun.
-Napauta vihjettä, niin kamera vie paikalle ja kortti aukeaa. **×** piilottaa
-vihjeet loppuvuodeksi. Vihjeen yläpuolella on aina näkyvä tavoiteraita:
-jokaisesta tavoitekaupungista nimi, koko palloina (●●○ on koko 2 tavoitteesta 3),
-kasvumittari, joka täyttyy livenä, ja pieni tila ("kasvaa", "jauhoja puuttuu",
-"ei asemaa"). Lautatavoitteessa raidassa on laudat 7/15 ja rata-tila. Napauta
-raitaa, niin tavoitekortti näyttää koon, kasvumittarin ja vuosirajan.
+**Koko kartta näkyy kerralla.** Pystyasennossa koko maasto mahtuu ruudulle:
+joki, järvi, harju, metsät, tehtaat ja kaupungit. Karttaa ei tarvitse
+liikuttaa eikä lähentää. Vaaka-asennossa kartta täyttää ruudun leveyden ja
+liikkuu ylös ja alas sormella. Jokaisen paikan nimen alla näkyy, mitä sillä
+on (vaalea lappu) ja mitä se tarvitsee (tumma lappu: tavara, hinta ja
+merkki siitä, tuleeko tavaraa).
 
-**Katso karttaa.** Kartta on iso maasto ylhäältä päin: joki, järvi, metsä
-ja harjut. Mäet näkyvät portaina: jokainen porras on kymmenen metriä
-korkeampi kuin edellinen. Yhdellä sormella tyhjästä kohdasta kartta
-liikkuu. Nipistä kahdella sormella tai paina **+** ja **−** oikeassa
-alakulmassa: kartta lähenee aseman ja junan tasolle tai loittonee koko
-kartaksi. Koko kartalla napautus vie lähelle siihen kohtaan. Napauta
-junaa, niin kamera seuraa sitä; napauta tyhjää, niin se päästää irti. Jokaisen
-paikan alla näkyy mitä sillä on (vaalea lappu: tavara ja määrä) ja mitä
-se ostaa (tumma lappu: tavara ja hinta nyt).
+**Vedä rata.** Paina sormi asemalle ja vedä se paikkaan, joka ottaa vastaan
+aseman tavaran: metsästä sahalle, sahalta kaupunkiin, maatilalta myllylle,
+myllystä kaupunkiin. Rata piirtyy sormen alle maaston mukaan, ja lappu
+sormen yllä kertoo hinnan, pituuden ja jyrkimmän nousun. Sormen alla
+jokaisella paikalla, jonne rata kannattaa vetää, on hinta; paikka, jonne
+radasta ei olisi hyötyä, himmenee. Nosta sormi, niin rata on valmis;
+**Peru**-nappi on sormen alla sekunnin ajan. Kun järvi tai mäki antaa kaksi
+tietä, joista toinen on halvempi ja toinen nopeampi, nostaessa aukeaa kortti:
+**Halvin** tai **Nopein**. Paikan kortin **Vedä rata täältä** -napista kartta
+näyttää jokaisen kohteen hinnan, ja napautus rakentaa radan.
 
-**Vedä rata.** Paina sormi asemalle ja vedä se metsälle, sahalle,
-maatilalle, myllylle tai kaupunkiin. Rata piirtyy sormen alle maaston
-mukaan: vihreä on tasaista, keltainen nousee, punainen on jyrkkää, sininen
-on siltaa. Lappu sormen yllä kertoo hinnan, pituuden ja jyrkimmän nousun. Kun sormi
-on lähellä ruudun reunaa, kartta liukuu sinne päin, joten pitkänkin radan
-voi vetää yhdellä vedolla.
-Mäki leikataan ja notko pengerretään rataa varten, ja se maksaa. Nosta
-sormi, niin rata on valmis; peruutusnappi on sormen alla sekunnin ajan.
-Kun matkalla on järvi tai mäki, nostaessa aukeaa kaksi nappia: **kierto**,
-joka on halpa ja pitkä, tai **silta** tai **leikkaus**, joka on kallis ja
-lyhyt. Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt
-veturi ryömii, ja kuorma hidastaa sitä lisää.
+**Jokaisella radalla on oma raide.** Rata ei koskaan kulje toisen radan
+päällä. Se voi ylittää toisen radan tasoristeyksessä, ja junat ajavat siitä
+odottamatta. Rata on kaksiraiteinen: menevät ja tulevat junat ohittavat
+toisensa, ja saman suunnan junat pitävät väliä. Siksi uusi juna lisää aina
+kuljetuksia, kunnes metsä tai pelto ei tuota enempää; silloin junat odottavat
+kuormaa asemalla, ja kortti sanoo sen. Asemalle mahtuu kolme rataa, joten
+saha ja mylly eivät voi palvella kaikkia kaupunkeja: valitse, mitkä.
 
-**Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan. Kortin yläosassa on radan oma tilanne (tuotto, kulut, tulos, radan nosto ja ohitusraide, joka on teksti, kun sitä ei voi ostaa), sen alla **Osta juna** vierittyy, ja Osta-nappi on kortin alareunassa kiinteänä, joten se ei peitä mitään. Vaunut ovat paikkoja veturin perässä: tyhjä paikka on katkoviivalla, ja vaunun poistat napauttamalla sitä. Vaunulajin rivillä on + ja hinta; lajia, joka ei kuljeta tällä radalla mitään, ei voi lisätä tästä.
-**Mistä junan voi ostaa myöhemmin?** Jokaisen radan varrella on pyöreä messinkinappi, jossa on + ja pieni veturi. Jos radalla ei ole junaa, nappi sykkii ja on vähän isompi; kun junia on, nappi on rauhallinen ja sen vieressä on junien määrä. Napin kosketus avaa linjakortin suoraan **Osta juna** -kohtaan. Samaan pääsee aseman kortin **Linjat täällä** -osiosta (jokaisella asemaa koskettavalla radalla on oma Osta juna -nappi, pysäkit, junien määrä ja vuoden tulos) ja vihjeestä "Rata ... on ilman junaa: napauta ja osta juna". Koko kartan näkymässä nappi on pieni piste.
+**Osta juna.** Kun rata on valmis, linjakortti aukeaa **Osta juna**
+-kohtaan. Valitse veturi (Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva
+mäessä) ja vaunujen määrä, ja kortti kertoo, montako kuormaa minuutissa tämä
+juna lisää. Vaunut ovat aina sitä lajia, mitä rata kuljettaa. Jokaisen radan
+varrella on pyöreä messinkinappi, josta voi ostaa junan milloin tahansa;
+radalla ilman junaa nappi sykkii. Napauta junaa, niin sen kortti näyttää
+kuorman, matka-ajan, tehdyt matkat ja tulot, ja siitä voi lisätä tai poistaa
+vaunun, vaihtaa veturin tai myydä junan.
 
-Osta-napista valitset veturin ja rakennat junan vaunu kerrallaan: napautat vaunulajia, niin yksi vaunu lisätään, ja napautat vaunua nauhassa, niin se poistetaan. Jokaisen lajin kohdalla kortti kertoo, mitä se kuljettaa juuri tällä radalla, esimerkiksi "kuljettaa tukkeja Kuusikko → Koskensaha", tai punaisella, ettei se kuljeta mitään. Alussa kortti ehdottaa sen, mitä radan asemat tekevät ja ottavat (metsä, saha, kaupunki: kaksi lavavaunua ja kaksi umpivaunua). Kortti kertoo,
-montako kierrosta kumpikin veturi ajaa vuodessa juuri tällä radalla,
-paljonko tämä juna lisäisi linjan kierroksiin ja mitä se maksaisi ajaa
-vuodessa. Jos asema tai rataosuus on jo täynnä, luku näyttää sen: toinen
-juna samalla linjalla ei lisää kierroksia, vaan odottaa sivuraiteella.
-Lavavaunut kuljettavat tukkeja, umpivaunut lautoja ja jauhoja, viljavaunut
-viljaa, henkilövaunut matkustajia ja postivaunut postia. Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva: se vetää mäen
-yli. Juna lähtee heti ja ajaa linjaansa edestakaisin itsekseen.
+**Jokainen kuorma kasvattaa kaupunkia.** Kun laudat tai jauhot tulevat
+kaupunkiin, kaupunki saa kasvua, ja pieni talo ja luku nousevat sen ylle.
+Kasvu ei koskaan vähene. Kun kaupunki on saanut molempia tavaroita puolen
+minuutin sisällä, jokainen kuorma kasvattaa sitä puolet enemmän, joten toinen
+tavaraketju nopeuttaa kasvua. Talot nousevat yksi kerrallaan kasvun mukana,
+ja kun mittari täyttyy, kaupunki kasvaa seuraavaan kokoon. Kaupungin kortti
+kertoo, montako kuormaa seuraavaan kokoon tarvitaan ja montako tulee nyt
+minuutissa.
 
-**Jatka rataa.** Vedä radan päätyasemalta uuteen paikkaan, niin nosto-kortti tarjoaa kahta: "Jatka rataa Kuusikko–Koskensaha → Hämeenlinna" tai "Uusi rata". Jatkettu rata on yksi rata, jossa on enintään neljä pysäkkiä. Juna ajaa päästä päähän ja pysähtyy välissä: **sekajuna** purkaa jokaisella pysäkillä sen, minkä pysäkki ottaa vastaan (kaupunki lautoja ja jauhoja, saha tukkeja, mylly viljaa), ja lastaa sen, minkä pysäkki tekee, jos jokin toinen pysäkki ottaa sen vastaan. Lavavaunut purkavat tukit sahalla, ja umpivaunut lastaavat samalla pysäkillä laudat. Vaunu, joka ei kuljeta radalla mitään, on turha ja saa punaisen merkin. Jatkettu radan kortin otsikko on päiden nimet, ja pysäkit näkyvät kortissa järjestyksessä nuolin. Sekajuna tienaa vähemmän per veturi kuin kaksi omaa junaa, koska jokainen vaunulaji on kuormattu vain yhdellä osuudella: se kannattaa, kun rahaa, vetureita tai laitureita on vähän. Jatkettu rata ei saa ohitusraidetta. Tämän radan jo ajavat junat ajavat koko rataa.
+**Valitse yksi.** Puolen minuutin välein, kun ensimmäinen juna on ostettu,
+peli pysähtyy ja tarjoaa kaksi parannusta, joista valitset toisen: esimerkiksi
+pidemmät junat, nopeammat veturit, enemmän puuta ja viljaa, nopeampi lastaus,
+halvempi rata, ilmainen juna, rahaa kassaan tai markkinat, jotka kasvattavat
+kaupunkeja nopeammin. Parannus koskee koko rataverkkoa heti.
 
-**Raha on tiukalla.** Juna maksaa jokaisesta ajamastaan ruudusta, täynnä tai
-tyhjänä, ja veturilla on lisäksi vuosiylläpito. Jokainen ratakappale
-maksaa ylläpitoa vuodessa, silta nelinkertaisesti. Kassa tikittää alaspäin,
-kun junat liikkuvat, ja tuotto tulee toimituksista. Hyvä linja maksaa
-itsensä takaisin parissa vuodessa; linja, jolla ei ole tarvetta, syö rahaa
-joka vuosi. Linjakortista näet linjan tuoton, kulut ja tuloksen tältä
-vuodelta. Kun linjalla ei ole junia, **Nosta rata** -napilla rata
-puretaan ja puolet rakennushinnasta tulee takaisin.
-Junamäärälle ei ole kattoa: rajana ovat raha ja laiturit.
+**Vihje ja tavoite.** Ylärivin alla on tavoiteraita: jokaisesta
+tavoitekaupungista nimi, koko palloina (●●○ on koko 2 tavoitteesta 3),
+kasvumittari ja pieni tila ("kasvaa", "kasvaa, jauhoja puuttuu", "ei rataa").
+Napauta raitaa, niin tavoitekortti kertoo, montako kuormaa kukin kaupunki
+vielä tarvitsee. Ruudun alareunassa on yksi vihje: mikä on jumissa ja mitä
+tehdä seuraavaksi. Napauta vihjettä, niin oikea kortti aukeaa. **×**
+piilottaa vihjeet loppuvuodeksi.
 
-**Laina.** Napauta kassaa ruudun yläreunassa: rahakortti näyttää kassan,
-lainan ja sen katon, koron (8 % vuodessa, maksetaan vuoden lopussa) ja
-nettovarallisuuden. **Lainaa 100** ja **Maksa takaisin 100** -napeilla
-rahaa saa nyt ja maksaa myöhemmin. Katto nousee nettovarallisuuden mukana.
-Kassa voi painua miinukselle vain ajokuluista; rakentamiseen ja ostoon
-tarvitaan rahaa. Jos kassa on miinuksella kahdessa vuodenvaihteessa
-peräkkäin ja laina on täynnä, peli päättyy konkurssiin.
-
-**Asemalla kestää.** Juna ajaa kokonaan laiturille ja pysähtyy. Asemalla on
-aluksi yksi laituri. Jos toinen juna on jo laiturilla, tuleva juna pysähtyy
-omalle radalleen ennen asemaa, kokonaan radan päälle, ja odottaa kärsivällisesti
-savuten, kunnes laituri vapautuu; koskaan juna ei aja toisen päälle. Jos jono
-venyy pitkäksi, juna siirtyy sivuraiteelle. Vaunut
-puretaan ja lastataan yksi kerrallaan, ja tavara siirtyy näkyvästi
-vaunun ja pinon välillä. Pitkä juna tienaa enemmän, mutta seisoo kauemmin.
-Aseman kortista voi ostaa **lastausväen**, jolloin jokainen vaunu
-lastautuu kolmanneksen nopeammin, sekä toisen ja kolmannen **laiturin**,
-jolloin useampi juna mahtuu asemalle yhtä aikaa. Metsän, sahan, maatilan ja
-myllyn asemalle voi ostaa lisäksi **nosturin**, kun lastausväki on jo
-ostettu: tukit, laudat ja vilja lastautuvat ja purkautuvat kaksi kertaa
-nopeammin. Nosturi seisoo laiturilla, ja sen puomi kääntyy sen vaunun
-puoleen, jota se lastaa.
-
-**Ohitusraide.** Rataosuudella ajaa vain yksi juna kerrallaan, joten toinen
-juna samalla linjalla odottaa asemalla. Linjakortin **Ohitusraide**-rivin
-Osta-napista linja menee valintatilaan: radan vihreä osuus näyttää, minne
-ohitusraiteen voi rakentaa, ja napautus asettaa sen. **Paras paikka** valitsee
-pisimmän suoran keskeltä. Ohitusraide vaatii suoran osuuden, jonka päässä
-kumpaankin asemaan on yli kuusi ruutua, eikä se mahdu sillalle. Kun kaksi
-junaa kohtaa, toinen odottaa raiteella ja toinen ajaa ohi. Linjalla voi olla
-yksi. Kun asemilla on kaksi laituria, kaksi junaa ajaa noin 1,8-kertaisesti
-yhden junan kierrokset, ja linjakortti ja Osta-kortti näyttävät luvun. Kun useampi
-juna odottaa samaa rataosuutta, vuoron saa se, joka on odottanut kauimmin
-(ensin tullut, ensin palveltu), eikä yksikään juna jää jonon jatkoksi
-loputtomiin.
-
-**Napauta junaa**, niin sen kortti aukeaa: kuorma, matka-aika täynnä ja
-tyhjänä, tämän ja viime vuoden tulot, jokaisen vaunun kuorma ja se, mitä vaunu kuljettaa tällä radalla (turha vaunu on merkitty), vaunu lisää minkä tahansa lajin tai poista vaunu (puolet hinnasta takaisin), veturin vaihto,
-**odota täysi kuorma**, **siirrä toiselle linjalle** (kun juna seisoo
-sen linjan asemalla) tai myynti puoleen hintaan. Kortti kertoo myös, mitä juna on tuottanut ja
-maksanut tänä vuonna.
-
-**Junan pysähdykset.** Kolmen tai neljän pysäkin radalla juna voi ohittaa välipysäkin. Junan kortin Pysähdykset-osa listaa radan asemat järjestyksessä pystynauhana, aivan kuin reittikartta: jokaisella asemalla on piste. Päät, joissa juna kääntyy, ovat aina pysäkkejä, eikä niitä voi napauttaa. Välipysäkki on yksi iso painike: yksi napautus vaihtaa sen välillä "pysähtyy" (täysi piste, nimi lihavoitu) ja "ohittaa" (tyhjä piste, nimi yliviivattu ja himmeä, nuoli sen ohi). Pysähtyvän aseman alla näkyy, mitä juna siinä purkaa ja lastaa. Muutos alkaa junan seuraavasta lähdöstä. Ohittava juna ei pysähdy, ei lastaa eikä pura eikä ota laituria, vaan ajaa aseman läpi pääraiteella radan nopeudella. Se odottaa aseman edessä, jos siellä seisoo toinen juna. Vaunu lastaa vain sen, minkä jokin myöhempi pysäkki, jolla juna oikeasti pysähtyy, ottaa vastaan, ja ohitettu seisonta-aika säästyy matka-ajasta. Kun seuraat junaa napauttamalla sitä, kartalla jokaisen pysäkin laiturilla on numeroitu pilleri (1, 2, 3) ja ohitetulla asemalla himmeä yliviivattu rengas. Ohituksia tekevän junan alla lukee "pika".
-
-**Tavara liikkuu.** Metsä kasvattaa tukkeja, saha tekee tukeista lautoja;
-maatila kasvattaa viljaa, mylly jauhaa siitä jauhoja. Kaupungit ostavat
-laudat ja jauhot. Varasto näkyy pinona radan vieressä ja kuorma vaunuissa.
-Jokainen toimitus maksaa heti, ja luku lentää asemalta.
-Kaupunki pitää kustakin tavarasta varastoa: toimitus lisää yhden kuorman,
-ja kaupunki syö varastoa koko ajan, isompi enemmän. Varasto näkyy pinona
-aseman vieressä, ja kärryt vievät tavaraa pinosta kaduille. Tyhjän varaston
-hinta on täysi ja täyden varaston hinta on alin, joten ylitarjonta
-halpenee. Hinnan vieressä oleva palkki on varasto. Napauta mitä tahansa paikkaa, niin näet mitä
-sillä on, mitä se haluaa ja mitä se maksaa nyt, keille sen tavara kelpaa
-ja millä hinnalla, ja miksi se seisoo, jos seisoo. Kortin **Vedä rata
-täältä** -napista kartta näyttää, minne radan voi vetää; napauta kohdetta,
-niin rata rakentuu.
-
-**Mitä paikka tarvitsee.** Jokaisen paikan nimen alla on rivi "tarvitsee":
-yksi tumma kuvake jokaista tarvittua tavaraa kohti (koosta 2 alkaen myös
-matkustajat). Mittari kuvakkeessa on paikan varasto, ja merkki kertoo, tuleeko
-tavaraa. Vihreä ruksi: juna on tuonut sitä viimeisen kolmen kuukauden aikana
-eikä varasto ole tyhjä. Keltainen huutomerkki: rata vie paikalle, mutta tavaraa ei
-tule. Harmaa katkoviiva ja viiva merkkinä: yksikään rata ei tuo sitä. Kaiken
-sen, mitä paikalla on itsellään, näyttää vaalea kuvake nimen alla. Koko kartalla
-jokaisella nimikilvellä on pieni rivi samanvärisiä pyöreitä merkkejä.
-
-**Kaupunki kasvaa mittarilla.** Jokaisen kuukauden alussa kaupunki saa
-kasvua, jos sen varastossa on kaikkea, mitä kartalla tehdään (laudat ja
-jauhot). Noin kahdeksan hyvää kuukautta täyttää mittarin, ja kaupunki kasvaa
-heti, kesken vuoden: talot nousevat ja ruudulle tulee teksti. Huono kuukausi
-syö mittaria vähän. Mittari näkyy kaupungin nimen alla (koko kartalla
-kehänä nimikilven ympärillä). Kaupungin kortti kertoo, kauanko kasvuun
-menee tällä tarjonnalla tai mitä puuttuu. **Koosta 2 alkaen kaupunki haluaa
-myös väkeä:** kuukausi kelpaa vain, jos tavaroiden lisäksi kaupunkiin on
-saapunut matkustajia (kortti: "matkustajia: 4 saapui tässä kuussa", ja kun
-niitä ei ole tullut, "ei matkustajia: ei kasva"). Koko 1 tarvitsee vain
-tavaraa, ja kartta, jolla on vain yksi kaupunki, ei vaadi matkustajia.
-
-**Matkustajat ja posti.** Jokainen kaupunki, jolla on asema, tuottaa joka
-kuukausi matkustajia ja postia kokonsa mukaan, ja ne haluavat toiseen
-kaupunkiin, jolla on asema (isompaan useammin). He odottavat asemalla
-laiturilla pieninä ihmisinä ja posti harmaansinisinä säkkeinä. Kaupungin
-nimilapussa on pieni ihmiskuva ja odottajien määrä. Kaupungin kortti
-kertoo kohteittain, montako matkustajaa ja postikuormaa odottaa. **Henkilövaunu**
-kuljettaa matkustajia ja **postivaunu** postia: osta-kortissa ne ovat omat
-rivinsä, ja kortti kertoo "kuljettaa matkustajia Hämeenlinna ↔ Tampere". Radalla,
-jolla on vain yksi kaupunki, vaunulla ei ole mitään kuljetettavaa, ja se on
-turha. Matkustajat nousevat kyytiin pysäkillä, jonka jälkeen junan tiellä on
-kaupunki, jonne he menevät, ja jäävät pois siellä. Sekajuna vie heitä tavaran
-mukana. Matkustajakuorma maksaa matkan pituuden mukaan kuten tavara, mutta
-siitä vähenee joka sekunnilta, minkä matka vie yli kohtuullisen ajan (2 % täydestä
-maksusta sekunnilta; posti kolmanneksen hitaammin, ja se maksaa enemmän
-kuormalta). Maksu ei laske alle neljäsosan täydestä. Asemalle saapuvan junan
-yllä näkyy maksu lukuna.
-
-**Vuosi on puolitoista minuuttia**, ja oikean alakulman ⏩-napista kolme kertaa nopeampi, kun mitään ei tarvitse tehdä. Vuoden lopussa tilikirja näyttää
-tulot, kulut jaettuna ajoon, veturien ylläpitoon, radan ylläpitoon ja korkoon,
-voiton, kassan, lainan ja nettovarallisuuden, kertoo mitkä kaupungit
-kasvoivat ja kunkin kasvumittarin, ja tarjoaa yhden sopimuksen.
-
-**Sopimus.** Tilikirjassa kaupunki tai tehdas, jota et vielä palvele hyvin,
-pyytää tietyn määrän kuormia tiettyä tavaraa ensi vuoden loppuun mennessä:
-esimerkiksi kahdeksan kuormaa jauhoja. Palkkio on noin 40 % kuormien hinnasta,
-ja kuormat maksavat lisäksi tavalliseen tapaan. Valitset **Ota** tai
-**Ohita**. Otettu sopimus näkyy kohteen nimikilvessä (tavaran kuvake, esimerkiksi
-3/8, ja vuosi) ja ruudun yläreunassa tavoitteen alla. Kun määrä täyttyy,
-palkkio maksetaan heti ja luku lentää kohteesta. Jos vuosi loppuu ensin,
-sopimus raukeaa ja ruutuun tulee teksti. Muuta et menetä. Kerralla voi olla
-kaksi sopimusta.
+**Raha.** Rata maksaa rakentaessa, juna maksaa jokaisesta ajamastaan
+ruudusta, ja veturilla ja radalla on ylläpito. Jokainen toimitus maksaa
+heti, ja luku lentää asemalta. Kaupunki maksaa tavarasta vähemmän, kun sen
+varasto on täynnä, ja varasto tyhjenee ajan mittaan. Napauta kassaa ruudun
+yläreunassa: rahakortti näyttää kassan, lainan ja sen katon, koron ja
+nettovarallisuuden, ja **Tilinpäätös**-napista edellisen vuoden tulot ja kulut.
+Vuosi on puolitoista minuuttia, eikä vuoden vaihde pysäytä peliä. Oikean
+alakulman ⏩-napista aika kulkee kolme kertaa nopeammin.
 
 ## Kentät
 
 - **Saha:** metsä, saha ja kaupunki joen takana. Opettaa vedon, sillan ja
-  junan. Tavoite: 15 lautakuormaa kaupunkiin ennen vuotta 1866. Saha opettaa myös radan jatkamisen ja sekajunan. Siellä on vain yksi kaupunki, joten matkustajia ei tarvita.
-- **Harju:** kaksi metsää ja saha, kaksi maatilaa ja mylly, kolme kaupunkia,
-  harju ja järvi kaiken keskellä. Alussa sinulla on asema kummassakin
-  metsässä, joten ensimmäinen valinta on kummasta aloitat, ja sen jälkeen
-  mitkä kaupungit palvelet. Valinnat eroavat toisistaan, ja kartta näyttää
-  eron: Kuusikko on lähellä, mutta pieni ja hidas, Korpela kauempana, mutta
-  suuri ja rikas, ja rikkaan metsän kasa on kartalla selvästi isompi. Samoin
-  Peltola harjun takana on rikas, mutta Niittylä järven eteläpuolella on
-  köyhä ja lähempänä Tamperetta ja myllyä. Lahti on kaukana: sinne vie
-  pitkä rata, mutta se maksaa enemmän kuormaa kohti ja se alkaa kokoa 2,
-  kasvumittari kolme neljäsosaa täynnä, kun ensimmäinen juna on päässyt
-  perille. Kolme tapaa voittaa, ei yhtä oikeaa. Tavoite: kaksi kaupunkia kokoon 3 ennen vuotta
-  1872, ja se vaatii tavaran lisäksi matkustajia. Kaupungit kasvavat talo kerrallaan, ja vuoden lopun kirjasta näet
-  tulot tavaroittain, matkustajittain ja postin mukaan sekä nettovarallisuuden vuosi vuodelta. Kaupunkien kasvuun tarvitaan matkustajarata kahden kaupungin välille.
+  junan. Tavoite: 15 lautakuormaa kaupunkiin ennen vuotta 1865.
+- **Harju:** metsä ja saha joen länsipuolella, maatila ja mylly sen
+  itäpuolella, järvi keskellä, harju kaakossa ja kolme kaupunkia: Hämeenlinna,
+  Lahti ja Tampere. Alussa sinulla on asema metsässä ja maatilalla. Tavoite:
+  kaksi kaupunkia kokoon 3 ennen vuotta 1872. Hyvä peli kestää noin 10–15
+  minuuttia.
 
 Voitto antaa yhdestä kolmeen tähteä sen mukaan, minä vuonna se tulee: yksi
-mistä tahansa voitosta, kaksi Harjussa vuoteen 1870 ja kolme vuoteen 1869
-mennessä (Sahassa 1864 ja 1863). Lopputulos kertoo vuoden, mitä kukin tähti
-vaati, nettovarallisuuden, mitä rakensit (radat, junat ja talo kunkin
-kaupungin kokoa kohti) ja tappiossa sen yhden asian, joka puuttui, esimerkiksi
-»Tampere tarvitsi matkustajia». Napeilla pelaa uudelleen tai valitsee kentän.
-Vihje ruudun yläreunassa kertoo myös, kun tavara jää kasaan eikä junille ole
-tilaa tai kun kaupunki kaipaa matkustajia. Nettovarallisuus on kassa, junat ja
-asemat sekä radat puoleen hintaan, miinus laina, ja se näkyy taukovalikossa kesken pelin. Puhelimen voi kääntää kesken
-pelin: näkymä sovittuu uuteen asentoon ja peli jatkuu.
+mistä tahansa voitosta, kaksi Harjussa vuoteen 1869 ja kolme vuoteen 1868
+mennessä (Sahassa 1863 ja 1862). Lopputulos kertoo vuoden, peliajan,
+nettovarallisuuden ja sen, mitä rakensit. Puhelimen voi kääntää kesken pelin:
+näkymä sovittuu uuteen asentoon ja peli jatkuu.

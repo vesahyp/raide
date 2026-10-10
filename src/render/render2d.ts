@@ -15,7 +15,7 @@
  */
 import type { Cargo, Good, Line, Load, ScenarioDef, SimState, Site, Train } from '../game/types';
 import type { Route } from '../game/grid';
-import { DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
+import { APPROACH, DIRS, cx, cy, gradeOf, idx, stepLen } from '../game/grid';
 import { GRADE_COL, bestTrips, earthWord, gradeText, perMin, routeKm, tripsByEngine } from '../ui/routeinfo';
 import { plan, along, lineOf, railAlong, trainLength, price, fillOf, storeFill, SLOTS_MAX, workingWagon, stopCell, stopS, supplyState, wantsOf, growFrac } from '../game/sim';
 import type { Supply } from '../game/sim';
@@ -81,9 +81,16 @@ const FIT_PAD = 78;
  * on to a buffer stop `STUB` from the centre. A train stands centred on the station.
  */
 const SLOT_GAP = 0.8;
-const FAN1: [number, number] = [5.6, 7.2];
-const FAN2: [number, number] = [4.0, 5.6];
-const STUB = 4.5;
+const FAN1: [number, number] = [4.0, 4.9];
+const FAN2: [number, number] = [3.45, 4.0];
+const STUB = 4.0;
+/**
+ * The double track (ADR 0005): every line has a second track beside the one its cells carry, from the
+ * end of one station's approach to the start of the other's, DOUBLE_OFF tiles to the left of the line's
+ * way, joining it over DOUBLE_RAMP tiles at each end. Trains running back towards the first stop use it.
+ */
+const DOUBLE_OFF = 0.72;
+const DOUBLE_RAMP = 1.4;
 const smooth01 = (t: number): number => {
   const u = Math.max(0, Math.min(1, t));
   return u * u * (3 - 2 * u);
@@ -765,6 +772,10 @@ export class Renderer2D {
     }
     // the track after all the land, so a cell's ballast that runs past its edge is not covered by the next row's tiles
     for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) this.drawTrack(v, x, y);
+    for (const l of this.s.lines) {
+      const b = this.lineBox(l);
+      if (b.x1 > x0 - SIDE && b.x0 < x1 + SIDE && b.y1 > y0 - TOPM && b.y0 < y1 + BOTM) this.drawDouble(v, l);
+    }
     for (const a of this.aprons) if (a.x + 7 > x0 - SIDE && a.x - 6 < x1 + SIDE && a.y + 4 > y0 - TOPM && a.y - 1 < y1 + BOTM) this.drawApron(v, a);
     return canvas;
   }
@@ -1036,6 +1047,63 @@ export class Renderer2D {
     }
   }
 
+  /** the tile box a line's track covers, with a tile of room for its second track */
+  private lineBox(l: Line): { x0: number; y0: number; x1: number; y1: number } {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const c of l.path) {
+      const x = c % this.s.w;
+      const y = Math.floor(c / this.s.w);
+      x0 = Math.min(x0, x - 1);
+      x1 = Math.max(x1, x + 2);
+      y0 = Math.min(y0, y - 1);
+      y1 = Math.max(y1, y + 2);
+    }
+    return { x0, y0, x1, y1 };
+  }
+
+  /** how far the second track lies from the line at a distance along it, and the side, a unit vector in tiles */
+  private doubleAt(line: Line, d: number): { o: number; nx: number; ny: number } {
+    const end = line.dist[line.dist.length - 1];
+    const d0 = APPROACH + 0.4;
+    const d1 = end - APPROACH - 0.4;
+    if (d1 - d0 < 2 * DOUBLE_RAMP) return { o: 0, nx: 0, ny: 0 };
+    const o = DOUBLE_OFF * smooth01((d - d0) / DOUBLE_RAMP) * smooth01((d1 - d) / DOUBLE_RAMP);
+    // the side, smoothed over a tile each way so a bend turns it gently
+    const a = along(line, Math.max(0, d - 0.7), this.s.w);
+    const b = along(line, Math.min(end, d + 0.7), this.s.w);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { o, nx: dy / len, ny: -dx / len };
+  }
+
+  /** a line's second track, drawn into the chunk: decks under it where it crosses water, then the track */
+  private drawDouble(v: View, line: Line): void {
+    const { c, S } = v;
+    const end = line.dist[line.dist.length - 1];
+    const d0 = APPROACH + 0.4;
+    const d1 = end - APPROACH - 0.4;
+    if (d1 - d0 < 2 * DOUBLE_RAMP) return;
+    const pts: [number, number][] = [];
+    const n = Math.max(4, Math.ceil((d1 - d0) / 0.25));
+    for (let i = 0; i <= n; i++) {
+      const d = d0 + ((d1 - d0) * i) / n;
+      const p = this.linePos(line, d);
+      const q = this.doubleAt(line, d);
+      pts.push([v.x(p.x + q.nx * q.o), v.y(p.y + q.ny * q.o, p.lv)]);
+    }
+    // a deck under every tile of it over water, at the deck's height
+    for (let d = d0 + 0.5; d < d1; d += 0.9) {
+      const p = this.linePos(line, d);
+      const cell = Math.floor(p.y) * this.s.w + Math.floor(p.x);
+      if (!this.s.water[cell]) continue;
+      const q = this.doubleAt(line, d);
+      const ang = Math.abs(p.dx) >= Math.abs(p.dy) ? 0 : Math.PI / 2;
+      bridgeDeck(v, p.x + q.nx * q.o - 0.5, p.y + q.ny * q.o - 0.5, ang, p.lv, WATER_LV);
+    }
+    trackLine(c, S, pts);
+  }
+
   private drawBridge(v: View, x: number, y: number): void {
     const s = this.s;
     const i = y * s.w + x;
@@ -1128,6 +1196,12 @@ export class Renderer2D {
    */
   private trainPos(t: Train, line: Line, d: number): { x: number; y: number; lv: number; dx: number; dy: number } {
     const p = this.linePos(line, d);
+    // a train running back towards the first stop is on the second track
+    if (t.dir === -1 && t.state === 'run') {
+      const q = this.doubleAt(line, d);
+      p.x += q.nx * q.o;
+      p.y += q.ny * q.o;
+    }
     // the stop nearest along the line: its platform tracks fan out around it
     let e = 0;
     for (let i = 1; i < line.stops.length; i++) if (Math.abs(stopS(line, i) - d) < Math.abs(stopS(line, e) - d)) e = i;
@@ -2210,7 +2284,7 @@ export class Renderer2D {
       b.el.remove();
       this.buyEls.delete(id);
     }
-    const r = (idle: boolean) => (lod ? 7 : idle ? 25 : 22);
+    const r = (idle: boolean) => (lod ? 7 : idle ? 19 : 16);
     const circles: { x: number; y: number; r: number }[] = [];
     for (const st of s.stations) {
       const site = s.sites.find((o) => o.id === st.siteId);
@@ -2259,18 +2333,24 @@ export class Renderer2D {
       order.sort((x, y) => Math.abs(x - mid) - Math.abs(y - mid));
       if (b.at >= 2 && b.at < len - 2) order.unshift(b.at);
       const rad = r(idle) + (lod ? 0 : 3);
+      // a free place near the middle; failing that, the place nearest the middle that covers no other button: every line keeps its button
       let spot: { x: number; y: number; i: number } | null = null;
-      for (const i of order) {
-        const c = line.path[i];
-        const p = this.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
-        if (free(p.x, p.y, rad)) {
-          spot = { ...p, i };
-          break;
+      const clearOf = (x: number, y: number) => !circles.slice(s.stations.length).some((c) => Math.hypot(c.x - x, c.y - y) < c.r + rad);
+      for (const test of [free, clearOf]) {
+        for (const i of order) {
+          const c = line.path[i];
+          const p = this.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
+          if (test(p.x, p.y, rad)) {
+            spot = { ...p, i };
+            break;
+          }
         }
+        if (spot) break;
       }
       if (!spot) {
-        b.el.style.display = 'none';
-        continue;
+        const i = Math.round(mid);
+        const c = line.path[i];
+        spot = { ...this.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2), i };
       }
       b.at = spot.i;
       circles.push({ x: spot.x, y: spot.y, r: rad });

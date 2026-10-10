@@ -132,7 +132,7 @@ export function advice(s: SimState): Advice[] {
   for (const line of s.lines) {
     if (s.trains.some((t) => t.lineId === line.id)) continue;
     const g = lineGood(s, line);
-    out.push({ kind: 'idle-line', site: stopSite(s, line, g ? g.from : 0).id, to: stopSite(s, line, g ? g.to : 1).id, onLine: line.id, score: 200 });
+    out.push({ kind: 'idle-line', site: stopSite(s, line, g ? g.from : 0).id, to: stopSite(s, line, g ? g.to : 1).id, onLine: line.id, score: 400 });
   }
 
   // stock that no line takes away

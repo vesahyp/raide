@@ -319,18 +319,22 @@ export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wa
   let cap = Infinity;
   if (g) {
     const from = stopSite(s, line, g.from);
-    if (RAW_RATE[from.kind]) {
+    {
       const sharers = s.lines.filter((l) => {
         const lg = lineGood(s, l);
         return lg && stopSite(s, l, lg.from) === from && s.trains.some((t) => t.lineId === l.id);
       }).length;
-      cap = supplyPerMinute(s, from) / Math.max(1, sharers + (extra && !s.trains.some((t) => t.lineId === line.id) ? 1 : 0));
+      // what the site makes, and the pile it has: one more train drains a pile over PILE_MINUTES
+      cap = (supplyPerMinute(s, from) + from.stock / PILE_MINUTES) / Math.max(1, sharers + (extra && !s.trains.some((t) => t.lineId === line.id) ? 1 : 0));
     }
   }
   const loads = Math.min(free, cap);
   const k = free > 0 ? loads / free : 0;
   return { trips: each.reduce((a, b) => a + b, 0) * k, loads, limit: free > cap ? 'supply' : 'free', each: each.map((e) => e * k) };
 }
+
+/** the minutes over which the buy card counts a waiting pile as loads a train can take */
+const PILE_MINUTES = 2;
 
 /** round trips a minute an engine makes on a built line with this many wagons */
 export function lineTrips(s: SimState, line: Line, engine: EngineId, wagons = WAGONS_DEFAULT): number {

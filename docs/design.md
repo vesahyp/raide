@@ -173,6 +173,14 @@ phone screen as it is, needs a change, or has to go.
 
 ## Part 2: the design
 
+> **2026-10-10:** an independent review found the core loop unfun, and
+> Vesa decided to rebuild it (ADR 0005, ADR 0006). Where this part
+> describes shared blocks, passing sidings, platforms, crews, cranes,
+> travellers and mail, contracts, the growth meter or a map larger than
+> the screen, the ADRs win: every line has its own double track, every
+> load grows its town, a pick of two upgrades comes every half minute,
+> and the map fits one portrait screen.
+
 ### Setting
 
 Finland from 1862, the year of the Helsinki to Hämeenlinna line, through to
