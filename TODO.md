@@ -12,6 +12,13 @@ is the measure. Vesa plays it on the phone before the next step starts.
 
 Still weak, in the order a player meets it:
 
+- From about minute 7 of Harju the decisions are mostly the pick and two
+  or three expansions: every link is built and more trains add little.
+  A second forest and farm, or a fourth town, would give the late game
+  more to build.
+- The route card is rare: on this map the short way is seldom dearer and
+  faster at once, so the two-way choice almost never shows.
+
 - The site labels and the NEEDS chips crowd a 30-tile map; at 12 px a
   tile they cover yards and track.
 - Landscape shows the map as wide as the screen and pans up and down; it
