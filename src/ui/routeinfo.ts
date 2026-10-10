@@ -24,13 +24,13 @@ export function earthWord(r: Route): { kind: 'bridge' | 'cut' | 'fill'; text: st
   return null;
 }
 
-/** "6/yr" */
-export const perYear = (n: number): string => tr(`${n.toFixed(1)}/v`, `${n.toFixed(1)}/yr`);
+/** "3.2/min" */
+export const perMin = (n: number): string => tr(`${n.toFixed(1)}/min`, `${n.toFixed(1)}/min`);
 
-/** trips a year for each engine the scenario sells */
+/** round trips a minute for each engine the scenario sells */
 export function tripsByEngine(s: SimState, r: Route): { engine: EngineId; trips: number }[] {
   return s.scenario.engines.map((engine) => ({ engine, trips: routeTrips(s, r, engine) }));
 }
 
-/** the best engine's trips a year */
+/** the best engine's round trips a minute */
 export const bestTrips = (s: SimState, r: Route): number => Math.max(...tripsByEngine(s, r).map((x) => x.trips));

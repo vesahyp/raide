@@ -1,7 +1,8 @@
 import type { Cargo, Good, ScenarioDef, SimState, Site } from './types';
 import { CARGOS, GOODS } from './types';
 import { idx, inside } from './grid';
-import { PLATFORMS_START, RAW_CAP, RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
+import { RAW_CAP, RAW_RATE, RAW_START, TERRACE_M, TERRACE_MAX, yard } from './content/economy';
+import { emptyPerks } from './sim';
 
 const COVER = { none: 0, forest: 1, field: 2, street: 3 } as const;
 
@@ -46,17 +47,13 @@ export function createState(sc: ScenarioDef): SimState {
     delivered: 0,
     lastDelivery: lastNever(),
     store: zeroGoods(),
-    growth: d.kind === 'town' ? d.growth ?? 0 : 0,
-    pax: {},
-    mail: {},
-    arrived: 0,
-    lastArrival: -Infinity,
+    growth: 0,
     rawRate: d.rawRate ?? RAW_RATE[d.kind] ?? 0,
     rawCap: d.rawCap ?? RAW_CAP,
     rate: d.rawRate ?? RAW_RATE[d.kind] ?? 0,
     lastPickup: -Infinity,
     size: d.kind === 'town' ? d.size ?? 1 : 0,
-    grewAt: -1,
+    grewAt: -Infinity,
   }));
   // a site's cell and its yard are land at the site's terrace; only a town's yard keeps its streets
   for (const d of sc.sites) {
@@ -104,11 +101,12 @@ export function createState(sc: ScenarioDef): SimState {
     assets: 0,
     paid: new Float32Array(sc.w * sc.h),
     broke: 0,
-    yearEnd: null,
+    lastYear: null,
     history: [],
-    offer: null,
-    contracts: [],
-    bonus: 0,
+    pick: null,
+    nextPickAt: Infinity,
+    picks: 0,
+    perks: emptyPerks(),
     goalCount: 0,
     result: null,
     grewYear: [],
@@ -120,7 +118,7 @@ export function createState(sc: ScenarioDef): SimState {
   };
   for (const id of [sc.startStation, ...(sc.startStations ?? [])]) {
     const d = sc.sites.find((o) => o.id === id)!;
-    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id, crew: false, platforms: PLATFORMS_START, crane: false });
+    s.stations.push({ id: s.nextId++, cell: idx(s, d.cx, d.cy), siteId: d.id });
   }
   return s;
 }

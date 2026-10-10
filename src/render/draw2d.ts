@@ -783,66 +783,6 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: C
     }
     return;
   }
-  if (type === 'coach') {
-    // a passenger coach seen from above: a cream roof with a ridge, a green skirt, a row of windows along each side
-    c.fillStyle = '#2f6b4f';
-    c.fillRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
-    c.strokeRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
-    c.fillStyle = '#c9d6cf';
-    c.fillRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
-    c.strokeRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
-    c.strokeStyle = 'rgba(40,60,52,.55)';
-    c.beginPath();
-    c.moveTo(-h + s * 0.14, 0);
-    c.lineTo(h - s * 0.14, 0);
-    c.stroke();
-    c.strokeStyle = OUT;
-    // the windows, lit with a traveller in each when the coach is loaded
-    const panes = 4;
-    const seated = Math.round(fill * panes);
-    for (let i = 0; i < panes; i++)
-      for (const side of [-1, 1]) {
-        const X = -h + s * 0.3 + ((L - s * 0.6) * (i + 0.5)) / panes;
-        const Y = side * s * 0.255;
-        const taken = hasLoad && i < seated;
-        c.fillStyle = taken ? '#f2c14e' : '#27333a';
-        c.fillRect(X - s * 0.1, Y - s * 0.045, s * 0.2, s * 0.09);
-        if (taken && side === 1) {
-          c.fillStyle = PEOPLE[i % PEOPLE.length];
-          c.beginPath();
-          c.arc(X, Y, s * 0.05, 0, 7);
-          c.fill();
-        }
-      }
-    return;
-  }
-  if (type === 'mailvan') {
-    // a mail van: a red closed body, a darker roof, a post horn badge, the door ajar with sacks inside when loaded
-    c.fillStyle = '#a8322a';
-    c.fillRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
-    c.strokeRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
-    c.fillStyle = '#6e211b';
-    c.fillRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
-    c.strokeRect(-h + s * 0.1, -s * 0.2, L - s * 0.2, s * 0.4);
-    c.fillStyle = '#e8b93a';
-    c.beginPath();
-    c.arc(-L * 0.18, 0, s * 0.1, 0, 7);
-    c.fill();
-    c.stroke();
-    c.strokeStyle = 'rgba(0,0,0,.4)';
-    c.strokeRect(-h + L * 0.52, -s * 0.2, L * 0.34, s * 0.4);
-    c.strokeStyle = OUT;
-    if (hasLoad) {
-      c.fillStyle = '#d6c08a';
-      for (const [dx, dy] of [[0.58, -0.06], [0.72, 0.06], [0.7, -0.1]]) {
-        c.beginPath();
-        c.ellipse(-h + L * dx, s * dy, s * 0.11, s * 0.08, 0, 0, 7);
-        c.fill();
-        c.stroke();
-      }
-    }
-    return;
-  }
   if (type === 'box') {
     // an open box wagon: the sides, the dark floor inside, and the boards or sacks showing over the rim
     c.fillStyle = '#8f3b2e';

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ScenarioDef, SimState } from '../game/types';
 import { HARJU, SCENARIOS } from '../game/content/scenarios';
 import { createState, siteById } from '../game/state';
-import { DT, step, plan, build, buyTrain, closeYearEnd } from '../game/sim';
+import { DT, step, plan, build, buyTrain } from '../game/sim';
 import { idx } from '../game/grid';
 import { Renderer2D, mapPreview } from '../render/render2d';
 import { tr, t, lang, setLang } from '../i18n';
@@ -20,21 +20,21 @@ function backdropState(): SimState {
     const r = options.find((o) => o.mode === mode) ?? options[0];
     return r ? build(s, r) : null;
   };
-  const run = (l: ReturnType<typeof line>, wagons: 'flat' | 'box' | 'hopper', engine: 'hilma' | 'jyry' = 'hilma') => l && buyTrain(s, l.id, wagons, engine, 3);
-  run(line('forest', 'sawmill', 'cheap'), 'flat');
-  run(line('sawmill', 'hameenlinna', 'cheap'), 'box');
-  run(line('sawmill', 'tampere', 'cheap'), 'box');
-  run(line('tampere', 'mill', 'short'), 'box');
-  run(line('mill', 'farm', 'short'), 'hopper', 'jyry');
-  run(line('mill', 'hameenlinna', 'short'), 'box');
+  const run = (l: ReturnType<typeof line>, engine: 'hilma' | 'jyry' = 'hilma') => l && buyTrain(s, l.id, engine, 3);
+  run(line('forest', 'sawmill', 'cheap'));
+  run(line('sawmill', 'hameenlinna', 'cheap'));
+  run(line('farm', 'mill', 'cheap'), 'jyry');
+  run(line('mill', 'hameenlinna', 'cheap'));
+  run(line('mill', 'lahti', 'cheap'));
+  s.nextPickAt = Infinity;
   for (let i = 0; i < 900; i++) step(s);
   return s;
 }
 
 /** the slow tour of the valley: tile points the camera goes between and back, and tiles a second */
-const TOUR: [number, number][] = [[26, 36], [48, 58], [76, 42]];
-const TOUR_SPEED = 3;
-const TOUR_SCALE = 15;
+const TOUR: [number, number][] = [[10, 12], [20, 28], [12, 42]];
+const TOUR_SPEED = 2;
+const TOUR_SCALE = 20;
 
 /** The map behind the start screen: Harju drawn by the game's own renderer, panning, with no input. */
 function Backdrop() {
@@ -70,7 +70,8 @@ function Backdrop() {
       acc += real;
       for (let n = 0; acc >= DT && n < 8; n++, acc -= DT) {
         s.cash = 1e6;
-        if (s.yearEnd) closeYearEnd(s);
+        s.pick = null;
+        s.nextPickAt = Infinity;
         s.result = null;
         step(s);
       }

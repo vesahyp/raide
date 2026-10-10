@@ -2,10 +2,13 @@
  * The grid the player never sees: cells, eight directions, and the route a
  * drag becomes. A route is a path over cells found two ways: the cheapest
  * (flat land costs TRACK a cell, a grade adds to it, a hill steeper than
- * the grade limit costs its cut and fill, water a bridge, existing track
- * nothing) and the shortest (every cell the same, so it bridges and cuts
- * where that saves cells). When the two differ the player picks.
+ * the grade limit costs its cut and fill, water a bridge) and the shortest
+ * (every cell the same, so it bridges and cuts where that saves cells).
+ * When the two differ the player picks.
  * A site's yard is never passable, and its cell only as the route's end.
+ * Every line owns its track (ADR 0005): a route never runs along laid
+ * track. It crosses it straight over a straight piece (a level crossing),
+ * and it shares only the straight approach into a station.
  *
  * The rail's height along a route is the land's, cut and filled so that no
  * step is steeper than GRADE_MAX: a hill is crossed in a cutting, a hollow
@@ -39,7 +42,7 @@ export const STATION_COST = 40;
  * train that stands there at once), so the last cells must be a straight, level row. A route
  * never enters a station cell from the yard side (north) and never on a diagonal.
  */
-export const APPROACH = 8;
+export const APPROACH = 5;
 /** the cost of a join to a station's straight stretch at more than 45 degrees, in the cost of the route */
 const KINK_COST = 0.6;
 /** the search counts a too steep step this many times: the cut spreads along the ramp the rail needs */
@@ -137,7 +140,7 @@ function passable(s: SimState, i: number, end: number): boolean {
 
 /** what a step from cell a to its neighbour b costs to build, an estimate for the search */
 function stepCost(s: SimState, a: number, b: number, len: number): number {
-  if (s.track[b]) return 0.05 * len;
+  if (s.track[b]) return (TRACK_COST + 0.05) * len;
   if (s.water[b]) return BRIDGE_COST * len;
   const ha = s.water[a] ? BRIDGE_CLEAR : s.height[a];
   const rise = Math.abs(s.height[b] - ha);
@@ -186,7 +189,7 @@ function approaches(s: SimState, station: number, mode: RouteMode, only?: number
 
 /**
  * A* from a cell to a cell. In cheap mode the step cost is what the step would cost to build
- * plus a small constant so a free run over old track still prefers the short way; in short
+ * plus a small constant so the search prefers the short way between equal prices; in short
  * mode every cell costs the same. Returns null when there is no path. A route that starts at a
  * station, or ends at a site, runs the last APPROACH cells straight along the station's row
  * (west or east, whichever the search finds cheaper). Elsewhere it is free. `startSide` fixes the
@@ -292,8 +295,9 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
       const kink = (leave && dx * leave <= 0) || (enter && dx * -enter <= 0) ? KINK_COST : 0;
       // a diagonal step between two water cells would run over the water's corner on no bridge
       if (dx !== 0 && dy !== 0 && s.water[idx(s, x + dx, y)] && s.water[idx(s, x, y + dy)] && !s.water[ni] && !s.water[cur]) continue;
-      // a diagonal step may not cross laid track's other diagonal of the same square: two lines that cross in an X share no cell, so no block, and their trains would meet at the point
-      if (dx !== 0 && dy !== 0 && crossesTrack(s, x, y, dx, dy)) continue;
+      // laid track is another line's: the route crosses it straight over a straight piece, and keeps straight on through the crossing
+      if (s.track[ni] && !crossing(s, ni, dx, dy)) continue;
+      if (s.track[cur] && !startDir.has(cur) && prev[cur] >= 0 && (x - cx(s, prev[cur]) !== dx || y - cy(s, prev[cur]) !== dy)) continue;
       const len = stepLen(dx, dy);
       const c = g[cur] + (mode === 'cheap' ? stepCost(s, cur, ni, len) : len) + kink;
       if (c < g[ni]) {
@@ -353,12 +357,17 @@ export function describe(s: SimState, cells: number[], mode: RouteMode): Route {
   return { mode, cells, rail, cost: Math.round(cost), bridge, cutting, fill, added, newStation, length, worst, climb };
 }
 
-/** the track bit of the other diagonal, seen from the cell beside the step: (dx, dy) = (+, +), (-, +), (+, -), (-, -) */
-const CROSS_BIT = [dirIndex(-1, 1), dirIndex(1, 1), dirIndex(-1, -1), dirIndex(1, -1)].map((d) => 1 << d);
-
-/** whether laid track already runs along the other diagonal of the square that a diagonal step from (x, y) by (dx, dy) cuts across */
-function crossesTrack(s: SimState, x: number, y: number, dx: number, dy: number): boolean {
-  return (s.track[y * s.w + x + dx] & CROSS_BIT[dy > 0 ? (dx > 0 ? 0 : 1) : dx > 0 ? 2 : 3]) !== 0;
+/**
+ * Whether a step in (dx, dy) may enter a cell of laid track as a level crossing: the cell carries one
+ * straight piece of another line, no station, no water, and the step runs across it at an angle.
+ */
+function crossing(s: SimState, i: number, dx: number, dy: number): boolean {
+  // not on a station's approach, where the platform tracks fan out
+  if (s.water[i] || s.yardMask[i] || s.stations.some((st) => cy(s, st.cell) === cy(s, i) && Math.abs(cx(s, st.cell) - cx(s, i)) <= APPROACH + 1)) return false;
+  const m = s.track[i];
+  const d = dirIndex(dx, dy);
+  for (let k = 0; k < 4; k++) if (m === ((1 << k) | (1 << (k + 4)))) return k !== d % 4;
+  return false;
 }
 
 /**

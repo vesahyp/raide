@@ -1,13 +1,13 @@
 /**
- * The year-end ledger: a page of paper with two charts above the numbers. Income by good this
- * year as horizontal bars, net worth by year as one line, the towns that grew, then the table and the
- * one choice. The charts are inline SVG in a fixed box that scales with the card, so they read
+ * The ledger: a page of paper with two charts above the numbers, for the last closed year. Income by
+ * good as horizontal bars, net worth by year as one line, the towns that grew, then the table. It
+ * opens from the money card; the year end does not stop the game (ADR 0006). The charts are inline SVG in a fixed box that scales with the card, so they read
  * the same in portrait and landscape; the numbers table is what scrolls when the card is short.
  * One measure in each chart, so one ink colour: the good is told by its icon and name.
  */
 import { useState } from 'react';
-import type { Cargo, Contract, Good, SimState } from '../game/types';
-import { FARES, GOODS } from '../game/types';
+import type { Cargo, SimState } from '../game/types';
+import { GOODS } from '../game/types';
 import { goodsOnMap, siteById } from '../game/state';
 import { GOOD_NAME, TOWN_MAX } from '../game/content/economy';
 import { tr, t as tt, num } from '../i18n';
@@ -124,7 +124,7 @@ function GrowthBars({ s, growth }: { s: SimState; growth: Record<string, number>
     <svg className="chart growth" viewBox={`0 0 ${W} ${h}`} role="img" aria-label={tr('Kaupunkien kasvumittarit', 'Town growth meters')}>
       {towns.map((t, i) => {
         const y = i * row;
-        const v = t.size >= TOWN_MAX ? 1 : growth[t.id] ?? t.growth;
+        const v = t.size >= TOWN_MAX ? 1 : growth[t.id] ?? 0;
         return (
           <g key={t.id}>
             <text x={0} y={y + 11} fontSize={12} fill={INK}>
@@ -151,24 +151,9 @@ function HouseIcon() {
   );
 }
 
-/** the goods in the partitive, for a Finnish sentence about loads of them */
-const PARTITIVE: Record<Good, string> = { timber: 'tukkeja', boards: 'lautoja', grain: 'viljaa', flour: 'jauhoja' };
-
-/** a contract as a sentence: who wants how many loads of what by when, and the reward */
-export function contractText(s: SimState, c: Contract): string {
-  const name = tt(siteById(s, c.site).name);
-  return tr(
-    `${name} haluaa ${c.count} kuormaa ${PARTITIVE[c.good]} vuoden ${c.deadline} loppuun mennessä: ${c.reward} toimituksesta`,
-    `${name} wants ${c.count} loads of ${tt(GOOD_NAME[c.good])} by the end of ${c.deadline}: ${c.reward} on delivery`,
-  );
-}
-
-export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boolean) => void }) {
-  const y = s.yearEnd!;
-  // travellers and mail are rows of their own once the map has two towns to carry them between
-  const folk = s.sites.filter((x) => x.kind === 'town').length >= 2;
-  const goods: Cargo[] = [...GOODS.filter((g) => goodsOnMap(s).includes(g)), ...(folk ? FARES : [])];
-  const offer = s.offer;
+export function LedgerCard({ s, onClose }: { s: SimState; onClose: () => void }) {
+  const y = s.lastYear!;
+  const goods: Cargo[] = GOODS.filter((g) => goodsOnMap(s).includes(g));
   return (
     <div className="card ledger overlay" data-ui>
       <h2>{y.year}</h2>
@@ -186,19 +171,6 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boo
             <section className="growth">
               <h3>{tr('Kaupunkien kasvu', 'Town growth')}</h3>
               <GrowthBars s={s} growth={y.growth} />
-            </section>
-          )}
-          {y.lost.length > 0 && (
-            <section className="lost" data-sec="lost">
-              <h3>{tr('Sopimus raukesi', 'Contract lost')}</h3>
-              <p>
-                {y.lost.map((c) => (
-                  <span key={c.id} className="grown">
-                    <svg className="gi" viewBox="0 0 24 24"><use href={`#g-${c.good}`} /></svg>
-                    {tt(siteById(s, c.site).name)} <b>{c.got}/{c.count}</b>
-                  </span>
-                ))}
-              </p>
             </section>
           )}
           {y.grew.length > 0 && (
@@ -235,12 +207,6 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boo
                   <td>{tr('Korko', 'Interest')}</td>
                   <td className="num">-{num(y.interest)}</td>
                 </tr>
-                {y.bonus > 0 && (
-                  <tr data-sec="bonus">
-                    <td>{tr('Sopimukset', 'Contracts')}</td>
-                    <td className="num">+{num(y.bonus)}</td>
-                  </tr>
-                )}
                 <tr className="total">
                   <td>{tr('Voitto', 'Profit')}</td>
                   <td className="num">{num(y.profit)}</td>
@@ -261,27 +227,9 @@ export function YearEndCard({ s, onChoose }: { s: SimState; onChoose: (take: boo
             </table>
           </div>
           <div className="ledger-pick">
-            {offer ? (
-              <>
-                <p className="offer" data-sec="offer">
-                  <svg className="gi" viewBox="0 0 24 24"><use href={`#g-${offer.good}`} /></svg>
-                  <span>{contractText(s, offer)}</span>
-                </p>
-                <div className="choices two">
-                  <button className="btn choice take" data-act="take" onClick={() => onChoose(true)} data-track="year-take">
-                    <span>{tr('Ota', 'Take')}</span>
-                    <small>{tr(`+${offer.reward} perillä`, `+${offer.reward} on delivery`)}</small>
-                  </button>
-                  <button className="btn choice skip" data-act="skip" onClick={() => onChoose(false)} data-track="year-skip">
-                    <span>{tr('Ohita', 'Skip')}</span>
-                  </button>
-                </div>
-              </>
-            ) : (
-              <button className="btn choice continue" onClick={() => onChoose(false)} data-track="year-continue">
-                <span>{tr('Jatka', 'Continue')}</span>
-              </button>
-            )}
+            <button className="btn choice continue" onClick={onClose} data-act="ledger-close">
+              <span>{tr('Sulje', 'Close')}</span>
+            </button>
           </div>
         </div>
       </div>

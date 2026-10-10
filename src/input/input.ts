@@ -1,21 +1,18 @@
 /**
- * Fingers on the map. A drag that starts on a station builds track to the
+ * Fingers on the map. A drag that starts on a station builds a line to the
  * site or station it ends on; the route and its cost follow the finger,
- * and when the lake or a hill offers two routes the lift hands them to the
- * UI to choose from. A drag that starts anywhere else pans the view. Two
- * fingers pinch to zoom and move the view, also while a drag from a station
- * goes on (the drag stays, the finger that holds it keeps aiming). Near an
- * edge of the screen a drag scrolls the view, faster the closer it gets
- * (`update`, called each frame). On the whole-map zoom a drag only pans, a
- * tap on a train follows it and a tap anywhere else zooms in there. A tap on
- * a train opens its card and the camera follows it; a tap on a site or on its
+ * and when the lake or a hill offers two routes that differ the lift hands
+ * them to the UI to choose from. The map fits the screen in portrait
+ * (ADR 0006), so a drag elsewhere and a pinch do nothing there; in
+ * landscape a drag pans up and down, and near an edge a drag scrolls the
+ * view (`update`, called each frame). A tap on
+ * a train opens its card; a tap on a site or on its
  * name and chips opens the site's; a tap on a station or a track cell the line's. Pointer events, so a
  * mouse works the same way (one finger only). With `laying` set (the site card's
  * "lay track from here") a tap on a marked site builds as the lift of a drag would.
  */
 import type { SimState, Line, Site, Train } from '../game/types';
 import { plan, build } from '../game/sim';
-import { lengthenOptions, type Lengthen } from '../game/advice';
 import { idx, inside, route, type Route } from '../game/grid';
 import { stationAt } from '../game/state';
 import type { Renderer2D } from '../render/render2d';
@@ -37,11 +34,8 @@ export interface Drag {
 export interface InputEvents {
   /** a build landed: the line, and where the finger lifted (screen px) */
   onBuild: (line: Line, sx: number, sy: number) => void;
-  /**
-   * the lift offers two routes, or a line that could take the new stop: the UI asks which. `extend`
-   * lists the lines the new stop could lengthen, each with the routes that do it (they leave its end station on the free side).
-   */
-  onChoice: (options: Route[], sx: number, sy: number, extend?: Lengthen[]) => void;
+  /** the lift offers two routes that differ (one cheaper, one faster): the UI asks which */
+  onChoice: (options: Route[], sx: number, sy: number) => void;
   onLine: (line: Line) => void;
   onTrain: (train: Train) => void;
   onSite: (site: Site) => void;
@@ -52,16 +46,14 @@ export interface InputEvents {
   onAny: () => void;
   /** pick mode is over: a tap built or offered the choice (`kept`, the view stays) or fell on nothing */
   onLayEnd: (kept: boolean) => void;
-  /** pick mode for a passing siding: a tap on the line's cell, which the UI tries to place the loop at */
-  onSiding: (lineId: number, cell: number) => void;
-  /** a tap in the siding's pick mode fell away from the line: the mode is over */
-  onSidingEnd: () => void;
 }
 
-/** how close to a station's centre a finger must land to start a drag, in cells */
+/** how close to a station's centre a finger must land to start a drag, in cells, and at least in screen px (the map fits the screen, so a cell is small) */
 const GRAB = 1.1;
-/** how close to a site's centre the finger must be for the route to snap to it */
+const GRAB_PX = 26;
+/** how close to a site's centre the finger must be for the route to snap to it, the same two ways */
 const SNAP = 1.4;
+const SNAP_PX = 30;
 /** a dragging finger this close to the edge of the free area scrolls the view, in px */
 const EDGE = 48;
 /** the scroll speed at the edge, px a second */
@@ -83,8 +75,6 @@ export class Input {
    * where the marked ones are the stations that can reach it and the track runs from the one tapped.
    */
   laying: { cell: number; reverse: boolean } | null = null;
-  /** pick mode for a passing siding: the line whose green stretch takes the tap */
-  siding: { lineId: number } | null = null;
   private fingers: Finger[] = [];
   private mode: 'none' | 'build' | 'pan' = 'none';
   private pinch: { dist: number; ang: number; mx: number; my: number } | null = null;
@@ -167,8 +157,8 @@ export class Input {
     if (this.fingers.length === 1) {
       this.moved = 0;
       const at = this.cellAt(e.clientX, e.clientY);
-      const from = at ? this.stationNear(at.x, at.y, GRAB) : null;
-      if (from !== null && !this.r.whole && !this.laying && !this.siding) {
+      const from = at ? this.stationNear(at.x, at.y, this.grab()) : null;
+      if (from !== null && !this.r.whole && !this.laying) {
         this.mode = 'build';
         this.dragId = e.pointerId;
         this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
@@ -246,7 +236,7 @@ export class Input {
       d.options = [];
       return;
     }
-    const site = this.siteNear(at.x, at.y, SNAP);
+    const site = this.siteNear(at.x, at.y, Math.max(SNAP, SNAP_PX / this.r.scale));
     const target = site ? idx(this.s, site.cx, site.cy) : null;
     // snapped to a site: the routes that could be built; elsewhere: the track under the finger, a preview
     const to = target ?? at.cell;
@@ -291,37 +281,20 @@ export class Input {
     this.lifted(options, from, to, sx, sy);
   }
 
+  /** the reach of a finger on a station, in cells */
+  private grab(): number {
+    return Math.max(GRAB, GRAB_PX / this.r.scale);
+  }
+
   /**
-   * A drag or a tap in pick mode has settled on a site: a new line is the default. A line the station ends is
-   * offered on the card only when one of its trains carries something the new stop takes or makes; two routes ask which
-   * way, one route is built. The drag and the pick mode both come here.
+   * A drag or a tap in pick mode has settled on a site: two routes that differ ask which way, one route
+   * is built. The drag and the pick mode both come here.
    */
-  private lifted(options: Route[], from: number, to: number, sx: number, sy: number): void {
-    const exts = lengthenOptions(this.s, from, to);
-    if (exts.length) return this.ev.onChoice(options, sx, sy, exts);
+  private lifted(options: Route[], _from: number, _to: number, sx: number, sy: number): void {
     if (options.length > 1) return this.ev.onChoice(options, sx, sy);
     if (options[0].cost > this.s.cash) return this.ev.onNote(options[0].cells[options[0].cells.length - 1], 'cash');
     const line = build(this.s, options[0]);
     if (line) this.ev.onBuild(line, sx, sy);
-  }
-
-  /** a tap in the siding's pick mode: the line's cell nearest the finger, or the end of the mode when the finger is far from the line */
-  private tapSiding(sx: number, sy: number): void {
-    const pick = this.siding!;
-    const line = this.s.lines.find((l) => l.id === pick.lineId);
-    const at = this.cellAt(sx, sy);
-    if (!line || !at) return this.ev.onSidingEnd();
-    let best = -1;
-    let bd = 1.8;
-    for (const c of line.path) {
-      const d = Math.hypot((c % this.s.w) + 0.5 - at.x, Math.floor(c / this.s.w) + 0.5 - at.y);
-      if (d < bd) {
-        bd = d;
-        best = c;
-      }
-    }
-    if (best < 0) return this.ev.onSidingEnd();
-    this.ev.onSiding(line.id, best);
   }
 
   private onUp = (e: PointerEvent): void => {
@@ -356,7 +329,6 @@ export class Input {
     }
     if (moved > 12) return;
     if (this.laying) return this.tapLaying(e.clientX, e.clientY);
-    if (this.siding) return this.tapSiding(e.clientX, e.clientY);
     // a tap: a train, a station, a track cell, or a site
     const train = this.r.trainAt(e.clientX, e.clientY);
     if (this.r.whole) {
@@ -377,8 +349,8 @@ export class Input {
     const close = this.siteNear(at.x, at.y, 0.7);
     if (close) return this.ev.onSite(close);
     if (train) return this.ev.onTrain(train);
-    const st = stationAt(this.s, at.cell) ? at.cell : this.stationNear(at.x, at.y, GRAB);
-    const site = this.siteNear(at.x, at.y, SNAP);
+    const st = stationAt(this.s, at.cell) ? at.cell : this.stationNear(at.x, at.y, this.grab());
+    const site = this.siteNear(at.x, at.y, Math.max(SNAP, SNAP_PX / this.r.scale));
     if (site) return this.ev.onSite(site);
     if (st !== null) {
       const line = this.s.lines.find((l) => l.path[0] === st || l.path[l.path.length - 1] === st);

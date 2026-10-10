@@ -25,7 +25,7 @@ const browser = await chromium.launch(GPU);
 const errors = [];
 try {
   for (const orient of process.env.ORIENT ? [process.env.ORIENT] : ['portrait', 'landscape']) {
-    const ctx = await browser.newContext({ ...devices[orient === 'landscape' ? 'iPhone 15 landscape' : 'iPhone 15'], hasTouch: true });
+    const ctx = await browser.newContext({ ...devices[orient === 'landscape' ? 'iPhone 16 landscape' : 'iPhone 16'], hasTouch: true });
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

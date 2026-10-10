@@ -6,10 +6,11 @@ import type { Good, Line, SimState, Site } from '../game/types';
 import type { Advice } from '../game/advice';
 import { goalTowns, townLacks } from '../game/advice';
 import { siteById } from '../game/state';
-import { stopSite, growthOutlook, supplyState } from '../game/sim';
+import { stopSite, growthOutlook, supplyState, growFrac } from '../game/sim';
 import { MONTHS } from '../game/content/economy';
 import { tr, t as tt, num } from '../i18n';
 import { GoodIcon, NONE_OF } from './Wagons';
+
 
 const name = (s: SimState, id: string) => tt(siteById(s, id).name);
 /** a good after a number: "20 flour", "20 jauhoa" */
@@ -20,42 +21,27 @@ export function lineName(s: SimState, line: Line): string {
   return line.stops.map((_, i) => tt(stopSite(s, line, i).name)).join('–');
 }
 
-/** which kind of link a tip means, in words: "a new line" or "lengthen the Kuusikko–Koskensaha line" */
-function linkWords(s: SimState, a: Advice): [string, string] {
-  const line = a.lengthen === undefined ? undefined : s.lines.find((l) => l.id === a.lengthen);
-  return line ? [`jatka rataa ${lineName(s, line)}`, `lengthen the ${lineName(s, line)} line`] : ['uusi rata', 'new line'];
-}
-
 /** the one line under the HUD for a piece of advice */
 export function tipText(s: SimState, a: Advice): string {
   const here = name(s, a.site);
   const there = a.to ? name(s, a.to) : '';
   const g = a.good;
-  const [linkFi, linkEn] = linkWords(s, a);
   switch (a.kind) {
     case 'first':
       return tr(`Vedä rata: ${here} → ${there}${a.cost ? ` (${a.cost})` : ''}`, `Lay track from ${here} to ${there}${a.cost ? `: it costs ${a.cost}` : ''}`);
     case 'stuck':
-      return tr(`${here}: ${a.amount} ${some(g!)} odottaa eikä rataa ole. Vedä rata: ${there} (${linkFi})`, `${here} has ${a.amount} ${some(g!)} and no way out: lay track to ${there} (${linkEn})`);
+      return tr(`${here}: ${a.amount} ${some(g!)} odottaa eikä rataa ole. Vedä rata: ${there}`, `${here} has ${a.amount} ${some(g!)} and no way out: lay track to ${there}`);
     case 'starved':
-      return tr(`${here} tarvitsee ${some(g!)} kasvuun: tuo niitä paikasta ${there} (${linkFi})`, `${here} needs ${some(g!)} to grow: bring it from ${there} (${linkEn})`);
+      return tr(`${here} kasvaa nopeammin, kun saa myös ${some(g!)}: vedä rata paikasta ${there}`, `${here} grows faster with ${some(g!)} too: lay track from ${there}`);
     case 'more':
-      return tr(`${here}: ${a.amount} ${some(g!)} odottaa ja ${there} on tyhjä: lisää vaunu tai juna linjalle`, `${here} has ${a.amount} ${some(g!)} waiting and ${there} has none: add a wagon or a train to its line`);
-    case 'people':
-      return a.onLine !== undefined
-        ? tr(`${here} tarvitsee matkustajia kasvuun: lisää henkilövaunu junaan, joka ajaa kohteeseen ${there}`, `${here} needs travellers to grow: put a coach on a train that runs to ${there}`)
-        : tr(`${here} tarvitsee matkustajia kasvuun: vedä rata kohteeseen ${there}${a.cost ? ` (${a.cost})` : ''} (${linkFi}) ja osta henkilövaunuja`, `${here} needs travellers to grow: lay track to ${there}${a.cost ? ` (${a.cost})` : ''} (${linkEn}) and add coaches`);
-    case 'platform':
-      return tr(`${here} tarvitsee toisen laiturin toista junaa varten`, `${here} needs a second platform for the second train`);
+      return tr(`${here}: ${a.amount} ${some(g!)} odottaa: osta linjalle toinen juna`, `${here} has ${a.amount} ${some(g!)} waiting: buy another train for its line`);
     case 'cash':
-      return tr(`Rahaa ${num(a.amount ?? 0)}: rata ${here} → ${there} maksaa ${a.cost} (${linkFi})`, `You have ${num(a.amount ?? 0)}: a line ${here} → ${there} costs ${a.cost} (${linkEn})`);
+      return tr(`Rahaa ${num(a.amount ?? 0)}: rata ${here} → ${there} maksaa ${a.cost}`, `You have ${num(a.amount ?? 0)}: a line ${here} → ${there} costs ${a.cost}`);
     case 'idle-line': {
       const line = s.lines.find((l) => l.id === a.onLine);
       const nm = line ? lineName(s, line) : '';
       return tr(`Rata ${nm} on ilman junaa: napauta ja osta juna`, `The ${nm} line has no train: tap to buy one`);
     }
-    case 'contract':
-      return tr(`Sopimus: ${a.amount} ${some(g!)} vielä kohteeseen ${here} ennen vuoden ${a.deadline} loppua`, `Contract: ${a.amount} more ${some(g!)} to ${here} before the end of ${a.deadline}`);
   }
 }
 
@@ -68,7 +54,7 @@ export interface GoalTown {
 }
 
 export function readGoalTowns(s: SimState): GoalTown[] {
-  return goalTowns(s).map((x: Site) => ({ id: x.id, size: x.size, growth: x.growth, lacks: x.kind === 'town' ? townLacks(s, x) : [] }));
+  return goalTowns(s).map((x: Site) => ({ id: x.id, size: x.size, growth: growFrac(x), lacks: x.kind === 'town' ? townLacks(s, x) : [] }));
 }
 
 /** a pip row for a size against the goal size: filled up to the size, empty up to the goal */
@@ -85,8 +71,8 @@ function townState(s: SimState, site: Site, goalSize: number): { text: string; t
   if (site.size >= goalSize) return { text: tr('valmis', 'done'), tone: 'ok' };
   if (!s.stations.some((st) => st.siteId === site.id)) return { text: tr('ei asemaa', 'no station'), tone: 'stop' };
   const o = growthOutlook(s, site);
-  if (o.missing) return { text: tr(`${NONE_OF[o.missing][0]} puuttuu`, `short of ${NONE_OF[o.missing][1]}`), tone: 'wait' };
-  if (o.lacksPeople) return { text: tr('matkustajia puuttuu', 'needs travellers'), tone: 'wait' };
+  if (o.perMinute <= 0) return { text: tr('ei rataa', 'no line'), tone: 'stop' };
+  if (o.missing) return { text: tr(`kasvaa, ${NONE_OF[o.missing][0]} puuttuu`, `growing, no ${NONE_OF[o.missing][1]}`), tone: 'wait' };
   return { text: tr('kasvaa', 'growing'), tone: 'ok' };
 }
 
@@ -122,7 +108,7 @@ export function GoalStrip({ s, onOpen }: { s: SimState; onOpen: () => void }) {
           <div key={x.id} className={`gs-row${done ? ' done' : ''}`} data-goal-town={x.id}>
             <span className="gn">{name(s, x.id)}</span>
             <Pips size={x.size} goal={goal.size} />
-            <span className="gm"><i style={{ width: `${Math.round(100 * (done ? 1 : x.growth))}%` }} /></span>
+            <span className="gm"><i style={{ width: `${Math.round(100 * (done ? 1 : growFrac(x)))}%` }} /></span>
             <span className={`gst ${st.tone}`}>{st.text}</span>
           </div>
         );

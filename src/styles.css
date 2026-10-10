@@ -667,3 +667,41 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .lines-here .lh-text { display: flex; flex-direction: column; min-width: 0; }
 .lines-here .lh-text small { color: var(--bone-dim); font-size: 13px; }
 .lines-here .btn.act { flex: 0 0 auto; min-height: 44px; }
+
+/* the tip stands at the bottom in portrait, beside the fast button, where the thumb is: the map keeps the top */
+@media (orientation: portrait) {
+  .hud-tip { position: fixed; left: calc(var(--sal) + 8px); right: calc(var(--sar) + 76px); bottom: calc(var(--sab) + 18px); max-width: none; min-height: 52px; }
+  .hud-tip .tip-text { font-size: 14px; line-height: 17px; }
+}
+
+/* the pick (ADR 0006): two upgrades side by side, one tap takes one */
+.card.pick-card { padding: 12px 12px 14px; }
+.card.pick-card h2 { margin: 0 0 10px; font-size: 22px; }
+.pick-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn.pick { flex-direction: column; justify-content: flex-start; gap: 4px; width: 100%; min-width: 0; min-height: 150px; margin: 0; padding: 12px 8px; background: #e3d6b4; border-color: #b9a06a; color: var(--ink); box-shadow: 0 4px 0 #b9a06a; text-align: center; }
+.card.pick-card { animation: pick-in 0.22s ease-out; }
+.btn.pick b { font-size: 17px; line-height: 1.15; }
+.btn.pick small { font-weight: 600; font-size: 14px; line-height: 1.25; opacity: 0.85; }
+.btn.pick small.had { font-size: 12px; opacity: 0.6; }
+.btn.pick:active { transform: translateY(3px); box-shadow: 0 1px 0 #b9a06a; }
+@keyframes pick-in { from { opacity: 0; } to { opacity: 1; } }
+.perk-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--pine-2); border: 2px solid var(--brass-dim); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 2px; }
+.perk-icon::after { color: var(--gold); font-size: 24px; font-weight: 900; line-height: 1; }
+.perk-wagon::after { content: '+▭'; font-size: 19px; }
+.perk-speed::after { content: '»'; }
+.perk-output::after { content: '▲'; }
+.perk-loading::after { content: '⇅'; }
+.perk-track::after { content: '−%'; font-size: 18px; }
+.perk-train::after { content: '+1'; }
+.perk-cash::after { content: '¤'; }
+.perk-fair::after { content: '⌂'; }
+
+/* the wagons of a train being bought: fewer, the train drawn, more */
+.wagon-count { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 8px; }
+.wagon-count .round { width: 44px; height: 44px; font-size: 26px; font-weight: 800; }
+.carry-line { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 0 0 6px; }
+.carry-line .gi { width: 18px; height: 18px; }
+
+/* a town's growth point over it after a load: a small house and the points */
+.float.house { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 800; color: #ffe0a8; }
+.float.house .gi { width: 14px; height: 14px; }

@@ -5,14 +5,13 @@
  * routes, a year end, the result) and on taps: a line, a train, a site.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Cargo, EngineId, Good, Line, Load, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
-import { createState, siteById, siteAt, goodsOnMap, stationAt } from '../game/state';
-import { DT, freeSide, canExtend, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, setFullLoad, sellTrain, fillOf, storeCap, eatsPerMonth, growthOutlook, goalProgress, lineOf, buyers, moveTrain, buyCrew, canMove, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, farePay, visited, townEats, fareTargets, wantsPeople, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice, buySiding, buyCrane, craneSite, sidingAt, defaultConsist, consistCycle, stopSite, stopGood, stopS, wagonRoutes, wagonWaste, wasteWagons, WAGON_BACK } from '../game/sim';
-import { Orders } from './Orders';
+import type { EngineId, Good, Line, Load, PerkId, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
+import { createState, siteById, goodsOnMap, stationAt } from '../game/state';
+import { DT, step, buyTrain, undo, trainPrice, nextTrainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, sellTrain, fillOf, storeCap, growthOutlook, goalProgress, lineOf, buyers, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, lineTrackUpkeep, runningCostMinute, runPerTile, stopSite, lineGood, lineWagon, growNeed, growFrac, takePick, wagonsMax, dwellAt, held, perk, WAGON_BACK } from '../game/sim';
 import { HOUSES_PER_SIZE } from '../render/town';
-import { WAGON_GOODS, CRANE_GOODS, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, SIDING_LEN, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, YEAR_SECONDS, TOWN_MAX, TOWN_STORE_CAP, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, TOWN_MAX, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, PERK_MAX, PERK_SPEED, PERK_OUTPUT, PERK_LOADING, PERK_TRACK, PERK_FAIR, VARIETY_BONUS, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
-import { earthWord, gradeText, GRADE_COL, perYear, routeKm, tripsByEngine } from './routeinfo';
+import { earthWord, gradeText, GRADE_COL, perMin, routeKm, tripsByEngine } from './routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
 import { drawEngine, drawWagon } from '../render/draw2d';
 import { Input } from '../input/input';
@@ -21,11 +20,11 @@ import { tr, t as tt, num } from '../i18n';
 import { play, unlock, isMuted, setMuted } from '../audio';
 import { track } from '../track';
 import { saveStars } from '../results';
-import { YearEndCard } from './Ledger';
+import { LedgerCard } from './Ledger';
 import { townLacks } from '../game/advice';
 import { advice, adviceKey, type Advice } from '../game/advice';
-import { tipText, lineName, readGoalTowns, GoalStrip, untilText, type GoalTown } from './tips';
-import { GoodIcon, NONE_OF, WagonStrip, WagonPicker, CarryText } from './Wagons';
+import { tipText, lineName, readGoalTowns, GoalStrip, untilText } from './tips';
+import { GoodIcon, NONE_OF } from './Wagons';
 
 /** how much faster the clock runs while the fast button is on */
 const FAST = 3;
@@ -34,11 +33,11 @@ type Card =
   | { kind: 'line'; lineId: number; /** open scrolled to "Buy a train" */ buy?: boolean }
   | { kind: 'train'; trainId: number }
   | { kind: 'site'; siteId: string }
-  | { kind: 'choice'; options: Route[]; sx: number; sy: number; /** the lines the new stop could lengthen, each with the routes that do */ extend?: { lineId: number; options: Route[]; trainIds: number[] }[] }
-  | { kind: 'yearEnd' }
+  | { kind: 'choice'; options: Route[]; sx: number; sy: number }
   | { kind: 'result' }
   | { kind: 'pause' }
   | { kind: 'money' }
+  | { kind: 'ledger' }
   | { kind: 'goal' }
   | null;
 
@@ -47,11 +46,8 @@ interface Hud {
   month: number;
   cash: number;
   goal: number;
-  goalText: string;
-  /** the towns the goal rides on, for the chip */
-  towns: GoalTown[];
-  /** the contracts taken, for the second line of the goal area */
-  contracts: { id: number; site: string; good: Good; got: number; count: number; deadline: number }[];
+  /** the pick is on the table */
+  pick: boolean;
 }
 
 export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQuit: () => void; onAgain: () => void }) {
@@ -65,7 +61,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const [card, setCard] = useState<Card>(null);
   const [cancel, setCancel] = useState<{ x: number; y: number } | null>(null);
   const [paused, setPaused] = useState(false);
-  // the fast clock: a year in 30 s instead of 90, for the stretches where nothing needs the thumb
+  // the fast clock, for the stretches where nothing needs the thumb
   const [fast, setFast] = useState(false);
   const fastRef = useRef(false);
   fastRef.current = fast;
@@ -77,19 +73,9 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const [, bump] = useState(0);
   // pick mode, from the site card's "lay track from here": the site the track starts at or ends at
   const [lay, setLay] = useState<{ siteId: string } | null>(null);
-  // pick mode for a passing siding, from the line card: the line whose stretch glows
-  const [sidingPick, setSidingPick] = useState<{ lineId: number } | null>(null);
-  const placeSidingRef = useRef<(lineId: number, cell: number | null) => void>(() => {});
-  const endSidingRef = useRef<(placed: boolean, lineId?: number) => void>(() => {});
   const inputRef = useRef<Input | null>(null);
   const cardRef = useRef<Card>(null);
   cardRef.current = card;
-  // the year end opens the ledger only when the player is not in the middle of something
-  const [ledgerWaits, setLedgerWaits] = useState(false);
-  const ledgerWaitsRef = useRef(false);
-  ledgerWaitsRef.current = ledgerWaits;
-  const busyRef = useRef({ lay: false, siding: false });
-  busyRef.current = { lay: lay !== null, siding: sidingPick !== null };
   const pausedRef = useRef(false);
   pausedRef.current = paused || (card !== null && card.kind !== 'line' && card.kind !== 'train' && card.kind !== 'site');
 
@@ -100,50 +86,32 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     const params = new URLSearchParams(location.search);
     const speed = Math.max(0.25, Number(params.get('speed') ?? 1));
     const bot = params.get('bot') === '1' ? Bot.for(s) : null;
-    // ?ledger=2 with the bot: the year-end card opens at the second year end instead of the bot closing it (the pictures)
-    const holdLedger = Number(params.get('ledger') ?? 0);
-    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer2D; __pace?: number; __plan?: (a: number, b: number, ext?: number) => unknown; __act?: Record<string, unknown> };
+    const w = window as unknown as { __sim?: SimState; __input?: Input; __renderer?: Renderer2D; __pace?: number; __plan?: (a: number, b: number) => unknown; __act?: Record<string, unknown> };
     w.__sim = s;
     w.__renderer = renderer;
     w.__pace = speed;
-    w.__plan = (a, b, ext?: number) => {
-      const line = ext === undefined ? null : s.lines.find((l) => l.id === ext) ?? null;
-      return line ? plan(s, a, b, freeSide(s, line, a)).filter((r) => canExtend(s, r, line.id)) : plan(s, a, b);
-    };
+    w.__plan = (a, b) => plan(s, a, b);
     // the player's moves, for the scripts that set a scene up
-    w.__act = { plan: (a: number, b: number) => plan(s, a, b), build: (r: Route, ext?: number) => build(s, r, ext), buyTrain: (l: number, wg: WagonType | WagonType[], e: EngineId, n?: number) => buyTrain(s, l, wg, e, n), moveTrain: (t: number, l: number) => moveTrain(s, t, l), sellTrain: (t: number) => sellTrain(s, t), price: (e: EngineId, n: number) => trainPrice(e, n), ceiling: () => loanCeiling(s), buySiding: (l: number, cell?: number) => buySiding(s, l, cell), buyCrane: (st: number) => buyCrane(s, st), spotFree: (lineId: number, n: number) => { const l = s.lines.find((o) => o.id === lineId); const sp = l ? trainSpot(s, l, n) : null; return !!sp && !sp.parked; } };
+    w.__act = { plan: (a: number, b: number) => plan(s, a, b), build: (r: Route) => build(s, r), buyTrain: (l: number, e: EngineId, n?: number) => buyTrain(s, l, e, n), sellTrain: (t: number) => sellTrain(s, t), price: (e: EngineId, n: number) => trainPrice(e, n), ceiling: () => loanCeiling(s), takePick: (c: 0 | 1) => takePick(s, c) };
     renderer.onBuyLine = (lineId) => setCard({ kind: 'line', lineId, buy: true });
-    const input = new Input(
-      canvas,
-      s,
-      renderer,
-      {
-        onBuild: (line, sx, sy) => {
-          track('build', { scenario: scenario.id, cost: s.lastBuild?.cost ?? 0, bridge: s.lastBuild ? s.lastBuild.cells.filter((c) => s.water[c]).length : 0 });
-          setCancel({ x: sx, y: sy });
-          setCard({ kind: 'line', lineId: line.id });
-        },
-        onChoice: (options, sx, sy, extend) => setCard({ kind: 'choice', options, sx, sy, extend: extend ? extend.map((e) => ({ lineId: e.line.id, options: e.options, trainIds: e.trains.map((x) => x.id) })) : undefined }),
-        onLine: (line) => setCard({ kind: 'line', lineId: line.id }),
-        onTrain: (train) => {
-          renderer.follow(train);
-          setCard({ kind: 'train', trainId: train.id });
-        },
-        onSite: (site) => setCard({ kind: 'site', siteId: site.id }),
-        onGround: () => {
-          renderer.follow(null);
-          setCard((c) => (c && (c.kind === 'line' || c.kind === 'train' || c.kind === 'site') ? null : c));
-        },
-        onNote: (cell) => note(s, cell, tr('Ei rahaa', 'No cash')),
-        onAny: () => unlock(),
-        onLayEnd: (kept) => {
-          renderer.endPick(kept);
-          setLay(null);
-        },
-        onSiding: (lineId, cell) => placeSidingRef.current(lineId, cell),
-        onSidingEnd: () => endSidingRef.current(false),
+    const input = new Input(canvas, s, renderer, {
+      onBuild: (line, sx, sy) => {
+        track('build', { scenario: scenario.id, cost: s.lastBuild?.cost ?? 0, bridge: s.lastBuild ? s.lastBuild.cells.filter((c) => s.water[c]).length : 0 });
+        setCancel({ x: sx, y: sy });
+        setCard({ kind: 'line', lineId: line.id, buy: true });
       },
-    );
+      onChoice: (options, sx, sy) => setCard({ kind: 'choice', options, sx, sy }),
+      onLine: (line) => setCard({ kind: 'line', lineId: line.id }),
+      onTrain: (train) => setCard({ kind: 'train', trainId: train.id }),
+      onSite: (site) => setCard({ kind: 'site', siteId: site.id }),
+      onGround: () => setCard((c) => (c && (c.kind === 'line' || c.kind === 'train' || c.kind === 'site') ? null : c)),
+      onNote: (cell) => note(s, cell, tr('Ei rahaa', 'No cash')),
+      onAny: () => unlock(),
+      onLayEnd: (kept) => {
+        renderer.endPick(kept);
+        setLay(null);
+      },
+    });
     inputRef.current = input;
     w.__input = input;
     track('scenario_start', { scenario: scenario.id });
@@ -156,13 +124,13 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     let raf = 0;
     // twice a second: the advice, the tip held on screen for 8 s, and the marker on the map
     const refreshTip = (now: number) => {
-      const held = tipRef.current;
-      const list = tipOff.current === s.year || s.result || s.yearEnd ? [] : advice(s);
-      let next = held;
-      if (held.adv && list.some((a) => adviceKey(a) === held.key)) next = held;
-      else if (held.adv) next = { adv: null, key: '', at: held.at };
+      const was = tipRef.current;
+      const list = tipOff.current === s.year || s.result || s.pick ? [] : advice(s);
+      let next = was;
+      if (was.adv && list.some((a) => adviceKey(a) === was.key)) next = was;
+      else if (was.adv) next = { adv: null, key: '', at: was.at };
       if (!next.adv && list.length && now - next.at >= 8000) next = { adv: list[0], key: adviceKey(list[0]), at: now };
-      if (next !== held) {
+      if (next !== was) {
         tipRef.current = next;
         setTip(next.adv);
       }
@@ -173,41 +141,35 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       const real = Math.min(0.1, (now - last) / 1000);
       last = now;
       // window.__freeze holds the sim for the picture scripts, with the frame still drawn
-      if (!pausedRef.current && !s.yearEnd && !s.result && !(window as unknown as { __freeze?: boolean }).__freeze) {
+      if (bot && s.pick) bot.act(s);
+      if (!pausedRef.current && !held(s) && !(window as unknown as { __freeze?: boolean }).__freeze) {
         acc += real * speed * (fastRef.current ? FAST : 1);
         let n = 0;
         while (acc >= DT && n < 30 * FAST) {
-          if (bot && !(holdLedger > 0 && s.yearEnd && s.history.length >= holdLedger)) bot.act(s);
+          if (bot) bot.act(s);
           step(s);
           acc -= DT;
           n++;
+          if (held(s)) break;
         }
       }
-      // the sim's own stops open their cards
+      if (held(s)) acc = 0;
       if (s.result && cardRef.current?.kind !== 'result') {
         saveStars(scenario.id, s.result.stars);
-        track('scenario_end', { scenario: scenario.id, won: s.result.won, year: s.result.year, cash: s.result.cash, worth: s.result.worth, stars: s.result.stars, reason: s.result.reason });
+        track('scenario_end', { scenario: scenario.id, won: s.result.won, year: s.result.year, cash: s.result.cash, worth: s.result.worth, stars: s.result.stars, reason: s.result.reason, seconds: Math.round(s.result.time) });
         setCard({ kind: 'result' });
-      } else if (s.yearEnd && !s.result && cardRef.current?.kind !== 'yearEnd') {
-        // a held drag, a pick mode and any card the player opened come first: the ledger waits until they are done
-        const kind = cardRef.current?.kind;
-        const busy = !!input.drag || busyRef.current.lay || busyRef.current.siding || (kind !== undefined && kind !== 'result');
-        if (bot && !(holdLedger > 0 && s.history.length >= holdLedger)) bot.act(s);
-        else if (busy) setLedgerWaits((x) => (x ? x : true));
-        else setCard({ kind: 'yearEnd' });
       }
-      if (ledgerWaitsRef.current && (!s.yearEnd || cardRef.current?.kind === 'yearEnd')) setLedgerWaits(false);
       for (const name of s.sounds) play(name);
       s.sounds.length = 0;
       if (!s.lastBuild) setCancel((c) => (c ? null : c));
       const c = cardRef.current;
       input.update(real);
-      renderer.draw(real * speed, input.drag, hint, c?.kind === 'choice' ? (c.extend ? [...c.extend.flatMap((e) => e.options), ...c.options] : c.options) : null);
+      renderer.draw(held(s) ? 0 : real * speed, input.drag, hint, c?.kind === 'choice' ? c.options : null);
       if (frame % 30 === 0) refreshTip(now);
       if (++frame % 6 === 0) {
         setHud(readHud(s));
         // the open card's numbers follow the sim
-        if (c && (c.kind === 'line' || c.kind === 'train' || c.kind === 'site')) bump((x) => x + 1);
+        if (c && (c.kind === 'line' || c.kind === 'train' || c.kind === 'site' || c.kind === 'goal')) bump((x) => x + 1);
       }
     };
     raf = requestAnimationFrame(tick);
@@ -244,28 +206,6 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
     }
   }, [card, lay]);
 
-  // the passing siding's pick mode: the line's green stretch, a tap or the best place buys it
-  const beginSidingPick = (lineId: number) => {
-    setCard(null);
-    setSidingPick({ lineId });
-    rendRef.current?.beginSidingPick(lineId);
-    if (inputRef.current) inputRef.current.siding = { lineId };
-  };
-  endSidingRef.current = (placed, lineId) => {
-    rendRef.current?.endPick(placed);
-    if (inputRef.current) inputRef.current.siding = null;
-    setSidingPick(null);
-    if (lineId !== undefined) setCard({ kind: 'line', lineId });
-  };
-  const placeSiding = (lineId: number, cell: number | null) => {
-    if (buySiding(s, lineId, cell ?? undefined)) {
-      track('siding', { scenario: scenario.id });
-      endSidingRef.current(true, lineId);
-    }
-  };
-  placeSidingRef.current = placeSiding;
-  const endSidingPick = (placed: boolean) => endSidingRef.current(placed, sidingPick?.lineId);
-
   const goal = scenario.goal;
   const close = () => setCard(null);
   const line = card?.kind === 'line' ? s.lines.find((l) => l.id === card.lineId) ?? null : null;
@@ -273,7 +213,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   const site = card?.kind === 'site' ? s.sites.find((x) => x.id === card.siteId) ?? null : null;
 
   return (
-    <div className={`game${ledgerWaits ? ' ledger-waits' : ''}`}>
+    <div className="game">
       <canvas ref={canvasRef} />
       <div className="map-overlay" ref={overlayRef} />
       <GoodIcons />
@@ -294,65 +234,37 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           <svg viewBox="0 0 24 24" className="glyph"><rect x="6" y="5" width="4" height="14" fill="currentColor" /><rect x="14" y="5" width="4" height="14" fill="currentColor" /></svg>
         </button>
         <div className="hud-sub">
-        <GoalStrip s={s} onOpen={() => setCard({ kind: 'goal' })} />
-        {tip && (
-          <div className="hud-tip" data-sec="tip" data-tip={tip.kind} data-lengthen={lineSiteIds(s, tip.lengthen)}>
-            <button
-              className="tip-text"
-              data-act="tip"
-              onClick={() => {
-                rendRef.current?.panToSite(tip.site);
-                // a line with no train: the tip opens the line card at "Buy a train"
-                setCard(tip.kind === 'idle-line' && tip.onLine !== undefined ? { kind: 'line', lineId: tip.onLine, buy: true } : { kind: 'site', siteId: tip.site });
-              }}
-            >
-              <b>!</b>
-              <span>{tipText(s, tip)}</span>
-            </button>
-            <button
-              className="tip-x"
-              data-act="tip-hide"
-              aria-label={tr('Piilota vihjeet tämän vuoden ajaksi', 'Hide tips for the rest of the year')}
-              onClick={() => {
-                tipOff.current = s.year;
-                tipRef.current = { adv: null, key: '', at: tipRef.current.at };
-                setTip(null);
-                if (rendRef.current) rendRef.current.advice = null;
-              }}
-            >
-              ×
-            </button>
-          </div>
-        )}
-        {hud.contracts.length > 0 && (
-          <div className="hud-contracts" data-sec="hud-contracts">
-            {hud.contracts.map((c) => (
-              <span key={c.id} className="ct" data-contract={c.id}>
-                <GoodIcon good={c.good} />
-                <span className="who">{tt(siteById(s, c.site).name)}</span>
-                <b>{c.got}/{c.count}</b>
-                <small>{c.deadline}</small>
-              </span>
-            ))}
-          </div>
-        )}
+          <GoalStrip s={s} onOpen={() => setCard({ kind: 'goal' })} />
+          {tip && (
+            <div className="hud-tip" data-sec="tip" data-tip={tip.kind}>
+              <button
+                className="tip-text"
+                data-act="tip"
+                onClick={() => {
+                  // a line with no train, or goods waiting on a line: the tip opens the line card at "Buy a train"
+                  setCard((tip.kind === 'idle-line' || tip.kind === 'more') && tip.onLine !== undefined ? { kind: 'line', lineId: tip.onLine, buy: true } : { kind: 'site', siteId: tip.site });
+                }}
+              >
+                <b>!</b>
+                <span>{tipText(s, tip)}</span>
+              </button>
+              <button
+                className="tip-x"
+                data-act="tip-hide"
+                aria-label={tr('Piilota vihjeet tämän vuoden ajaksi', 'Hide tips for the rest of the year')}
+                onClick={() => {
+                  tipOff.current = s.year;
+                  tipRef.current = { adv: null, key: '', at: tipRef.current.at };
+                  setTip(null);
+                  if (rendRef.current) rendRef.current.advice = null;
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
       </div>
-      {ledgerWaits && (
-        <button
-          className={`yearend-pill${lay || sidingPick ? ' low' : ''}`}
-          data-ui
-          data-sec="yearend-pill"
-          onClick={() => {
-            // the player is done: close what is open, and the loop opens the ledger
-            setLay(null);
-            setSidingPick(null);
-            setCard(null);
-          }}
-        >
-          {tr('Vuosi päättyi: napauta tilinpäätökseen', 'Year ended: tap for the ledger')}
-        </button>
-      )}
       {lay && (
         <div className="pick-banner" data-ui>
           <span>{stationAt(s, idx(s, siteById(s, lay.siteId).cx, siteById(s, lay.siteId).cy)) ? tr('Napauta, minne rata menee', 'Tap where the track goes') : tr('Napauta asema, josta rata alkaa', 'Tap the station the track starts from')}</span>
@@ -368,33 +280,17 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           </button>
         </div>
       )}
-      {sidingPick && (
-        <div className="pick-banner" data-ui data-sec="siding-banner">
-          <span>{tr('Napauta vihreää osaa', 'Tap the green part')}</span>
-          <button className="btn" data-act="siding-best" onClick={() => placeSiding(sidingPick.lineId, null)}>
-            {tr('Paras paikka', 'Best place')}
-          </button>
-          <button className="btn" data-act="siding-cancel" onClick={() => endSidingPick(false)}>
-            {tr('Peru', 'Cancel')}
-          </button>
-        </div>
-      )}
-      {card === null && !paused && (
+      {card === null && !paused && !hud.pick && (
         <div className="zoom" data-ui>
           <button className={`round fast${fast ? ' on' : ''}`} aria-label={fast ? tr('Normaali nopeus', 'Normal speed') : tr('Nopeammin', 'Faster')} aria-pressed={fast} data-act="fast" onClick={() => setFast((f) => !f)}>
             <svg viewBox="0 0 24 24" className="glyph"><path d="M4 6 L11 12 L4 18 Z M12 6 L19 12 L12 18 Z" fill="currentColor" /></svg>
-          </button>
-          <button className="round" aria-label={tr('Lähemmäs', 'Zoom in')} data-zoom="in" onClick={() => rendRef.current?.zoomStep(1)}>
-            +
-          </button>
-          <button className="round" aria-label={tr('Kauemmas', 'Zoom out')} data-zoom="out" onClick={() => rendRef.current?.zoomStep(-1)}>
-            −
           </button>
         </div>
       )}
       {cancel && s.lastBuild && (
         <button
           className="btn cancel"
+          data-act="undo"
           style={{ left: Math.min(window.innerWidth - 70, Math.max(70, cancel.x)), top: Math.max(100, cancel.y - 70) }}
           onClick={() => {
             if (undo(s)) {
@@ -410,17 +306,16 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         <ChoiceCard
           s={s}
           options={card.options}
-          extend={card.extend ? card.extend.map((e) => ({ line: s.lines.find((l) => l.id === e.lineId)!, options: e.options, trains: e.trainIds.map((id) => s.trains.find((x) => x.id === id)).filter((x): x is Train => !!x) })) : undefined}
-          onPick={(r, extendId) => {
+          onPick={(r) => {
             if (r.cost > s.cash) {
               note(s, r.cells[r.cells.length - 1], tr('Ei rahaa', 'No cash'));
               return;
             }
-            const l = build(s, r, extendId);
+            const l = build(s, r);
             if (l) {
-              track('build', { scenario: scenario.id, cost: r.cost, bridge: r.bridge.length, cutting: r.cutting.length, mode: r.mode, extend: extendId !== undefined });
+              track('build', { scenario: scenario.id, cost: r.cost, bridge: r.bridge.length, cutting: r.cutting.length, mode: r.mode });
               setCancel({ x: card.sx, y: card.sy });
-              setCard({ kind: 'line', lineId: l.id });
+              setCard({ kind: 'line', lineId: l.id, buy: true });
             }
           }}
           onClose={close}
@@ -432,16 +327,15 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           s={s}
           line={line}
           toBuy={card?.kind === 'line' && !!card.buy}
-          onBuy={(wagons, engine) => {
-            const t = buyTrain(s, line.id, wagons, engine);
+          onBuy={(n, engine) => {
+            const t = buyTrain(s, line.id, engine, n);
             if (t) {
-              track('train', { scenario: scenario.id, wagons: wagons.join(), engine, count: wagons.length });
+              track('train', { scenario: scenario.id, engine, count: n });
               setCancel(null);
               setCard(null);
             }
           }}
           onTrain={(t) => setCard({ kind: 'train', trainId: t.id })}
-          onSiding={() => beginSidingPick(line.id)}
           onLift={() => {
             if (liftLine(s, line.id)) {
               track('lift', { scenario: scenario.id });
@@ -465,18 +359,19 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
           onBuyLine={(lineId) => setCard({ kind: 'line', lineId, buy: true })}
         />
       )}
-      {card?.kind === 'yearEnd' && s.yearEnd && (
-        <YearEndCard
+      {hud.pick && s.pick && !s.result && (
+        <PickCard
           s={s}
-          onChoose={(take) => {
-            track('year_end', { scenario: scenario.id, year: s.yearEnd?.year ?? 0, profit: s.yearEnd?.profit ?? 0, contract: s.offer ? (take ? 'taken' : 'skipped') : 'none' });
-            closeYearEnd(s, take);
-            setCard(null);
+          onPick={(c) => {
+            track('pick', { scenario: scenario.id, n: s.pick?.n ?? 0, took: s.pick?.options[c] ?? '', left: s.pick?.options[1 - c] ?? '' });
+            takePick(s, c);
+            setHud(readHud(s));
           }}
         />
       )}
       {card?.kind === 'result' && s.result && <ResultCard s={s} onAgain={onAgain} onQuit={onQuit} />}
-      {card?.kind === 'money' && <MoneyCard s={s} onClose={close} />}
+      {card?.kind === 'money' && <MoneyCard s={s} onClose={close} onLedger={() => setCard({ kind: 'ledger' })} />}
+      {card?.kind === 'ledger' && s.lastYear && <LedgerCard s={s} onClose={close} />}
       {card?.kind === 'goal' && <GoalCard s={s} onClose={close} />}
       {card?.kind === 'pause' && (
         <div className="card overlay">
@@ -514,15 +409,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
 }
 
 function readHud(s: SimState): Hud {
-  const goal = s.scenario.goal;
-  const towns = s.sites.filter((x) => x.kind === 'town');
-  const goalText = goal.kind === 'deliver' ? `${s.goalCount}/${goal.count}` : `${Math.min(goal.count, towns.filter((x) => x.size >= goal.size).length)}/${goal.count}`;
-  return { year: s.year, month: s.month, cash: Math.floor(s.cash), goal: goalProgress(s), goalText, towns: readGoalTowns(s), contracts: s.contracts.map((c) => ({ id: c.id, site: c.site, good: c.good, got: c.got, count: c.count, deadline: c.deadline })) };
-}
-
-/** the site whose station stands at a cell */
-function siteOfCell(s: SimState, cell: number): Site {
-  return siteById(s, s.stations.find((x) => x.cell === cell)!.siteId);
+  return { year: s.year, month: s.month, cash: Math.floor(s.cash), goal: goalProgress(s), pick: !!s.pick };
 }
 
 function CardHead({ title, onClose }: { title: React.ReactNode; onClose: () => void }) {
@@ -536,72 +423,38 @@ function CardHead({ title, onClose }: { title: React.ReactNode; onClose: () => v
   );
 }
 
-/** the site ids of a line's stops in order, comma separated, for the scripts; undefined when there is no such line */
-function lineSiteIds(s: SimState, lineId: number | undefined): string | undefined {
-  const line = lineId === undefined ? undefined : s.lines.find((l) => l.id === lineId);
-  return line ? line.stops.map((_, i) => stopSite(s, line, i).id).join(',') : undefined;
-}
-
 /**
- * The lift of a drag. Two routes to the same place: the cheap one and the short one, with what each
- * costs and runs. When the drag starts at the end of a line that has room for a stop, the card also
- * asks whether the new stop lengthens that line or starts a new one, and each way shows its own route.
+ * The lift of a drag, when the two ways differ: the cheap one and the short one, which costs more and
+ * runs faster, with what each costs and runs.
  */
-function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; options: Route[]; extend?: { line: Line; options: Route[]; trains: Train[] }[]; onPick: (r: Route, extendId?: number) => void; onClose: () => void }) {
+function ChoiceCard({ s, options, onPick, onClose }: { s: SimState; options: Route[]; onPick: (r: Route) => void; onClose: () => void }) {
   const name = (r: Route) => (r.bridge.length ? tr('Silta', 'Bridge') : r.cutting.length ? tr('Leikkaus', 'Cutting') : r.mode === 'cheap' ? tr('Kierto', 'Around') : tr('Suora', 'Direct'));
-  const target = siteAt(s, options[0].cells[options[0].cells.length - 1]);
-  const groups: { key: string; label: string | null; routes: Route[]; from: number; extendId?: number; trains?: Train[] }[] = [];
-  if (extend) {
-    // a new line comes first and is the plain way; lengthening is a deliberate second choice and says which trains it sends on
-    groups.push({ key: 'new', label: tr('Uusi rata', 'New line'), routes: options, from: 0 });
-    let from = options.length;
-    for (const e of extend) {
-      groups.push({ key: `extend-${e.line.id}`, label: tr(`Jatka rataa ${lineName(s, e.line)} → ${tt(target!.name)}`, `Lengthen ${lineName(s, e.line)} to ${tt(target!.name)}`), routes: e.options, from, extendId: e.line.id, trains: e.trains });
-      from += e.options.length;
-    }
-  } else groups.push({ key: 'way', label: null, routes: options, from: 0 });
   return (
     <div className="card sheet choice-card" data-ui>
-      <CardHead title={extend ? tt(target!.name) : tr('Kumpaa kautta?', 'Which way?')} onClose={onClose} />
-      {groups.map((g) => (
-        <div key={g.key} className="grp" data-group={g.key}>
-          {g.label && <div className="buy-label">{g.label}</div>}
-          {g.trains && (
-            <p className="small" data-sec="run-on">
-              {tr(`Nämä junat ajavat jatkossa ${tt(target!.name)} asti: `, `These trains will now run on to ${tt(target!.name)}: `)}
-              {g.trains.map((x) => `${tt(ENGINES[x.engine].name)} (${[...new Set(x.wagons.map((w) => tt(WAGON_NAME[w])))].join(', ')})`).join('; ')}
-            </p>
-          )}
-          <div className="routes">
-            {g.routes.map((r, k) => {
-              const earth = earthWord(r);
-              const i = g.from + k;
-              return (
-                <button key={r.mode} className="btn route" data-route={r.mode} data-group-route={g.key} disabled={r.cost > s.cash} style={{ borderColor: OPTION_COLOUR[i] }} onClick={() => onPick(r, g.extendId)}>
-                  <span className="swatch" style={{ background: OPTION_COLOUR[i] }} />
-                  <span className="name">{g.label && g.routes.length === 1 ? tr('Rakenna', 'Build') : name(r)}</span>
-                  <span className="cost num">{r.cost}</span>
-                  <small>
-                    {routeKm(r)} km · <b style={{ color: GRADE_COL(r.worst) }}>{r.worst < 1 ? '' : '▲ '}{gradeText(r)}</b>
-                    {earth ? ` · ${earth.text}` : ''}
-                  </small>
-                  {tripsByEngine(s, r).map((x) => (
-                    <small key={x.engine} className="trips">
-                      <i className={`pic eng${x.engine === 'jyry' ? ' strong' : ''}`} />
-                      {tt(ENGINES[x.engine].name).replace(/^(Little |Pikku-)/, '')} {perYear(x.trips)}
-                    </small>
-                  ))}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      <p className="small">
-        {extend
-          ? tr('Jatkettu rata on yksi rata: juna ajaa päästä päähän ja pysähtyy välissä purkamaan ja lastaamaan.', 'A lengthened line is one line: the train runs end to end and stops in the middle to unload and load.')
-          : tr('Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt veturi ryömii.', 'A short line makes more trips a year. On a steep climb the light engine crawls.')}
-      </p>
+      <CardHead title={tr('Kumpaa kautta?', 'Which way?')} onClose={onClose} />
+      <div className="routes">
+        {options.map((r, i) => {
+          const earth = earthWord(r);
+          return (
+            <button key={r.mode} className="btn route" data-route={r.mode} disabled={r.cost > s.cash} style={{ borderColor: OPTION_COLOUR[i] }} onClick={() => onPick(r)}>
+              <span className="swatch" style={{ background: OPTION_COLOUR[i] }} />
+              <span className="name">{r.mode === 'cheap' ? tr('Halvin', 'Cheapest') : tr('Nopein', 'Fastest')}: {name(r)}</span>
+              <span className="cost num">{r.cost}</span>
+              <small>
+                {routeKm(r)} km · <b style={{ color: GRADE_COL(r.worst) }}>{r.worst < 1 ? '' : '▲ '}{gradeText(r)}</b>
+                {earth ? ` · ${earth.text}` : ''}
+              </small>
+              {tripsByEngine(s, r).map((x) => (
+                <small key={x.engine} className="trips">
+                  <i className={`pic eng${x.engine === 'jyry' ? ' strong' : ''}`} />
+                  {tt(ENGINES[x.engine].name).replace(/^(Little |Pikku-)/, '')} {perMin(x.trips)}
+                </small>
+              ))}
+            </button>
+          );
+        })}
+      </div>
+      <p className="small">{tr('Lyhyt rata tekee enemmän matkoja minuutissa. Jyrkässä nousussa kevyt veturi ryömii.', 'A short line makes more trips a minute. On a steep climb the light engine crawls.')}</p>
     </div>
   );
 }
@@ -641,45 +494,13 @@ function Consist({ engine, wagons, loads }: { engine: EngineId; wagons: WagonTyp
   return <canvas ref={ref} className="consist" style={{ width: w, height: Math.ceil(S * 0.9) }} />;
 }
 
-/** the goods a consist carries on a line, each once, with the pay of one load now and the stops it runs between */
-function consistPays(s: SimState, line: Line, wagons: WagonType[]): { good: Cargo; from: Site; to: Site; pays: number }[] {
-  const out: { good: Cargo; from: Site; to: Site; pays: number }[] = [];
-  for (const w of new Set(wagons))
-    for (const r of wagonRoutes(s, line, w)) {
-      if (out.some((o) => o.good === r.good)) continue;
-      const to = stopSite(s, line, r.to);
-      const dist = Math.abs(stopS(line, r.to) - stopS(line, r.from));
-      out.push({ good: r.good, from: stopSite(s, line, r.from), to, pays: r.good === 'pax' || r.good === 'mail' ? farePay(r.good, dist, 0) : price(s, r.good, to.id, dist) });
-    }
-  return out;
-}
-
-/** the stops of a line in order with arrows, each with the good that moves there */
-function StopsRow({ s, line }: { s: SimState; line: Line }) {
-  return (
-    <div className="stops-row" data-sec="stops">
-      {line.stops.map((_, i) => {
-        const good = stopGood(s, line, i);
-        return (
-          <span key={i} className="stop" data-stop={i}>
-            {i > 0 && <b className="arrow">→</b>}
-            {tt(stopSite(s, line, i).name)}
-            {good && <GoodIcon good={good} />}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 /** a signed money figure for the cards: + or the true minus */
 const signed = (n: number): string => {
   const r = Math.round(n);
   return `${r >= 0 ? '+' : '−'}${num(Math.abs(r))}`;
 };
 
-/** the money card: cash, the loan against its ceiling, net worth, and the two buttons */
-/** the goal in full: each town, its size, its growth meter and what it lacks right now, and the year limit */
+/** the goal in full: each town, its size, its growth to the next size and what would speed it, and the year limit */
 function GoalCard({ s, onClose }: { s: SimState; onClose: () => void }) {
   const goal = s.scenario.goal;
   const chosen = new Set(readGoalTowns(s).map((x) => x.id));
@@ -697,41 +518,42 @@ function GoalCard({ s, onClose }: { s: SimState; onClose: () => void }) {
         towns.map((x) => {
           const lacks = townLacks(s, x);
           const done = x.size >= goal.size;
+          const out = growthOutlook(s, x);
           return (
             <div key={x.id} className={`goal-town${chosen.has(x.id) ? ' on' : ''}${done ? ' done' : ''}`} data-goal-card-town={x.id}>
               <div className="gtn">
                 <b>{tt(x.name)}</b>
                 <span className="num">{done ? '✓' : `${x.size}→${goal.size}`}</span>
               </div>
-              <div className="gm" aria-label={tr('Kasvumittari', 'Growth meter')}>
-                <i style={{ width: `${Math.round(100 * (x.size >= TOWN_MAX ? 1 : x.growth))}%` }} />
+              <div className="gm" aria-label={tr('Kasvu', 'Growth')}>
+                <i style={{ width: `${Math.round(100 * (x.size >= TOWN_MAX ? 1 : growFrac(x)))}%` }} />
               </div>
               <div className="gl">
                 {x.size >= TOWN_MAX || done ? (
                   <small>{tr('Valmis', 'Done')}</small>
-                ) : lacks.length ? (
+                ) : (
                   <>
-                    <small>{tr('Puuttuu', 'Lacks')}</small>
+                    <small>{tr(`${out.loads} kuormaa kokoon ${x.size + 1}`, `${out.loads} loads to size ${x.size + 1}`)}</small>
                     {lacks.map((g) => (
                       <span key={g} className="lack">
                         <GoodIcon good={g} />
-                        {tr(NONE_OF[g][0], NONE_OF[g][1])}
+                        {tr(`+${Math.round(VARIETY_BONUS * 100)} % ${NONE_OF[g][0]} kanssa`, `+${Math.round(VARIETY_BONUS * 100)} % with ${NONE_OF[g][1]}`)}
                       </span>
                     ))}
                   </>
-                ) : (
-                  <small>{tr('Kaikkea on, kasvaa', 'Has what it needs, growing')}</small>
                 )}
               </div>
             </div>
           );
         })
       )}
+      <p className="small">{tr('Jokainen kuorma kasvattaa kaupunkia. Kun kaupunki saa molempia tavaroita puolen minuutin sisällä, kuorma kasvattaa enemmän.', 'Every load grows the town. A load counts more when the town got both goods within half a minute.')}</p>
     </div>
   );
 }
 
-function MoneyCard({ s, onClose }: { s: SimState; onClose: () => void }) {
+/** the money card: cash, the loan against its ceiling, net worth, the two buttons and the ledger */
+function MoneyCard({ s, onClose, onLedger }: { s: SimState; onClose: () => void; onLedger: () => void }) {
   const ceiling = loanCeiling(s);
   const worth = netWorth(s);
   const running = s.upkeep + s.trackUp;
@@ -776,49 +598,91 @@ function MoneyCard({ s, onClose }: { s: SimState; onClose: () => void }) {
           <span>{tr('Maksa takaisin', 'Repay')} {Math.min(LOAN_STEP, Math.max(0, Math.round(s.loan)))}</span>
           <small>{tr('lainaa jää', 'left')} {num(Math.max(0, s.loan - LOAN_STEP))}</small>
         </button>
+        {s.lastYear && (
+          <button className="btn act" data-act="ledger" onClick={onLedger}>
+            <span>{tr('Tilinpäätös', 'Ledger')} {s.lastYear.year}</span>
+            <small>{tr('tulos', 'profit')} {num(s.lastYear.profit)}</small>
+          </button>
+        )}
       </div>
-      <p className="small">{tr('Kassa voi painua miinukselle vain ajokuluista. Kaksi vuodenvaihdetta peräkkäin miinuksella ja laina täynnä on konkurssi.', 'Cash can dip below zero only through running costs. Two year ends in a row below zero with the loan full is bankruptcy.')}</p>
+      <p className="small">{tr('Kaksi vuodenvaihdetta peräkkäin miinuksella ja laina täynnä on konkurssi.', 'Two year ends in a row below zero with the loan full is bankruptcy.')}</p>
     </div>
   );
 }
 
-/** why a train that adds nothing adds nothing, in a line */
-function limitText(limit: 'free' | 'block' | 'platform' | 'parked', at: string): string {
-  if (limit === 'parked' || limit === 'platform') return tr(`+0 matkaa: osta toinen laituri asemalle ${at}`, `+0 trips: buy a second platform at ${at}`);
-  if (limit === 'block') return tr('Rataosuudella ajaa vain yksi juna kerrallaan: junat jonottavat.', 'Only one train runs a stretch at a time: trains queue.');
-  return '';
+/** what one upgrade does, as a title and one line, in the player's language */
+function perkText(s: SimState, id: PerkId, cash: number): { title: string; line: string } {
+  const pct = (x: number) => `${Math.round(x * 100)} %`;
+  switch (id) {
+    case 'wagon':
+      return { title: tr('Pidemmät junat', 'Longer trains'), line: tr('Jokainen juna saa ilmaisen vaunun.', 'Every train gets a free wagon.') };
+    case 'speed':
+      return { title: tr('Paremmat veturit', 'Better engines'), line: tr(`Kaikki junat ajavat ${pct(PERK_SPEED)} nopeammin.`, `Every train runs ${pct(PERK_SPEED)} faster.`) };
+    case 'output':
+      return { title: tr('Lisää hakkuita ja peltoa', 'More felling and fields'), line: tr(`Metsät ja tilat tuottavat ${pct(PERK_OUTPUT)} enemmän.`, `Forests and farms make ${pct(PERK_OUTPUT)} more.`) };
+    case 'loading':
+      return { title: tr('Lastausväki', 'Loading crews'), line: tr(`Lastaus ja purku ${pct(PERK_LOADING)} nopeampaa kaikilla asemilla.`, `Loading and unloading ${pct(PERK_LOADING)} faster at every station.`) };
+    case 'track':
+      return { title: tr('Ratamestari', 'Track foreman'), line: tr(`Uusi rata ja sillat ${pct(PERK_TRACK)} halvemmalla.`, `New track and bridges cost ${pct(PERK_TRACK)} less.`) };
+    case 'train':
+      return { title: tr('Ilmainen juna', 'A free train'), line: tr('Seuraava juna ei maksa mitään.', 'Your next train costs nothing.') };
+    case 'cash':
+      return { title: tr('Pankkilaina ilman korkoa', 'A grant'), line: tr(`${cash} kassaan nyt.`, `${cash} cash now.`) };
+    case 'fair':
+      return { title: tr('Markkinat', 'Market days'), line: tr(`Jokainen kuorma kasvattaa kaupunkia ${pct(PERK_FAIR)} enemmän.`, `Every load grows the towns ${pct(PERK_FAIR)} more.`) };
+  }
+  void s;
+}
+
+/** the pick: the game holds, two upgrades side by side, one tap takes one (ADR 0006) */
+function PickCard({ s, onPick }: { s: SimState; onPick: (c: 0 | 1) => void }) {
+  const p = s.pick!;
+  return (
+    <div className="card overlay pick-card" data-ui data-sec="pick" data-pick={p.n}>
+      <h2>{tr('Valitse yksi', 'Pick one')}</h2>
+      <div className="pick-options">
+        {p.options.map((id, i) => {
+          const t = perkText(s, id, p.cash);
+          const n = perk(s, id);
+          return (
+            <button key={id} className="btn pick" data-act={`pick-${i}`} data-perk={id} onClick={() => onPick(i as 0 | 1)}>
+              <span className={`perk-icon perk-${id}`} aria-hidden />
+              <b>{t.title}</b>
+              <small>{t.line}</small>
+              {PERK_MAX[id] > 1 && PERK_MAX[id] < 9 && n > 0 && <small className="had">{tr(`otettu ${n}/${PERK_MAX[id]}`, `taken ${n}/${PERK_MAX[id]}`)}</small>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /**
- * The line card: the line's stops in order, its trains, what it earned and cost this year and its net,
- * lifting it when no train runs on it, and the buy card: the engine (each with its price, upkeep and the
- * trips a year it makes), the consist built wagon by wagon (tap a type to add one, tap a wagon in the
- * strip to take it off), what each type carries on this line, what one more train adds to the line, its
- * running cost and the price.
+ * The line card: the line's stops, what it carries, its trains, what it earned and cost this year, lifting
+ * it when no train runs on it, and the buy section: the engine (each with its price and the trips a minute
+ * it makes here), the wagons, what one more train adds to the line and the price.
  */
-function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }: { s: SimState; line: Line; toBuy?: boolean; onBuy: (w: WagonType[], e: EngineId) => void; onTrain: (t: Train) => void; onSiding: () => void; onLift: () => void; onClose: () => void }) {
-  const [consist, setConsist] = useState<WagonType[]>(() => defaultConsist(s, line));
-  const count = consist.length;
-  // the faster engine on this line is the one that makes more trips a year
-  const [engine, setEngineId] = useState<EngineId>(() => [...s.scenario.engines].sort((x, y) => lineYear(s, line, { engine: y, wagons: consist }).trips - lineYear(s, line, { engine: x, wagons: consist }).trips)[0]);
-  const cost = trainPrice(engine, count);
+function LineCard({ s, line, toBuy, onBuy, onTrain, onLift, onClose }: { s: SimState; line: Line; toBuy?: boolean; onBuy: (n: number, e: EngineId) => void; onTrain: (t: Train) => void; onLift: () => void; onClose: () => void }) {
+  const [count, setCount] = useState(WAGONS_DEFAULT);
+  // the faster engine on this line is the one that moves more loads
+  const [engine, setEngineId] = useState<EngineId>(() => [...s.scenario.engines].sort((x, y) => lineYear(s, line, { engine: y, wagons: WAGONS_DEFAULT }).loads - lineYear(s, line, { engine: x, wagons: WAGONS_DEFAULT }).loads)[0]);
+  const cost = nextTrainPrice(s, engine, count);
   const trains = s.trains.filter((t) => t.lineId === line.id);
-  const spot = trainSpot(s, line, count);
-  const can = !!spot && cost <= s.cash && count > 0;
-  const pays = consistPays(s, line, consist);
+  const can = cost <= s.cash;
+  const g = lineGood(s, line);
+  const pays = g ? price(s, g.good, stopSite(s, line, g.to).id, line.dist[line.dist.length - 1]) : 0;
   // what the line does now, and with this train on it
   const now = lineYear(s, line);
-  const withIt = lineYear(s, line, { engine, wagons: consist });
-  const added = withIt.trips - now.trips;
-  const mine = withIt.each[withIt.each.length - 1];
-  const runs = runningCostYear(line, engine, count, mine);
-  // the line's money this year so far
+  const withIt = lineYear(s, line, { engine, wagons: count });
+  const added = withIt.loads - now.loads;
+  const runs = runningCostMinute(line, engine, count, withIt.each[withIt.each.length - 1]);
   const earned = line.earnedYear;
   const trackCost = lineTrackUpkeep(s, line) * s.yearFrac;
   const net = earned - line.runYear - trackCost;
-  const wastes = consist.filter((w) => wagonWaste(s, line, w)).length;
   const lift = trains.length === 0;
-  // opened from a "buy a train" button or tip: the list starts at the Buy a train heading
+  const max = wagonsMax(s);
+  const wagon = lineWagon(s, line);
   const scrollRef = useRef<HTMLDivElement>(null);
   const buyRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -827,9 +691,9 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }:
     if (toBuy && box && head) box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top - 4;
   }, []);
   return (
-    <div className="card sheet buy-card" data-ui>
+    <div className="card sheet buy-card" data-ui data-line-card={line.id}>
       <CardHead
-        title={[0, line.stops.length - 1].map((k, i) => (
+        title={[0, 1].map((k, i) => (
           <span key={k}>
             {i > 0 && <span className="arrow"> ⇄ </span>}
             {tt(stopSite(s, line, k).name)}
@@ -839,7 +703,11 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }:
       />
       <div className="buy-scroll" data-sec="buy-scroll" ref={scrollRef}>
         <div className="line-biz" data-sec="line-biz">
-          {line.stops.length > 2 && <StopsRow s={s} line={line} />}
+          {g && (
+            <p className="small carry-line" data-sec="carries">
+              <GoodIcon good={g.good} /> {tt(GOOD_NAME[g.good])} {tt(stopSite(s, line, g.from).name)} → {tt(stopSite(s, line, g.to).name)} · {tr('kuorma maksaa nyt', 'a load pays now')} <b className="gold">{pays}</b>
+            </p>
+          )}
           <div className="money-row" data-sec="line-money">
             <div>
               <small>{tr('Tuotto', 'Earned')}</small>
@@ -848,9 +716,6 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }:
             <div>
               <small>{tr('Kulut', 'Costs')}</small>
               <b className="num">{num(line.runYear + trackCost)}</b>
-              <small className="sub">
-                {tr('ajo', 'run')} {num(line.runYear)} · {tr('rata', 'track')} {num(trackCost)}
-              </small>
             </div>
             <div data-sec="line-net">
               <small>{tr('Tulos', 'Net')}</small>
@@ -866,25 +731,21 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }:
                     <span key={i} className={`pic ${w}`} />
                   ))}
                   <span className="row-text">
-                    {tt(ENGINES[t.engine].name)} · {t.cargo}/{t.nWagons}{' '}
-                    {[...new Set(t.loads.filter((l): l is Load => !!l).map((l) => tt(GOOD_NAME[l.good])))].join(', ')}
-                    {t.parked ? ` · ${tr('sivuraiteella', 'on a siding')}` : t.queued ? ` · ${tr('jonossa', 'queued')}` : ''}
+                    {tt(ENGINES[t.engine].name)} · {t.cargo}/{t.nWagons} · {t.trips} {tr('matkaa', 'trips')}
+                    {t.state === 'stop' && t.waited > 1 ? ` · ${tr('odottaa kuormaa', 'waiting for loads')}` : t.queued ? ` · ${tr('jonossa', 'queued')}` : ''}
                   </span>
                 </button>
               ))}
             </div>
           )}
-          {lift ? (
+          {lift && (
             <button className="btn act lift" data-act="lift" onClick={onLift}>
               <span>{tr('Nosta rata', 'Lift the line')}</span>
               <small>
                 {tr('puolet hinnasta takaisin', 'half the price back')} +{num(liftValue(s, line))}
               </small>
             </button>
-          ) : (
-            <p className="note" data-sec="lift-note">{tr('Nosta rata: ensin on myytävä sen junat', 'Lift the line: sell its trains first')}</p>
           )}
-          {line.stops.length === 2 && <SidingRow s={s} line={line} engine={engine} wagons={consist} onBuy={onSiding} />}
         </div>
         <h3 className="buy-title" data-sec="buy-title" ref={buyRef}>{tr('Osta juna', 'Buy a train')}</h3>
         <div className="buy-label">{tr('Veturi', 'Engine')}</div>
@@ -893,47 +754,35 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }:
             <button key={e} className={`wagon engine${engine === e ? ' on' : ''}`} data-engine={e} onClick={() => setEngineId(e)}>
               <span className={`pic eng${e === 'jyry' ? ' strong' : ''}`} />
               <span className="ename">
-                <b>{tt(ENGINES[e].name)}</b> <span className="num gold">{ENGINES[e].price}</span>
+                <b>{tt(ENGINES[e].name)}</b> <span className="num gold">{s.perks.freeTrains > 0 ? 0 : ENGINES[e].price}</span>
               </span>
-              <small>{tr('ylläpito', 'upkeep')} {ENGINES[e].upkeep}/{tr('v', 'yr')}</small>
-              <small>{tr('ajo', 'run')} {runPerTile(e, count).toFixed(2)}/{tr('ruutu', 'tile')}</small>
-              <b className="trips-line">{perYear(lineYear(s, line, { engine: e, wagons: consist }).each.slice(-1)[0])} {tr('matkaa', 'trips')}</b>
+              <small>{tt(ENGINES[e].blurb)}</small>
+              <b className="trips-line">{perMin(lineYear(s, line, { engine: e, wagons: count }).each.slice(-1)[0])} {tr('matkaa', 'trips')}</b>
             </button>
           ))}
         </div>
         <div className="buy-label">
-          {tr('Vaunut', 'Wagons')} <span className="num">{count}/{WAGONS_MAX}</span>
+          {tt(WAGON_NAME[wagon])} <span className="num">{count}/{max}</span>
         </div>
-        <div className="consist-build" data-sec="consist">
-          <WagonStrip s={s} line={line} engine={engine} max={WAGONS_MAX} wagons={consist} onTap={(i) => setConsist(consist.filter((_, k) => k !== i))} label={(i) => tr(`Poista vaunu ${i + 1}`, `Remove wagon ${i + 1}`)} />
-          <small className="hint">{count === 0 ? tr('Napauta + alta vaunun lisäämiseksi', 'Tap + below to add a wagon') : tr('Napauta vaunua poistaaksesi sen', 'Tap a wagon to take it off')}</small>
+        <div className="wagon-count" data-sec="consist">
+          <button className="round" data-act="wagons-less" aria-label={tr('Vähemmän vaunuja', 'Fewer wagons')} disabled={count <= 1} onClick={() => setCount(count - 1)}>−</button>
+          <Consist engine={engine} wagons={Array<WagonType>(count).fill(wagon)} loads={Array(count).fill(null)} />
+          <button className="round" data-act="wagons-more" aria-label={tr('Enemmän vaunuja', 'More wagons')} disabled={count >= max} onClick={() => setCount(count + 1)}>+</button>
         </div>
-        <WagonPicker s={s} line={line} full={count >= WAGONS_MAX} strict price={WAGON_PRICE} onAdd={(w) => setConsist([...consist, w])} />
-        <p className="small" data-sec="pays">
-          {pays.length
-            ? pays.map((p, i) => (
-                <span key={p.good}>
-                  {i > 0 ? ' · ' : ''}
-                  <GoodIcon good={p.good} /> {tr('kuorma maksaa nyt', 'a load pays now')} <b className="gold">{p.pays}</b> {tr('kohteessa', 'at')} {tt(p.to.name)}
-                </span>
-              ))
-            : tr('Tämän junan vaunut eivät kuljeta mitään tällä radalla.', 'This train carries nothing on this line.')}
-          {wastes > 0 && pays.length > 0 && <span className="red"> · {wastes} {wastes === 1 ? tr('turha vaunu', 'wagon carries nothing') : tr('turhaa vaunua', 'wagons carry nothing')}</span>}
-        </p>
         <div className="facts" data-sec="adds">
           <div className="fact" data-sec="adds-trips">
             <span className="fl">{tr('Tämä juna', 'This train')}</span>
             <span className="num">
-              <b className={added < 0.3 ? 'red' : 'gold'}>{added >= 0.05 ? '+' : ''}{added.toFixed(1)}</b> {tr('matkaa/v', 'trips/yr')} <small>({now.trips.toFixed(1)} → {withIt.trips.toFixed(1)})</small> · <b data-sec="adds-cost">{num(runs)}</b> <small>{tr('ajokulut/v', 'running/yr')}</small>
+              <b className={added < 0.3 ? 'red' : 'gold'}>+{added.toFixed(1)}</b> {tr('kuormaa/min', 'loads/min')} <small>({now.loads.toFixed(1)} → {withIt.loads.toFixed(1)})</small> · <b data-sec="adds-cost">{num(runs)}</b> <small>{tr('kulut/min', 'costs/min')}</small>
             </span>
-            {withIt.limit !== 'free' && <small className="why">{limitText(withIt.limit, tt(siteOfCell(s, withIt.at).name))}</small>}
+            {withIt.limit === 'supply' && g && <small className="why">{tr(`${tt(stopSite(s, line, g.from).name)} ei tuota enempää: junat odottavat kuormaa`, `${tt(stopSite(s, line, g.from).name)} makes no more: the trains wait for loads`)}</small>}
           </div>
         </div>
       </div>
       <div className="buy-foot" data-sec="buy-foot">
-        <button className="btn primary wide" disabled={!can} onClick={() => onBuy(consist, engine)} data-track="card-buy-train" data-act="buy">
-          <span>{!spot ? tr('Ei tilaa laiturilla', 'No room at the station') : `${tr('Osta juna', 'Buy train')}  ${cost}`}</span>
-          {!!spot && <small data-sec="buy-trips">{added >= 0.05 ? '+' : ''}{added.toFixed(1)} {tr('matkaa/v', 'trips/yr')}</small>}
+        <button className="btn primary wide" disabled={!can} onClick={() => onBuy(count, engine)} data-track="card-buy-train" data-act="buy">
+          <span>{tr('Osta juna', 'Buy train')}  {cost === 0 ? tr('ilmainen', 'free') : cost}</span>
+          <small data-sec="buy-trips">+{added.toFixed(1)} {tr('kuormaa/min', 'loads/min')}</small>
         </button>
       </div>
     </div>
@@ -976,64 +825,23 @@ function LinesHere({ s, stationId, onBuy }: { s: SimState; stationId: number; on
   );
 }
 
-/**
- * The passing siding on the line card: what it is, the trips a year with it and without, and Buy,
- * which puts the line in pick mode. With one train on the line the numbers are for a second one.
- */
-function SidingRow({ s, line, engine, wagons, onBuy }: { s: SimState; line: Line; engine: EngineId; wagons: WagonType[]; onBuy: () => void }) {
-  const fits = useMemo(() => !!sidingAt(s, line), [s, line, s.track]);
-  const active = s.trains.filter((t) => t.lineId === line.id && !t.parked).length;
-  const extra = active < 2 ? { engine, wagons } : undefined;
-  const without = lineYear(s, line, extra).trips;
-  const withIt = lineYear(s, line, extra, true).trips;
-  const f1 = (n: number): string => n.toFixed(1);
-  const name = tr('Ohitusraide', 'Passing siding');
-  if (line.siding)
-    return (
-      <p className="note" data-sec="siding">
-        {name}: <b className="bought">{tr('ostettu', 'bought')}</b> · <b className="num">{f1(lineYear(s, line).trips)}</b> {tr('matkaa/v', 'trips/yr')}
-      </p>
-    );
-  // what cannot be done now is a line of text with its reason, not a button
-  if (!fits) return <p className="note" data-sec="siding">{name}: {tr(`tarvitsee suoran osuuden, ${Math.ceil(SIDING_LEN)} ruutua`, `needs a straight stretch of ${Math.ceil(SIDING_LEN)} tiles`)}</p>;
-  if (s.cash < SIDING_PRICE) return <p className="note" data-sec="siding">{name}: {tr(`maksaa ${SIDING_PRICE}, kassassa ei ole tarpeeksi`, `costs ${SIDING_PRICE}, not enough cash`)}</p>;
-  return (
-    <div className="siding-buy" data-sec="siding">
-      <span>
-        {name}: {active < 2 ? tr('kahdella junalla ', 'with two trains ') : ''}
-        <b className="num gold">{f1(withIt)}</b> {tr('matkaa/v', 'trips/yr')} <small>({tr('nyt', 'now')} {f1(without)})</small>
-      </span>
-      <button className="btn act" data-act="siding" onClick={onBuy}>
-        <span>{tr('Osta', 'Buy')}</span>
-        <small>{SIDING_PRICE}</small>
-      </button>
-    </div>
-  );
-}
-
 /** seconds as "21 s" */
 const secs = (n: number): string => `${Math.round(n)} s`;
 
 /**
- * The train card: the consist with each wagon's load now and what it carries on this line (a wagon
- * that carries nothing is marked), the trip time full and empty, what it earned this year and last,
- * the speed each engine keeps on the line's worst grade, and its moves: a wagon of any type added or
- * taken off, an engine, the full-load switch, another line, sell.
+ * The train card: the consist with its loads, the trip time full and empty, the round trips made, what it
+ * earned, the speed each engine keeps on the line's worst grade, and its moves: a wagon on or off, the
+ * other engine, sell.
  */
 function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train; onClose: () => void; onSold: () => void }) {
   const line = lineOf(s, t);
-  const [moving, setMoving] = useState(false);
   const other = s.scenario.engines.find((e) => e !== t.engine);
   const swapCost = other ? ENGINES[other].price - Math.round(ENGINES[t.engine].price * RESALE) : 0;
   const resale = Math.round((ENGINES[t.engine].price + t.nWagons * WAGON_PRICE) * RESALE);
   const tt2 = tripTimes(s, line, t.engine, t.nWagons);
-  const stands = consistCycle(s, line, t.engine, t.wagons, t.skip).stands.reduce((a, x) => a + x, 0);
   const net = t.earnedYear - t.runYear - ENGINES[t.engine].upkeep * s.yearFrac;
-  const waste = wasteWagons(s, t);
-  // the lines that share a station with this one
-  const mine = new Set(line.stops);
-  const lines = s.lines.filter((l) => l.id !== line.id && l.stops.some((x) => mine.has(x)));
-  const goodsAboard = [...new Set(t.loads.filter((l): l is Load => !!l).map((l) => l.good))];
+  const g = lineGood(s, line);
+  const max = wagonsMax(s);
   return (
     <div className="card sheet train-card" data-ui data-train-id={t.id}>
       <CardHead
@@ -1047,7 +855,6 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
       <div className="consist-row">
         <Consist engine={t.engine} wagons={t.wagons} loads={t.loads} />
       </div>
-      <Orders s={s} train={t} line={line} />
       <div className="facts" data-sec="facts">
         <div className="fact">
           <span className="fl">{tr('Kuorma', 'Load')}</span>
@@ -1055,60 +862,23 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
           <span className="bar">
             <i style={{ width: `${(100 * t.cargo) / t.nWagons}%` }} />
           </span>
-          {goodsAboard.map((g) => (
-            <GoodIcon key={g} good={g} />
-          ))}
-        </div>
-        <div className="wagon-rows" data-sec="wagons">
-          {t.wagons.map((w, i) => {
-            const load = t.loads[i];
-            const isWaste = waste.includes(i);
-            return (
-              <div key={i} className={`wagon-row${isWaste ? ' waste' : ''}`} data-wagon-row={i} data-type={w}>
-                <span className={`pic ${w}`} />
-                <span className="what">
-                  <b>{tt(WAGON_NAME[w])}</b>
-                  <span className="now">
-                    {load ? (
-                      <>
-                        <GoodIcon good={load.good} /> {tt(GOOD_NAME[load.good])}
-                      </>
-                    ) : (
-                      <small>{tr('tyhjä', 'empty')}</small>
-                    )}
-                  </span>
-                  <CarryText s={s} line={line} type={w} skip={t.skip} />
-                </span>
-                {isWaste && <b className="mark" data-sec="waste">!</b>}
-                <button className="btn act small-act" data-act="drop-wagon" data-wagon-at={i} disabled={t.nWagons <= 1} onClick={() => removeWagon(s, t.id, i)}>
-                  <span>{tr('Poista', 'Remove')}</span>
-                  <small>+{WAGON_BACK}</small>
-                </button>
-              </div>
-            );
-          })}
+          {g && <GoodIcon good={g.good} />}
+          {t.state === 'stop' && t.waited > 1 && <small className="why">{tr('odottaa kuormaa', 'waiting for loads')}</small>}
         </div>
         <div className="fact" data-sec="trip">
           <span className="fl">{tr('Matka-aika', 'Trip time')}</span>
           <span className="num">
-            → {tr('tyhjä', 'empty')} {secs(tt2.empty[0])} · {tr('täysi', 'full')} {secs(tt2.full[0])}
-            <br />← {tr('tyhjä', 'empty')} {secs(tt2.empty[1])} · {tr('täysi', 'full')} {secs(tt2.full[1])}
+            {tr('täysi', 'full')} {secs(g ? tt2.full[g.from === 0 ? 0 : 1] : tt2.full[0])} · {tr('tyhjä takaisin', 'empty back')} {secs(g ? tt2.empty[g.from === 0 ? 1 : 0] : tt2.empty[1])}
             <small>
               <br />
-              {tr('Asemilla', 'Standing')} {secs(stands)} {tr('kierroksella', 'a round')}
+              {t.trips} {tr('matkaa tehty', 'trips made')} · {tr('lastaus', 'loading')} {(dwellAt(s) * t.nWagons).toFixed(1)} s
             </small>
           </span>
         </div>
         <div className="fact" data-sec="earned">
           <span className="fl">{tr('Tuotto', 'Earned')}</span>
           <span className="num">
-            <b className="gold">{num(t.earnedYear)}</b> {tr('tänä vuonna', 'this year')} · <b className="gold">{num(t.earnedLast)}</b> {tr('viime vuonna', 'last year')}
-          </span>
-        </div>
-        <div className="fact" data-sec="costs">
-          <span className="fl">{tr('Kulut', 'Costs')}</span>
-          <span className="num">
-            <b>{num(t.runYear + ENGINES[t.engine].upkeep * s.yearFrac)}</b> {tr('tänä vuonna', 'this year')} <small>{tr('ajo', 'running')} {num(t.runYear)} · {tr('ylläpito', 'upkeep')} {num(ENGINES[t.engine].upkeep * s.yearFrac)}</small>
+            <b className="gold">{num(t.earnedYear)}</b> {tr('tänä vuonna', 'this year')} · <b className="gold">{num(t.earned)}</b> {tr('yhteensä', 'in all')}
           </span>
         </div>
         <div className="fact" data-sec="net">
@@ -1125,46 +895,24 @@ function TrainCard({ s, train: t, onClose, onSold }: { s: SimState; train: Train
           </span>
         </div>
       </div>
-      <div className="buy-label">
-        {tr('Lisää vaunu', 'Add a wagon')} <span className="num">{t.nWagons}/{WAGONS_MAX}</span>
-      </div>
-      <WagonPicker s={s} line={line} full={t.nWagons >= WAGONS_MAX || s.cash < WAGON_PRICE} price={WAGON_PRICE} onAdd={(w) => addWagon(s, t.id, w)} />
       <div className="acts">
+        <button className="btn act" data-act="add-wagon" disabled={t.nWagons >= max || s.cash < WAGON_PRICE} onClick={() => addWagon(s, t.id)}>
+          <span>{tr('Lisää vaunu', 'Add a wagon')} {t.nWagons}/{max}</span>
+          <small>{WAGON_PRICE}</small>
+        </button>
+        <button className="btn act" data-act="drop-wagon" disabled={t.nWagons <= 1} onClick={() => removeWagon(s, t.id, t.nWagons - 1)}>
+          <span>{tr('Poista vaunu', 'Remove a wagon')}</span>
+          <small>+{WAGON_BACK}</small>
+        </button>
         {other && (
           <button className="btn act" data-act={`engine-${other}`} disabled={s.cash < swapCost} onClick={() => setEngine(s, t.id, other)}>
             <span>{tr('Vaihda', 'Swap to')} {tt(ENGINES[other].name)}</span>
             <small>{swapCost}</small>
           </button>
         )}
-        <button className={`btn act${t.fullLoad ? ' on' : ''}`} data-act="fullload" onClick={() => setFullLoad(s, t.id, !t.fullLoad)}>
-          <span>{tr('Odota täysi kuorma', 'Wait for a full load')}</span>
-          <small>{t.fullLoad ? tr('päällä', 'on') : tr('pois', 'off')}</small>
-        </button>
-        <button className={`btn act${moving ? ' on' : ''}`} data-act="move" disabled={lines.length === 0} onClick={() => setMoving(!moving)}>
-          <span>{tr('Siirrä toiselle radalle', 'Move to another line')}</span>
-          <small>{lines.length === 0 ? tr('ei muita ratoja', 'no other line here') : lines.length}</small>
-        </button>
       </div>
-      {moving && (
-        <div className="move-list" data-sec="move">
-          {lines.map((l) => {
-            const ok = canMove(s, t.id, l.id);
-            const suits = t.wagons.some((w) => !wagonWaste(s, l, w));
-            return (
-              <div key={l.id} className="move-row">
-                <button className="btn act" data-move={l.id} disabled={!ok} onClick={() => moveTrain(s, t.id, l.id)}>
-                  <span>{lineName(s, l).replace(/–/g, ' ⇄ ')}</span>
-                  <small>{ok ? (suits ? tr('siirrä tähän', 'move here') : tr('vaunut eivät sovi', 'wagons do not suit')) : tr('Lähetä, kun se on tämän radan asemalla', 'Send it when it stands at a station of that line')}</small>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
       <p className="small">
         {tt(ENGINES[t.engine].blurb)}. {tr('Ylläpito', 'Upkeep')} {ENGINES[t.engine].upkeep}/{tr('v', 'yr')}.
-        {t.parked ? ` ${tr('Odottaa sivuraiteella, kunnes linjalla on tilaa.', 'Waits on a siding until the line has room.')}` : ''}
-        {t.queued ? ` ${tr('Odottaa linjalla laituria.', 'Waits on the line for a platform.')}` : ''}
       </p>
       <button
         className="btn act danger wide-act"
@@ -1201,7 +949,7 @@ function stuckText(s: SimState, site: Site): string | null {
       return `${tr(`Ei ${NO_GOOD[input] ?? ''} tule`, `No ${tt(GOOD_NAME[input])} comes in`)}: ${k ? tr(`ei rataa ${k[0]}`, `no line from ${k[1]}`) : tr('ei rataa', 'no line')}`;
     }
   }
-  if (makes && site.stock >= site.rawCap - 0.01 && !s.trains.some((t) => lines.some((l) => l.id === t.lineId) && t.wagons.some((w) => WAGON_GOODS[w].includes(makes))))
+  if (makes && site.stock >= site.rawCap - 0.01 && !s.trains.some((t) => lines.some((l) => l.id === t.lineId && lineGood(s, l)?.good === makes)))
     return tr('Täynnä: mikään juna ei hae', 'Full: no train picks it up');
   return null;
 }
@@ -1220,64 +968,23 @@ const LinkMark = () => (
 const NEXT_GIVES: Record<number, [string, string]> = { 2: ['kirkon', 'a church'], 3: ['toisen kadun', 'a second street'], 4: ['torin', 'a market square'], 5: ['kaupungintalon', 'a town hall'] };
 
 /**
- * The travellers and the post at a town's station: for each other town with a station the travellers
- * and the mail waiting to go there, and how many travellers arrived this month. From size 2 on a town
- * wants travellers to arrive before it grows, and the card says whether they do.
- */
-function FolkRows({ s, site }: { s: SimState; site: Site }) {
-  const targets = fareTargets(s, site);
-  const wants = wantsPeople(s, site);
-  const seen = visited(s, site);
-  const ago = Math.round((s.time - site.lastArrival) / (YEAR_SECONDS / MONTHS));
-  return (
-    <div className="srow" data-sec="folk">
-      <span className="sl">{tr('Matkat', 'Travel')}</span>
-      <div className="sc">
-        {targets.map((o) => (
-          <div key={o.id} className="gline folk-row" data-dest={o.id}>
-            <b className="dest">{tt(o.name)}</b>
-            <GoodIcon good="pax" />
-            <b data-pax>{Math.floor((site.pax[o.id] ?? 0) + 1e-9)}</b>
-            <GoodIcon good="mail" />
-            <b data-mail>{Math.floor((site.mail[o.id] ?? 0) + 1e-9)}</b>
-          </div>
-        ))}
-        {!targets.length && <small>{tr('Ei toista kaupunkia, jossa on asema', 'No other town with a station')}</small>}
-        <small data-sec="arrived" className={wants && !seen ? 'red' : ''}>
-          {tr(`matkustajia: ${site.arrived} saapui tässä kuussa`, `travellers: ${site.arrived} arrived this month`)}
-          {wants && site.arrived === 0 && (Number.isFinite(site.lastArrival) ? ` · ${tr(`viimeksi ${ago} kk sitten`, `last ${ago} months ago`)}` : ` · ${tr('ei vielä yhtään', 'none yet')}`)}
-        </small>
-        {wants && <small>{tr('Kaupunki haluaa matkustajia kasvaakseen.', 'The town wants travellers to grow.')}</small>}
-      </div>
-    </div>
-  );
-}
-
-/**
- * A town's store and growth: per good the store of its cap with a bar, the price now and how much
- * the town eats a month; the growth meter with the months to the next size at this supply, or the
- * good that is missing; the size and what the next size gives.
+ * A town's goods and growth: per good the store with a bar and the price now; the growth to the next size
+ * as a bar with the points, the loads that takes, and what speeds it; the size and what the next size gives.
  */
 function TownRows({ s, site, takes, railed }: { s: SimState; site: Site; takes: Good[]; railed: boolean }) {
   const cap = storeCap(site);
-  const eats = eatsPerMonth(site);
   const out = growthOutlook(s, site);
   const maxed = site.size >= TOWN_MAX;
-  const nextEats = townEats(site.size + 1);
-  const f2 = (x: number): string => String(+x.toFixed(2));
   const next = NEXT_GIVES[site.size + 1];
-  const none = (g: Good) => tr(`ei ${NONE_OF[g][0]}`, `no ${NONE_OF[g][1]}`);
   let growText: string;
   if (maxed) growText = tr('Suurin koko', 'Fully grown');
   else if (!railed) growText = tr('Ei rataa: ei kasva', 'No railway: not growing');
-  else if (out.missing) growText = `${none(out.missing)}: ${tr('ei kasva', 'not growing')}`;
-  else if (out.lacksPeople) growText = `${tr('ei matkustajia', 'no travellers')}: ${tr('ei kasva', 'not growing')}`;
-  else if (out.runsOut) growText = tr(`Kasvaa noin ${out.months} kk:ssa, jos ${NONE_OF[out.runsOut.good][0]} riittää (varasto loppuu ${Math.floor(out.runsOut.months)} kk:ssa)`, `Grows in about ${out.months} months if the ${NONE_OF[out.runsOut.good][1]} lasts (the store runs out in ${Math.floor(out.runsOut.months)})`);
-  else growText = tr(`Kasvaa noin ${out.months} kk:ssa tällä tarjonnalla`, `Grows in about ${out.months} months at this supply`);
+  else if (out.perMinute <= 0) growText = tr('Mikään juna ei tuo tavaraa', 'No train brings goods');
+  else growText = tr(`${out.loads} kuormaa kokoon ${site.size + 1}, nyt noin ${out.perMinute.toFixed(1)} kuormaa minuutissa`, `${out.loads} loads to size ${site.size + 1}, about ${out.perMinute.toFixed(1)} loads a minute now`);
   return (
     <>
       <div className="srow" data-sec="wants">
-        <span className="sl">{tr('Varasto', 'Store')}</span>
+        <span className="sl">{tr('Haluaa', 'Wants')}</span>
         <div className="sc">
           {takes.map((g) => (
             <div key={g} className="store-row">
@@ -1290,40 +997,31 @@ function TownRows({ s, site, takes, railed }: { s: SimState; site: Site; takes: 
                 </span>
                 <b className="gold">{price(s, g, site.id, 0)}</b>
               </div>
-              <small className={railed && site.store[g] <= 0.001 ? 'red' : ''}>
-                {tr(`syö ${f2(eats)} kuormaa kuussa`, `eats ${f2(eats)} loads a month`)}
-                {railed && site.store[g] <= 0.001 ? ` · ${tr('tyhjä', 'empty')}` : ''}
-              </small>
             </div>
           ))}
         </div>
       </div>
-      {railed && <FolkRows s={s} site={site} />}
       <div className="srow" data-sec="growth">
         <span className="sl">{tr('Kasvu', 'Growth')}</span>
         <div className="sc">
           {!maxed && (
             <div className="gline">
               <span className="bar grow">
-                <i style={{ width: `${100 * site.growth}%` }} />
+                <i style={{ width: `${100 * growFrac(site)}%` }} />
               </span>
-              <small>{Math.round(100 * site.growth)} %</small>
+              <small>{Math.floor(site.growth)}/{growNeed(site)}</small>
             </div>
           )}
-          <small className={!maxed && railed && (out.missing || out.lacksPeople) ? 'red' : ''}>{growText}</small>
+          <small className={!maxed && railed && out.perMinute <= 0 ? 'red' : ''}>{growText}</small>
+          {!maxed && railed && out.missing && <small>{tr(`Kuorma kasvattaa ${Math.round(VARIETY_BONUS * 100)} % enemmän, kun myös ${NONE_OF[out.missing][0]} tulee`, `A load counts ${Math.round(VARIETY_BONUS * 100)} % more when ${NONE_OF[out.missing][1]} comes too`)}</small>}
           <small>
             {tr('Koko', 'Size')} {site.size}
-            {!maxed && ` ${tr('→', 'to')} ${site.size + 1}: ${tr(`${HOUSES_PER_SIZE} taloa lisää${next ? ` ja ${next[0]}` : ''}, syö ${f2(nextEats)} kuormaa kuussa, varastoon mahtuu ${TOWN_STORE_CAP * (site.size + 1)}`, `${HOUSES_PER_SIZE} more houses${next ? ` and ${next[1]}` : ''}, eats ${f2(nextEats)} loads a month, the store holds ${TOWN_STORE_CAP * (site.size + 1)}`)}`}
+            {!maxed && ` ${tr('→', 'to')} ${site.size + 1}: ${tr(`${HOUSES_PER_SIZE} taloa lisää${next ? ` ja ${next[0]}` : ''}`, `${HOUSES_PER_SIZE} more houses${next ? ` and ${next[1]}` : ''}`)}`}
           </small>
         </div>
       </div>
     </>
   );
-}
-
-/** the goods the crane lifts at a site: what it makes and takes among timber, boards and grain */
-function craneGoods(site: Site): Good[] {
-  return [...TAKES[site.kind], MAKES[site.kind]].filter((g, i, a): g is Good => !!g && CRANE_GOODS.includes(g) && a.indexOf(g) === i);
 }
 
 /**
@@ -1337,7 +1035,7 @@ function SiteCard({ s, site, onClose, onLay, onBuyLine }: { s: SimState; site: S
   const station = stationAt(s, cell);
   const hasStation = !!station;
   // a site with no station can be joined when some station reaches it; worked out when the stations change, not each frame
-  const reachable = useMemo(() => hasStation || s.stations.some((st) => plan(s, st.cell, cell).length > 0), [s, cell, hasStation, s.stations.length]);
+  const reachable = useMemo(() => hasStation || s.stations.some((st) => plan(s, st.cell, cell).length > 0), [s, cell, hasStation, s.stations.length, s.lines.length]);
   const stuck = stuckText(s, site);
   const list = buyers(s, site);
   const raw = !!RAW_RATE[site.kind];
@@ -1384,57 +1082,6 @@ function SiteCard({ s, site, onClose, onLay, onBuyLine }: { s: SimState; site: S
       {takes.length > 0 && site.kind === 'town' && <TownRows s={s} site={site} takes={takes} railed={hasStation} />}
       {stuck && <p className="stuck">{stuck}</p>}
       {station && <LinesHere s={s} stationId={station.id} onBuy={onBuyLine} />}
-      {station && (
-        <div className="srow" data-sec="crew">
-          <span className="sl">{tr('Väki', 'Crew')}</span>
-          <div className="crew-row">
-            <span>{tr('Lastausväki: vaunut lastautuvat kolmanneksen nopeammin', 'Loading crew: wagons load a third faster')}</span>
-            {station.crew ? (
-              <b className="bought">{tr('Ostettu', 'Bought')}</b>
-            ) : (
-              <button className="btn act" data-act="crew" disabled={s.cash < CREW_PRICE} onClick={() => buyCrew(s, station.id)}>
-                <span>{tr('Osta', 'Buy')}</span>
-                <small>{CREW_PRICE}</small>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {station && craneSite(s, station.id) && (
-        <div className="srow" data-sec="crane">
-          <span className="sl">{tr('Nosturi', 'Crane')}</span>
-          <div className="crew-row">
-            <span>
-              {tr(`Nosturi: ${craneGoods(site).map((g) => tt(GOOD_NAME[g])).join(' ja ')} lastautuvat ja purkautuvat kaksi kertaa nopeammin`, `Crane: ${craneGoods(site).map((g) => tt(GOOD_NAME[g])).join(' and ')} load and unload twice as fast`)}
-              {!station.crew && !station.crane && <small className="red"> · {tr('vaatii lastausväen', 'needs the loading crew')}</small>}
-            </span>
-            {station.crane ? (
-              <b className="bought">{tr('Ostettu', 'Bought')}</b>
-            ) : (
-              <button className="btn act" data-act="crane" disabled={!station.crew || s.cash < CRANE_PRICE} onClick={() => buyCrane(s, station.id)}>
-                <span>{tr('Osta', 'Buy')}</span>
-                <small>{CRANE_PRICE}</small>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {station && (
-        <div className="srow" data-sec="platforms">
-          <span className="sl">{tr('Laituri', 'Platform')}</span>
-          <div className="crew-row">
-            <span>{station.platforms === 1 ? tr('Toinen laituri: kaksi junaa voi seistä tässä', 'Second platform: two trains can stand here') : station.platforms === 2 ? tr('Kolmas laituri: kolme junaa voi seistä tässä', 'Third platform: three trains can stand here') : tr('Kolme laituria', 'Three platforms')} ({tr('on', 'owned')} {station.platforms})</span>
-            {platformPrice(s, station.id) === null ? (
-              <b className="bought">{tr('Eniten', 'Most')}</b>
-            ) : (
-              <button className="btn act" data-act="platform" disabled={s.cash < platformPrice(s, station.id)!} onClick={() => buyPlatform(s, station.id)}>
-                <span>{tr('Osta', 'Buy')}</span>
-                <small>{platformPrice(s, station.id)}</small>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
       {list.length > 0 && (
         <div className="srow" data-sec="buyers">
           <span className="sl">{tr('Ostajat', 'Buyers')}</span>
@@ -1465,7 +1112,7 @@ function missingText(s: SimState): string {
   if (r.reason === 'bankrupt') return tr('Kassa oli miinuksella kahdesti peräkkäin ja laina täynnä.', 'Cash was below zero twice in a row with the loan full.');
   if (goal.kind === 'deliver') return tr(`Perille ehti ${s.goalCount} lautakuormaa ${goal.count}:stä.`, `${s.goalCount} of ${goal.count} loads of boards arrived.`);
   const served = (x: Site) => s.stations.some((st) => st.siteId === x.id);
-  const towns = s.sites.filter((x) => x.kind === 'town' && x.size < goal.size).sort((a, b) => Number(served(b)) - Number(served(a)) || b.size - a.size || b.growth - a.growth);
+  const towns = s.sites.filter((x) => x.kind === 'town' && x.size < goal.size).sort((a, b) => Number(served(b)) - Number(served(a)) || b.size - a.size || growFrac(b) - growFrac(a));
   const done = s.sites.filter((x) => x.kind === 'town' && x.size >= goal.size).length;
   const town = towns[0];
   if (!town) return '';
@@ -1473,8 +1120,7 @@ function missingText(s: SimState): string {
   // a town no train had reached, then one short of a good, then one short of travellers, then one that was only slow
   if (!served(town)) return tr(`${name} ei saanut rataa.`, `${name} never got a railway.`);
   const lacks = townLacks(s, town);
-  if (lacks.length) return tr(`${name} tarvitsi ${lacks.map((g) => tr(NONE_OF[g][0], NONE_OF[g][1])).join(' ja ')}.`, `${name} needed ${lacks.map((g) => NONE_OF[g][1]).join(' and ')}.`);
-  if (wantsPeople(s, town) && !visited(s, town)) return tr(`${name} tarvitsi matkustajia.`, `${name} needed travellers.`);
+  if (lacks.length) return tr(`${name} kasvoi kokoon ${town.size}/${goal.size}. Se olisi kasvanut nopeammin, jos se olisi saanut myös ${lacks.map((g) => NONE_OF[g][0]).join(' ja ')}.`, `${name} reached size ${town.size} of ${goal.size}. It would have grown faster with ${lacks.map((g) => NONE_OF[g][1]).join(' and ')} too.`);
   return tr(`${name} kasvoi kokoon ${town.size}/${goal.size}.`, `${name} reached size ${town.size} of ${goal.size}${done ? `, ${done} of ${goal.count} towns made it` : ''}.`);
 }
 
@@ -1501,6 +1147,7 @@ function ResultCard({ s, onAgain, onQuit }: { s: SimState; onAgain: () => void; 
     <div className="card result overlay" data-ui data-result={r.won ? 'won' : r.reason}>
       <h2>{r.won ? tr('Tavoite täyttyi', 'Goal reached') : r.reason === 'bankrupt' ? tr('Konkurssi', 'Bankrupt') : tr('Aika loppui', 'Out of time')}</h2>
       <div className="res-year" data-sec="year">{r.year}</div>
+      <p className="small" data-sec="played">{tr(`Peliaika ${Math.floor(r.time / 60)} min ${Math.round(r.time % 60)} s`, `Played ${Math.floor(r.time / 60)} min ${Math.round(r.time % 60)} s`)}</p>
       <div className="res-cols">
         <div className="res-stars" data-sec="stars">
           {rows.map((o) => (
@@ -1563,16 +1210,6 @@ function GoodIcons() {
             <ellipse cx="12" cy="5" rx="2.4" ry="3.2" /><ellipse cx="8.5" cy="9" rx="2.4" ry="3.2" transform="rotate(-35 8.5 9)" /><ellipse cx="15.5" cy="9" rx="2.4" ry="3.2" transform="rotate(35 15.5 9)" />
             <ellipse cx="8.5" cy="14" rx="2.4" ry="3.2" transform="rotate(-35 8.5 14)" /><ellipse cx="15.5" cy="14" rx="2.4" ry="3.2" transform="rotate(35 15.5 14)" />
           </g>
-        </symbol>
-        <symbol id="g-pax" viewBox="0 0 24 24">
-          <circle cx="12" cy="7" r="4.2" fill="#e8c39a" stroke="#3b2a1c" strokeWidth="1.2" />
-          <path d="M7.7 6.2 Q12 1 16.3 6.2 Z" fill="#4a3624" />
-          <path d="M4 22 Q4 12.2 12 12.2 Q20 12.2 20 22 Z" fill="#3f7a8a" stroke="#1d3a44" strokeWidth="1.2" />
-        </symbol>
-        <symbol id="g-mail" viewBox="0 0 24 24">
-          <rect x="2.5" y="5.5" width="19" height="13" rx="1.5" fill="#f2ead2" stroke="#6e5a30" strokeWidth="1.2" />
-          <path d="M3 6.5 L12 13.5 L21 6.5" fill="none" stroke="#6e5a30" strokeWidth="1.4" />
-          <circle cx="18" cy="16" r="3.4" fill="#e8b93a" stroke="#6e5a30" strokeWidth="1" />
         </symbol>
         <symbol id="g-flour" viewBox="0 0 24 24">
           <path d="M6 9 Q5 21 12 21 Q19 21 18 9 Z" fill="#f4f0e4" stroke="#8a8070" strokeWidth="1" />

@@ -4,13 +4,13 @@
  * most three, the top one first. It reads the state and changes nothing, and the one costly part
  * (a route's price) is remembered while the stations and lines stay as they are.
  */
-import type { Good, Line, SimState, Site, Train, WagonType } from './types';
-import { MAKES, TAKES, WAGON_GOODS, WAGON_FARE, WAGONS_MAX, WAGONS_DEFAULT, wagonFor } from './content/economy';
-import { siteById, siteAt, stationAt } from './state';
-import { idx, type Route } from './grid';
-import { plan, platformPrice, lineYear, trainPrice, wantedGoods, extendable, canExtend, freeSide, stopSite, townStops, wantsPeople, visited } from './sim';
+import type { Good, SimState, Site } from './types';
+import { MAKES, TAKES, WAGONS_DEFAULT, VARIETY_SECONDS } from './content/economy';
+import { siteById, stationAt } from './state';
+import { idx } from './grid';
+import { plan, lineYear, trainPrice, wantedGoods, stopSite, lineGood } from './sim';
 
-export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'people' | 'platform' | 'cash' | 'contract' | 'idle-line';
+export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'cash' | 'idle-line';
 
 export interface Advice {
   kind: AdviceKind;
@@ -19,15 +19,11 @@ export interface Advice {
   /** the site that answers it, when there is one: the arc ends there */
   to?: string;
   good?: Good;
-  /** stuck: loads waiting. cash: the cash in hand. contract: loads still to deliver */
+  /** stuck and more: loads waiting. cash: the cash in hand */
   amount?: number;
   /** first and cash: what the suggested line costs */
   cost?: number;
-  /** contract: the year it ends */
-  deadline?: number;
-  /** a tip that lays track: the id of the line the track would lengthen; absent when it starts a new line */
-  lengthen?: number;
-  /** idle-line: the line that has no train. people: the id of a line that already joins the two towns and has no coach, where a coach would go. more: the line the goods wait on */
+  /** idle-line: the line that has no train. more: the line the goods wait on */
   onLine?: number;
   /** how much it matters, higher first; not for the words */
   score: number;
@@ -51,15 +47,16 @@ export function goalTowns(s: SimState): Site[] {
   if (goal.kind === 'deliver') return [siteById(s, goal.site)];
   const anchors = s.stations.length ? s.stations.map((st) => siteById(s, st.siteId)) : [siteById(s, s.scenario.startStation)];
   const near = (t: Site) => Math.min(...anchors.map((a) => dist(a, t)));
+  // a town with a station counts first, so the strip does not swap towns as stations appear
   return s.sites
     .filter((x) => x.kind === 'town')
-    .sort((a, b) => b.size - a.size || b.growth - a.growth || near(a) - near(b))
+    .sort((a, b) => b.size + b.growth / 1000 + (hasStation(s, b) ? 0.5 : 0) - (a.size + a.growth / 1000 + (hasStation(s, a) ? 0.5 : 0)) || near(a) - near(b))
     .slice(0, goal.count);
 }
 
-/** the goods a town has none of in store right now, among those the map makes */
+/** the goods a town has not had lately (within the variety window), among those the map makes */
 export function townLacks(s: SimState, site: Site): Good[] {
-  return wantedGoods(s).filter((g) => site.store[g] <= 0.001);
+  return wantedGoods(s).filter((g) => s.time - site.lastDelivery[g] > VARIETY_SECONDS);
 }
 
 /** whether a line joins the station of a site to a station of any site in `others` */
@@ -134,7 +131,8 @@ export function advice(s: SimState): Advice[] {
   // a line with no train earns nothing: the first thing to do with it is buy one
   for (const line of s.lines) {
     if (s.trains.some((t) => t.lineId === line.id)) continue;
-    out.push({ kind: 'idle-line', site: stopSite(s, line, 0).id, to: stopSite(s, line, line.stops.length - 1).id, onLine: line.id, score: 200 });
+    const g = lineGood(s, line);
+    out.push({ kind: 'idle-line', site: stopSite(s, line, g ? g.from : 0).id, to: stopSite(s, line, g ? g.to : 1).id, onLine: line.id, score: 200 });
   }
 
   // stock that no line takes away
@@ -150,28 +148,25 @@ export function advice(s: SimState): Advice[] {
     out.push({ kind: 'stuck', site: site.id, to: to.id, good, amount: Math.floor(site.stock), cost: linkCost(s, site, to) ?? undefined, score: (raw ? 40 : 100) + site.stock * (raw ? 5 : 10) + (goal.includes(to) ? 30 : 0) });
   }
 
-  // goods piling up at a maker that a line already carries, while the town at the other end has none: the line needs a wagon or a train
-  for (const site of s.sites) {
-    const good = MAKES[site.kind];
-    if (!good || !hasStation(s, site)) continue;
+  // goods piling up at the loading end of a line with trains: one more train adds loads there, and the buy card says so too
+  for (const line of s.lines) {
+    if (!s.trains.some((t) => t.lineId === line.id)) continue;
+    const g = lineGood(s, line);
+    if (!g) continue;
+    const site = stopSite(s, line, g.from);
     const raw = TAKES[site.kind].length === 0;
     if (site.stock < (raw ? STUCK_RAW : STUCK_REFINERY)) continue;
-    const mine = s.stations.find((st) => st.siteId === site.id)!;
-    for (const line of s.lines) {
-      if (!line.stops.includes(mine.id) || !s.trains.some((t) => t.lineId === line.id)) continue;
-      // room for more: a train with a free place for this good's wagon, or a second train that would not only queue (when it would, the platform tip comes instead)
-      const type = wagonFor(good);
-      const room = s.trains.some((t) => t.lineId === line.id && t.nWagons < WAGONS_MAX && t.wagons.includes(type)) || lineYear(s, line, { engine: 'hilma', wagons: WAGONS_DEFAULT }).limit === 'free';
-      if (!room) continue;
-      const buyer = line.stops.map((_, i) => stopSite(s, line, i)).find((o) => o !== site && TAKES[o.kind].includes(good) && (o.kind !== 'town' || o.store[good] <= 0.001));
-      if (buyer) out.push({ kind: 'more', site: site.id, to: buyer.id, good, amount: Math.floor(site.stock), onLine: line.id, score: 92 + site.stock * (raw ? 2 : 4) + (goal.includes(buyer) ? 15 : 0) });
-    }
+    const now = lineYear(s, line).loads;
+    const more = lineYear(s, line, { engine: 'hilma', wagons: WAGONS_DEFAULT }).loads;
+    if (more - now < 0.5) continue;
+    const to = stopSite(s, line, g.to);
+    out.push({ kind: 'more', site: site.id, to: to.id, good: g.good, amount: Math.floor(site.stock), onLine: line.id, score: 92 + site.stock * (raw ? 2 : 4) + (goal.includes(to) ? 15 : 0) });
   }
 
-  // a goal town with a station that has no line from anything that makes a good it wants
+  // a goal town with a station that has no line from anything that makes a good it wants: the second good speeds its growth
   for (const town of goal) {
     if (town.kind !== 'town' || !hasStation(s, town)) continue;
-    for (const good of townLacks(s, town)) {
+    for (const good of wantedGoods(s)) {
       const makers = s.sites.filter((o) => MAKES[o.kind] === good);
       if (joined(s, town, makers)) continue;
       const from = nearestMaker(s, town, good);
@@ -179,46 +174,8 @@ export function advice(s: SimState): Advice[] {
     }
   }
 
-  // a goal town of size 2 or more that no traveller has reached lately: a coach from another town
-  for (const town of goal) {
-    if (town.kind !== 'town' || !hasStation(s, town) || !wantsPeople(s, town) || visited(s, town)) continue;
-    const towns = s.sites.filter((o) => o !== town && o.kind === 'town');
-    const mine = s.stations.find((st) => st.siteId === town.id)!;
-    const joining = (o: Site) => s.lines.filter((l) => l.stops.includes(mine.id) && l.stops.some((id) => s.stations.find((st) => st.id === id)?.siteId === o.id));
-    // a line to another town is there, and a coach is already on it: the travellers are on their way
-    if (towns.some((o) => joining(o).some((l) => s.trains.some((t) => t.lineId === l.id && t.wagons.includes('coach'))))) continue;
-    const bare = towns.map((o) => ({ o, line: joining(o)[0] })).find((x) => x.line && s.trains.some((t) => t.lineId === x.line.id));
-    if (bare) {
-      out.push({ kind: 'people', site: town.id, to: bare.o.id, onLine: bare.line.id, score: 88 + 3 * town.size });
-      continue;
-    }
-    if (towns.some((o) => joining(o).length)) continue;
-    // no line between them: the nearest other town, one with a station first
-    const to = towns.slice().sort((a, b) => dist(town, a) - dist(town, b) - (hasStation(s, a) ? 12 : 0) + (hasStation(s, b) ? 12 : 0))[0];
-    if (to) out.push({ kind: 'people', site: town.id, to: to.id, cost: linkCost(s, town, to) ?? undefined, score: 86 + 3 * town.size });
-  }
-
-  // a second train that would only queue for a platform
-  for (const line of s.lines) {
-    if (!s.trains.some((t) => t.lineId === line.id)) continue;
-    const now = lineYear(s, line);
-    if (now.limit !== 'free') continue;
-    const next = lineYear(s, line, { engine: 'hilma', wagons: 2 });
-    if (next.limit !== 'platform') continue;
-    const st = stationAt(s, next.at);
-    if (!st || platformPrice(s, st.id) === null) continue;
-    out.push({ kind: 'platform', site: st.siteId, cost: platformPrice(s, st.id)!, score: 80 });
-  }
-
-  // a contract that is running out of the year
-  for (const c of s.contracts) {
-    if (c.got >= c.count || c.deadline !== s.year || s.yearFrac < 0.4) continue;
-    const mk = s.sites.find((o) => MAKES[o.kind] === c.good);
-    out.push({ kind: 'contract', site: c.site, to: mk?.id, good: c.good, amount: c.count - c.got, deadline: c.deadline, score: 70 + 20 * s.yearFrac });
-  }
-
   // cash that sits idle while an unjoined maker and buyer could be joined
-  const spare = s.cash - trainPrice();
+  const spare = s.cash - (s.perks.freeTrains > 0 ? 0 : trainPrice());
   if (spare > 0) {
     let best: { a: Site; b: Site; good: Good; cost: number } | null = null;
     for (const a of s.sites) {
@@ -234,62 +191,10 @@ export function advice(s: SimState): Advice[] {
     }
     if (best) out.push({ kind: 'cash', site: best.a.id, to: best.b.id, good: best.good, amount: Math.floor(s.cash), cost: best.cost, score: 50 + Math.min(20, spare / 100) });
   }
-
-  const top = out.sort((x, y) => y.score - x.score).slice(0, 3);
-  for (const a of top) if (a.to && (a.kind === 'first' || a.kind === 'stuck' || a.kind === 'starved' || a.kind === 'cash' || (a.kind === 'people' && a.onLine === undefined))) a.lengthen = lengthenable(s, siteById(s, a.site), siteById(s, a.to));
-  return top;
-}
-
-/**
- * The line the track between two sites would lengthen, when the tip may say so: one of the sites
- * has a station that ends a line, the route can leave on the line's free side, and a train of that
- * line carries something the new stop makes or takes. Otherwise the track is a new line.
- */
-function lengthenable(s: SimState, a: Site, b: Site): number | undefined {
-  const [from, to] = hasStation(s, a) ? [a, b] : hasStation(s, b) ? [b, a] : [null, null];
-  if (!from || !to) return undefined;
-  return lengthenOptions(s, cellOf(s, from), cellOf(s, to))[0]?.line.id;
-}
-
-/** a line the new stop could lengthen: the routes that do it, and the trains that would then run on to the new stop */
-export interface Lengthen {
-  line: Line;
-  options: Route[];
-  trains: Train[];
-}
-
-/**
- * The lines a track from a station to a site may lengthen. A line is on the list only when a train
- * on it carries something the new stop takes or makes (a lengthening that sends a train where its
- * wagons have nothing to do is never offered), and a route can leave its end station on the free
- * side without a bridge the new line would not need (the free side may point away from the target,
- * and the forced straight run then ends in a bridge and a hairpin). Everything else is
- * a new line. The drag and the pick mode both ask here.
- */
-export function lengthenOptions(s: SimState, from: number, to: number): Lengthen[] {
-  const site = siteAt(s, to);
-  if (!site) return [];
-  const fresh = plan(s, from, to);
-  const dry = fresh.length ? Math.min(...fresh.map((r) => r.bridge.length)) : 0;
-  const out: Lengthen[] = [];
-  for (const line of extendable(s, from)) {
-    const trains = s.trains.filter((t) => t.lineId === line.id && t.wagons.some((w) => carriesAt(s, line, w, site)));
-    if (!trains.length) continue;
-    const options = plan(s, from, to, freeSide(s, line, from)).filter((r) => canExtend(s, r, line.id) && r.bridge.length <= dry);
-    if (options.length) out.push({ line, options, trains });
-  }
-  return out;
-}
-
-/** whether a wagon of this type would carry something to or from a new stop at this site on the line */
-function carriesAt(s: SimState, line: Line, wagon: WagonType, site: Site): boolean {
-  const fare = WAGON_FARE[wagon];
-  if (fare) return site.kind === 'town' && townStops(s, line).length >= 1;
-  const stops = line.stops.map((_, i) => stopSite(s, line, i));
-  return WAGON_GOODS[wagon].some((g) => (MAKES[site.kind] === g && stops.some((o) => TAKES[o.kind].includes(g))) || (TAKES[site.kind].includes(g) && stops.some((o) => MAKES[o.kind] === g)));
+  return out.sort((x, y) => y.score - x.score).slice(0, 3);
 }
 
 /** a key that stays the same while the advice says the same thing, for holding a tip on screen */
 export function adviceKey(a: Advice): string {
-  return `${a.kind}:${a.site}:${a.to ?? ''}:${a.good ?? ''}:${a.lengthen ?? ''}:${a.onLine ?? ''}`;
+  return `${a.kind}:${a.site}:${a.to ?? ''}:${a.good ?? ''}:${a.onLine ?? ''}`;
 }
