@@ -44,7 +44,8 @@ src/
                         cheapest and the shortest, which bridges water and cuts through a hill),
                         the rail profile (the land clamped to GRADE_MAX, cut and fill paid for),
                         the costs per 100 m tile (track 0.5 plus the grade, earth per metre,
-                        bridge 2, station 20), the track links per cell; a yard is never crossed
+                        bridge 2, station 20), the track links per cell, the rail height per cell (`s.rail`, set when the cell is first laid);
+                        pathOver: A* over laid cells only, the path of a line between two stops; a yard is never crossed
     state.ts          createState(scenario): the land cut into 10 m terraces, the cover layer, the
                         yards; yardOf, siteAt, stationAt, siteById, goodsOnMap
     sim.ts            step(): months, production, upkeep, the trains and the one-train-per-block
@@ -53,8 +54,10 @@ src/
                         travellers and mail (made monthly by the towns with a station, carried by coaches and
                         mail vans, paid by distance and the seconds on board), the turn order at a shared block,
                         the passing siding (two blocks, a loop to wait in), the crane's dwell, the year-end
-                        contract (seeded offer, count, reward, deadline);
-                        plan/build/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/buyPlatform/
+                        contract (seeded offer, count, reward, deadline); track is a network (ADR 0004): `make`
+                        lays it from a station or any laid cell to any tile, `makeLine` routes a line over it,
+                        `reroute` finds the paths again after track is laid or lifted;
+                        plan/build/make/makeLine/liftLine/liftTrack/undo/buyTrain/addWagon/setEngine/setFullLoad/sellTrain/buyPlatform/
                         setStop (a train passes a middle station through)/buyCrew/buyCrane/buySiding/closeYearEnd are the player's moves, the UI and the bot call the same ones
     content/
       economy.ts      every number the balance is made of: prices, demand, the tile in metres
@@ -119,6 +122,7 @@ scripts/
                         choice card; the check for a change to the route plate or the ghost route
   shots.mjs           phone screenshots with Playwright, the bot playing
   touch-check.mjs     lays track and buys a train by real touches on an emulated phone
+  layout-check.mjs    make layout-check: iPhone 16, a track end, a trunk, a junction and a line made from a station card by touch, a train over the drawn track, pictures into shots/layout/
   orders-check.mjs    make orders-check: iPhone 16, a three-stop line by touch, a train told to pass Koskensaha through and back, pictures into shots/orders/
   rotate-check.mjs    turns the phone mid-game: the state stays, the canvas and the HUD fit
   playthrough.mjs     a scenario by thumb (SCENARIO=harju by default), portrait and landscape, a

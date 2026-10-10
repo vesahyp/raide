@@ -7,8 +7,8 @@
  */
 import { createState, siteById, stationAt } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, setStop, consistCycle, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth } from '../src/game/sim';
-import { idx, route, APPROACH, turnsBack } from '../src/game/grid';
+import { waitingTotal, farePay, wantsPeople, stopCell, stopS, extendable, freeSide, canExtend, defaultConsist, carryingTypes, wagonWaste, wagonRoutes, wasteWagons, removeWagon, addWagon, lineCapacity, WAGON_BACK, step, closeYearEnd, bodyCells, mainPieces, plan, routeTrips, build, undo, buyTrain, DT, lineOf, along, trainLength, drawnLength, price, storeCap, siteDemand, setFullLoad, buyers, moveTrain, lineTrips, tripTimes, buyCrew, dwellAt, borrow, repay, loanCeiling, netWorth, liftLine, lineYear, setStop, consistCycle, trainSpot, buyPlatform, platformPrice, runPerTile, buySiding, buyCrane, sidingSpans, makeOffer, endGood, distanceFactor, eatsPerMonth, make, makeLine, reaches, liftTrack, liftTrackValue, deadEnd } from '../src/game/sim';
+import { idx, route, APPROACH, turnsBack, pathOver, linked } from '../src/game/grid';
 import { Bot, type Step, type YearRecord } from './bot';
 import { ENGINE_LEN, WAGON_LEN, YEAR_SECONDS, CREW_PRICE, CRANE_PRICE, CRANE_CUT, CREW_CUT, SIDING_PRICE, SIDING_LEN, SIDING_FROM_STATION, CONTRACT_MAX, MAKES, TAKES, LOAN_RATE, LIFT_BACK, QUEUE_GAP, DEMAND_FLOOR, GROW_MONTHS, PAX_RATE, MAIL_RATE, PAX_CAP, MAIL_CAP, FARE_SPEED, BASE_FARE, PAX_DECAY, FARE_FLOOR } from '../src/game/content/economy';
 import { advice, goalTowns, lengthenOptions } from '../src/game/advice';
@@ -1022,6 +1022,157 @@ class Watch {
   check(s.trains.every((t) => t.earned > 0), `every train earned (${s.trains.map((t) => Math.round(t.earned)).join(', ')})`);
 }
 
+// track is a network the player lays freely; a line is a list of stops routed over it (ADR 0004)
+{
+  const open = idx(createState(HARJU), 25, 31);
+  const sid = (s: SimState, id: string) => stationAt(s, cell(s, id))!.id;
+  // a drag to open ground leaves a track end, charges for it, and a later drag starts from it
+  {
+    const s = createState(HARJU);
+    const cash0 = s.cash;
+    const r = plan(s, cell(s, 'forest'), open)[0];
+    check(!!r && r.cost > 0 && !r.newStation, `a drag from Kuusikko to open ground plans track with no station (cost ${r?.cost})`);
+    const made = make(s, r);
+    check(made.ok && made.line === null && s.lines.length === 0 && s.stations.length === 2 && s.cash === cash0 - r.cost, `the lift lays it and charges for it, and makes no line (cash ${cash0} -> ${s.cash})`);
+    check(linked(s, open).length === 1 && s.rail[open] === r.rail[r.rail.length - 1], 'the open tile is a track end with one link, and its rail height is the cell\'s own');
+    const on = plan(s, open, cell(s, 'sawmill'));
+    check(on.length > 0, 'a drag may start from the track end and go on to Koskensaha');
+    check(plan(s, cell(s, 'hameenlinna'), open).length === 0, 'a site with no station is still no start');
+    const wet = s.water.findIndex((w) => w === 1);
+    check(plan(s, cell(s, 'forest'), wet).length === 0, 'a drag may not end in the water');
+    // undo takes the track end back
+    check(undo(s) && s.cash === cash0 && linked(s, open).length === 0 && s.track[open] === 0, 'Cancel takes the track end back and refunds it');
+  }
+  // a trunk and a branch: a junction cell has three links, two lines share the trunk
+  {
+    const s = createState(HARJU);
+    s.cash = 9999;
+    make(s, plan(s, cell(s, 'forest'), open)[0]);
+    make(s, plan(s, open, cell(s, 'sawmill'))[0]);
+    check(linked(s, open).length === 2 && s.stations.length === 3 && s.lines.length === 0, 'a trunk from Kuusikko through an open tile to Koskensaha lays a station and no line');
+    const cells0 = s.track.reduce((n, v) => n + (v ? 1 : 0), 0);
+    make(s, plan(s, cell(s, 'korpela'), open)[0]);
+    let junction = -1;
+    for (let i = 0; i < s.track.length; i++) if (linked(s, i).length >= 3) junction = i;
+    check(junction >= 0 && s.track.reduce((n, v) => n + (v ? 1 : 0), 0) > cells0, `a branch from Korpela joins the trunk in a junction with three links (cell ${junction % s.w},${Math.floor(junction / s.w)})`);
+    check(plan(s, junction, cell(s, 'hameenlinna')).length > 0, 'and a drag may start from the middle of laid track');
+    const reach = reaches(s, sid(s, 'forest')).map((o) => o.id);
+    check(reach.includes(sid(s, 'sawmill')) && reach.includes(sid(s, 'korpela')), 'the station card lists every station the track reaches');
+    const a = makeLine(s, [sid(s, 'forest'), sid(s, 'sawmill')])!;
+    const b = makeLine(s, [sid(s, 'korpela'), sid(s, 'sawmill')])!;
+    check(!!a && !!b && a !== b && makeLine(s, [sid(s, 'sawmill'), sid(s, 'forest')]) === a, 'a line is made over the track between two stations, and the same stops give the same line');
+    check(a.path.every((c, k) => k === 0 || linked(s, c).includes(a.path[k - 1])) && a.path.every((c, k) => s.rail[c] === a.rail[k]), 'its path runs over laid links, at the rail height of the cells');
+    const shared = a.path.filter((c) => b.path.includes(c));
+    check(shared.length > 4 && a.legs[0].block.has(shared[3]) && b.legs[0].block.has(shared[3]), `the two lines share ${shared.length} cells of trunk, and so their blocks`);
+    const third = makeLine(s, [sid(s, 'forest'), sid(s, 'korpela')]);
+    check(third !== null && third.path.length > 8, 'lines are made between any two stations the track joins');
+    s.lines = s.lines.filter((l) => l !== third);
+    // two lines, a train each, ten years: no overlap, no vehicles close, none waits over 40 s
+    s.trains = [];
+    for (const id of ['forest', 'korpela', 'sawmill']) for (const st of s.stations) if (st.siteId === id) st.platforms = 2;
+    buyTrain(s, a.id, 'flat', 'hilma', 2);
+    buyTrain(s, b.id, 'flat', 'hilma', 2);
+    const watch = new Watch();
+    for (let k = 0; k < 10 * YEAR_SECONDS * 60; k++) {
+      if (k % 60 === 0) for (const id of ['forest', 'korpela', 'sawmill']) siteById(s, id).stock = Math.max(siteById(s, id).stock, 3);
+      if (s.yearEnd) closeYearEnd(s);
+      s.cash = Math.max(s.cash, 500);
+      step(s);
+      watch.check(s);
+    }
+    check(watch.overlap === 0 && watch.near === 0 && watch.shared === 0 && watch.apart === 0, `ten years of two lines over a shared trunk: no overlap, no vehicles closer than 0.6 tile (${watch.overlap}, ${watch.near}, ${watch.shared}, ${watch.apart} frames)`);
+    check(watch.gate <= 40 && watch.longest <= 30, `and no wait over 40 s (${watch.gate.toFixed(1)} s) and no train stuck (${watch.longest.toFixed(1)} s)`);
+    check(s.trains.every((x) => x.earned > 0 || x.odometer > 0), `both trains ran (${s.trains.map((x) => x.odometer.toFixed(0)).join(', ')} tiles)`);
+  }
+  // a line finds its path again when a shorter track is laid between its stops
+  {
+    const s = createState(HARJU);
+    s.cash = 9999;
+    build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0]);
+    build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0]);
+    // the way round the ridge first, with a train on it
+    const line = build(s, plan(s, cell(s, 'hameenlinna'), cell(s, 'farm'))[0])!;
+    const long = line.dist[line.dist.length - 1];
+    const t = buyTrain(s, line.id, 'hopper', 'hilma', 2)!;
+    for (let k = 0; k < 60 * 20; k++) step(s);
+    const direct = plan(s, cell(s, 'hameenlinna'), cell(s, 'farm')).find((o) => o.mode === 'short')!;
+    check(!!direct && direct.length < long - 5, `the cutting through the ridge is shorter than the way round (${direct?.length.toFixed(1)} against ${long.toFixed(1)} tiles)`);
+    make(s, direct);
+    check(line.dist[line.dist.length - 1] === long, 'the path waits while the undo second is open');
+    const watch = new Watch();
+    for (let k = 0; k < 6 * YEAR_SECONDS * 60; k++) {
+      if (s.yearEnd) closeYearEnd(s);
+      step(s);
+      watch.check(s);
+      if (k === 60 * 30) {
+        const now = line.dist[line.dist.length - 1];
+        check(now < long - 5 && !line.cut, `the line re-routes over the shorter track (${long.toFixed(1)} -> ${now.toFixed(1)} tiles)`);
+        check(t.s >= -0.01 && t.s <= now + 0.01, 'and its train is still on the line');
+      }
+    }
+    check(watch.overlap === 0 && watch.near === 0 && t.odometer > 100, `and the train goes on running over the new path (${t.odometer.toFixed(0)} tiles)`);
+  }
+  // lifting: a dead end goes back by half, a line takes only what no other line uses
+  {
+    const s = createState(HARJU);
+    s.cash = 9999;
+    make(s, plan(s, cell(s, 'forest'), open)[0]);
+    const cash0 = s.cash;
+    const v = liftTrackValue(s, open);
+    check(!!v && v.cells > 4 && v.back > 0, `a track end is a dead end that can be lifted (${v?.cells} tiles, ${v?.back.toFixed(1)} back)`);
+    check(liftTrack(s, open) && s.track[open] === 0 && Math.abs(s.cash - cash0 - v!.back) < 1e-6 && linked(s, cell(s, 'forest')).length === 0, 'lifting it gives half back and leaves the station');
+    check(!liftTrack(s, cell(s, 'forest')), 'a station is never lifted');
+    // a stretch between two stations is no dead end
+    const a = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+    check(liftTrackValue(s, a.path[5]) === null, 'track a line runs over is lifted with the line, not as a stretch');
+    // a branch off a line stays when the line goes
+    const open2 = idx(s, 25, 20);
+    make(s, plan(s, a.path[8], open2)[0]);
+    const joint = a.path.find((c) => linked(s, c).length >= 3) ?? -1;
+    check(joint >= 0, 'a drag from the middle of a line makes a junction on it');
+    check(liftLine(s, a.id) && joint >= 0 && linked(s, joint).length === 1 && s.track[open2] !== 0, 'lifting the line leaves the branch: the cells another track still touches stay');
+    check(deadEnd(s, open2) !== null && liftTrack(s, open2) && s.track[open2] === 0 && s.track[joint] === 0, 'and the branch, a dead end now, is lifted on its own back to the station');
+  }
+  // a line cut by lifted track shows as cut and its trains wait
+  {
+    const s = createState(HARJU);
+    s.cash = 9999;
+    const a = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+    const tr = buyTrain(s, a.id, 'flat', 'hilma', 2)!;
+    for (let k = 0; k < 60 * 80; k++) step(s);
+    const gone = a.path[Math.floor(a.path.length / 2)];
+    for (let i = 0; i < 8; i++) if (s.track[gone] & (1 << i)) {
+      const dx = [1, 1, 0, -1, -1, -1, 0, 1][i];
+      const dy = [0, 1, 1, 1, 0, -1, -1, -1][i];
+      const j = gone + dy * s.w + dx;
+      s.track[j] &= ~(1 << ((i + 4) % 8));
+      s.track[gone] &= ~(1 << i);
+    }
+    s.netVersion++;
+    for (let k = 0; k < 120; k++) step(s);
+    check(a.cut, 'a line whose track is broken is marked cut');
+    const trips = tr.odometer;
+    for (let k = 0; k < 60 * 120; k++) step(s);
+    check(tr.state === 'stop' || tr.odometer - trips < 60, 'and its train waits at its last station');
+  }
+  // the path search is cheap
+  {
+    const s = createState(HARJU);
+    s.cash = 9999;
+    const a = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+    build(s, plan(s, cell(s, 'sawmill'), cell(s, 'hameenlinna'))[0]);
+    build(s, plan(s, cell(s, 'hameenlinna'), cell(s, 'mill'))[0]);
+    pathOver(s, a.path[0], cell(s, 'mill'));
+    let ms = Infinity;
+    for (let k = 0; k < 5; k++) {
+      const t0 = performance.now();
+      pathOver(s, a.path[0], cell(s, 'mill'));
+      ms = Math.min(ms, performance.now() - t0);
+    }
+    check(ms < 15, `pathOver() over the laid track on ${s.w * s.h} cells takes ${ms.toFixed(1)} ms`);
+  }
+}
+
 /** the whole game of one bot: the state it ends in, with the checks that run every frame */
 function play(sc: typeof SAWMILL, greedy = false, upToYear = Infinity, variant?: string) {
   const s = createState(sc);
@@ -1129,6 +1280,12 @@ check(h.sites.filter((x) => x.kind === 'town' && x.size >= 3).length >= 2, `harj
   check(served(plans.A, 'forest') && !served(plans.A, 'korpela') && served(plans.A, 'farm') && !served(plans.A, 'niittyla') && !served(plans.A, 'lahti'), 'plan A runs Kuusikko and Peltola and never Korpela, Niittylä or Lahti');
   check(served(plans.B, 'korpela') && !served(plans.B, 'forest') && served(plans.B, 'niittyla') && !served(plans.B, 'farm') && served(plans.B, 'lahti'), 'plan B runs Korpela, Niittylä and Lahti and never Kuusikko or Peltola');
   check(served(plans.C, 'forest') && served(plans.C, 'farm') && served(plans.C, 'lahti') && !served(plans.C, 'korpela') && !served(plans.C, 'niittyla'), 'plan C runs Kuusikko, Peltola and Lahti: a mix of the other two');
+}
+// plan E lays a shared trunk and a branch by free track, two lines over it, and wins like the others
+{
+  const e = play(HARJU, false, Infinity, 'E');
+  const lines = e.lines.map((l) => l.stops.length).join();
+  check(e.result!.won && e.result!.stars === 3 && e.lines.some((l) => bots['harju-E'].lineFor(e, ['forest', 'sawmill']) === l) && !!bots['harju-E'].lineFor(e, ['korpela', 'sawmill']), `plan E wins Harju on a shared trunk and a branch (${e.result!.year}, lines ${lines})`);
 }
 // a track out of the end of a line never goes out over water or doubles back to satisfy the station's approach, and a line is lengthened only for a train that has something to do at the new stop
 {

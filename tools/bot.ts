@@ -8,7 +8,7 @@
  */
 import type { Contract, EngineId, Good, SimState, WagonType } from '../src/game/types';
 import type { Route, RouteMode } from '../src/game/grid';
-import { removeWagon, build, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, setStop, buyCrew, buyCrane, buyPlatform, buySiding, defaultConsist, platformPrice, borrow, repay, loanCeiling, netWorth, visited, extendable, freeSide, canExtend } from '../src/game/sim';
+import { removeWagon, build, make, makeLine, buyTrain, trainSpot, closeYearEnd, plan, trainPrice, addWagon, setEngine, setFullLoad, moveTrain, setStop, buyCrew, buyCrane, buyPlatform, buySiding, defaultConsist, platformPrice, borrow, repay, loanCeiling, netWorth, visited, extendable, freeSide, canExtend } from '../src/game/sim';
 import { advice, type Advice } from '../src/game/advice';
 import { wagonFor, WAGONS_DEFAULT, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, MAKES, ENGINES, RESALE, WAGON_PRICE } from '../src/game/content/economy';
 import type { YearEnd } from '../src/game/types';
@@ -27,6 +27,10 @@ export interface Gate {
 export type Step =
   /** a drag from one site's station to another; with `extend` (the sites of the line, in order) the drag lengthens that line, which ends at `from`, instead of starting a new one */
   | { kind: 'line'; from: string; to: string; mode: RouteMode; after?: Gate; extend?: string[] }
+  /** free track: a drag from a site's station or a cell [x, y] of laid track to a site or a cell, which leaves a track end when it ends on open ground */
+  | { kind: 'track'; from: string | [number, number]; to: string | [number, number]; mode: RouteMode; after?: Gate }
+  /** a line over the laid track through these sites in order (two to four), made from the first station's card */
+  | { kind: 'route'; stops: string[]; after?: Gate }
   /** a train on the line through these sites in order (two to four); `wagons` is one type (the default count) or the consist wagon by wagon */
   | { kind: 'train'; line: string[]; wagons: WagonType | WagonType[]; engine?: EngineId; fullLoad?: boolean; after?: Gate; /** buy it even when it can only park: the greedy plan's trains */ anyway?: boolean }
   /** one more wagon on a train, of a type (the last wagon's when none is given). The train is named by its line (its stops as they are at that moment), and by `nth` when the line has several (0 is the first bought), so a train bought off the plan does not shift it */
@@ -214,11 +218,35 @@ export const HARJU_PLANS: Record<string, BotPlan> = {
 };
 
 /**
+ * Plan E, free track: the layout is laid by hand before any line is made. A trunk runs from Kuusikko
+ * out to a tile in the open and on to Koskensaha, a branch joins it from Korpela, and two lines
+ * share the trunk, each with a train: Kuusikko to Koskensaha and Korpela to Koskensaha. The rest is
+ * plan A's. sim-check holds it to the same wins and the same checks as the other plans.
+ */
+HARJU_PLANS.E = {
+  steps: [
+    { kind: 'track', from: 'forest', to: [25, 31], mode: 'cheap' },
+    { kind: 'track', from: [25, 31], to: 'sawmill', mode: 'cheap' },
+    { kind: 'track', from: 'korpela', to: [25, 31], mode: 'cheap' },
+    { kind: 'route', stops: ['forest', 'sawmill'] },
+    { kind: 'route', stops: ['korpela', 'sawmill'] },
+    { kind: 'train', line: ['forest', 'sawmill'], wagons: 'flat' },
+    { kind: 'train', line: ['korpela', 'sawmill'], wagons: 'flat' },
+    ...PLANS.harju.steps.slice(2),
+  ],
+};
+
+/**
  * Whether a plan serves a contract: one of its lines joins the site to another that makes the good.
  * The bot and the hand take only what their network will carry anyway.
  */
 export function planServes(steps: Step[], c: { site: string; good: Good }, makes: (site: string) => Good | null): boolean {
   return steps.some((st) => {
+    if (st.kind === 'route') {
+      const ends = [st.stops[0], st.stops[st.stops.length - 1]];
+      const other = ends[0] === c.site ? ends[1] : ends[1] === c.site ? ends[0] : null;
+      return !!other && makes(other) === c.good;
+    }
     if (st.kind !== 'line') return false;
     const other = st.from === c.site ? st.to : st.to === c.site ? st.from : null;
     return !!other && makes(other) === c.good;
@@ -321,8 +349,29 @@ export class Bot {
     return options.find((o) => o.mode === step.mode) ?? options[0];
   }
 
+  /** the cell a track step names: a site's cell or a given cell */
+  private cellOf(s: SimState, at: string | [number, number]): number {
+    return typeof at === 'string' ? idx(s, siteById(s, at).cx, siteById(s, at).cy) : idx(s, at[0], at[1]);
+  }
+
+  private trackRoutes: { step: number; net: number; options: Route[] } | null = null;
+
+  /** the route a track step lays, searched once per state of the track */
+  private trackRoute(s: SimState, step: Extract<Step, { kind: 'track' }>): Route {
+    if (!this.trackRoutes || this.trackRoutes.step !== this.done || this.trackRoutes.net !== s.netVersion) this.trackRoutes = { step: this.done, net: s.netVersion, options: plan(s, this.cellOf(s, step.from), this.cellOf(s, step.to)) };
+    const options = this.trackRoutes.options;
+    if (!options.length) throw new Error(`no track ${step.from} -> ${step.to}`);
+    return options.find((o) => o.mode === step.mode) ?? options[0];
+  }
+
   /** what a step costs now, and whether it is a buy worth borrowing for */
   private need(s: SimState, step: Step): { price: number; productive: boolean } {
+    if (step.kind === 'track') {
+      // keep enough for the first train the layout is for
+      const next = this.plan.steps.slice(this.done + 1).find((o) => o.kind !== 'track' && o.kind !== 'route');
+      return { price: this.trackRoute(s, step).cost + (next?.kind === 'train' ? trainPrice(next.engine, countOf(next.wagons)) : 0), productive: true };
+    }
+    if (step.kind === 'route') return { price: 0, productive: false };
     if (step.kind === 'line') {
       // keep enough for the train that follows
       const next = this.plan.steps[this.done + 1];
@@ -392,7 +441,19 @@ export class Bot {
         this.log.push(`${t}: borrow ${gap}, loan ${s.loan}`);
       }
     }
-    if (step.kind === 'line') {
+    if (step.kind === 'track') {
+      const r = this.trackRoute(s, step);
+      if (s.cash < price) return;
+      if (!make(s, r).ok) throw new Error(`track refused with the cash there: ${step.from}->${step.to} cost ${r.cost} cash ${s.cash}`);
+      this.done++;
+      this.log.push(`${t}: track ${step.from} -> ${step.to} ${r.mode}, ${r.cells.length} cells, cost ${r.cost}, shared ${r.cells.length - r.added.length - 1}, cash ${s.cash.toFixed(0)}`);
+    } else if (step.kind === 'route') {
+      const stops = step.stops.map((id) => stationAt(s, this.cellOf(s, id))?.id);
+      if (stops.some((id) => id === undefined)) throw new Error(`no station on ${step.stops.join('-')}`);
+      if (!makeLine(s, stops as number[])) throw new Error(`no track joins ${step.stops.join('-')}`);
+      this.done++;
+      this.log.push(`${t}: line ${step.stops.join('-')} over the laid track`);
+    } else if (step.kind === 'line') {
       const r = this.route(s, step);
       if (s.cash < price + (productive ? 0 : 0)) return;
       const line = build(s, r, this.extending(s, step)?.id);

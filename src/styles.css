@@ -667,3 +667,15 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .lines-here .lh-text { display: flex; flex-direction: column; min-width: 0; }
 .lines-here .lh-text small { color: var(--bone-dim); font-size: 13px; }
 .lines-here .btn.act { flex: 0 0 auto; min-height: 44px; }
+.new-line .chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.new-line .btn.act { flex: 0 0 auto; min-height: 44px; margin: 0; flex-direction: column; gap: 0; padding: 4px 12px; }
+.new-line .btn.act small { font-size: 12px; opacity: 0.8; }
+
+/* the confirm row of a drawn route: Build and Cancel, big and in the thumb zone */
+.confirm-row { display: flex; gap: 10px; margin-top: 8px; }
+.confirm-row .btn { flex: 1; min-height: 56px; font-size: 18px; margin: 0; }
+.confirm-row .btn.primary { flex: 2; }
+.confirm-row .btn[disabled] { opacity: 0.5; }
+.choice-card .btn.route.on { background: rgba(255, 255, 255, 0.09); }
+.choice-card .cost.red { color: #ff8a7a; }
+.hint-bend { margin: 4px 0 0; }

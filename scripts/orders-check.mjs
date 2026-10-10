@@ -77,6 +77,8 @@ try {
     // only when a train on the line carries something at the new stop, so the train gets a box wagon first
     await between('forest', 'sawmill', 13);
     await drag('forest', 'sawmill');
+    await page.locator('[data-act="plan-build"]').tap();
+    await page.waitForTimeout(500);
     await page.locator('[data-track="card-buy-train"]').tap();
     await page.waitForTimeout(500);
     check((await page.evaluate(() => window.__sim.trains.length)) === 1, `${orient}: the first train is bought`);
@@ -91,6 +93,7 @@ try {
     await between('sawmill', 'hameenlinna', 9.5);
     await drag('sawmill', 'hameenlinna');
     await page.locator('.choice-card [data-group^="extend-"] [data-route]').first().tap();
+    await page.locator('[data-act="plan-build"]').tap();
     await page.waitForTimeout(600);
     await closeCards();
     check(await page.evaluate(() => window.__sim.lines.length === 1 && window.__sim.lines[0].stops.length === 3), `${orient}: the drags make one line of three stops, Kuusikko, Koskensaha, Hämeenlinna`);

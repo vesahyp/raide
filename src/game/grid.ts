@@ -120,13 +120,9 @@ export function profile(s: SimState, cells: number[]): number[] {
   return rail;
 }
 
-/** the rail height a built cell has, from the first line that runs over it */
+/** the rail height a laid cell has: set when the cell was first laid, whichever line or free track it carries */
 export function railAt(s: SimState, cell: number): number | null {
-  for (const l of s.lines) {
-    const k = l.path.indexOf(cell);
-    if (k >= 0) return l.rail[k];
-  }
-  return null;
+  return s.track[cell] ? s.rail[cell] : null;
 }
 
 /** whether a cell can carry track at all: a yard never, a site's cell only as the route's end */
@@ -202,7 +198,9 @@ export function route(s: SimState, from: number, to: number, mode: RouteMode = '
   const isSite = s.sites.some((o) => idx(s, o.cx, o.cy) === to);
   // a site's own cell is reached only along its straight stretch, never through the search
   const free = isSite ? -1 : to;
-  const starts = approaches(s, from, mode, startSide);
+  // a drag from a station leaves along its straight stretch; from a cell of laid track it leaves as it likes
+  const fromStation = s.stations.some((st) => st.cell === from);
+  const starts = fromStation ? approaches(s, from, mode, startSide) : [{ cells: [from], cost: 0, dir: 0 }];
   const ends: Approach[] = isSite ? approaches(s, to, mode) : [{ cells: [to], cost: 0, dir: 0 }];
   if (!starts.length || !ends.length) return null;
   const goals = ends.map((e) => ({ cell: e.cells[e.cells.length - 1], ...e }));
@@ -323,7 +321,8 @@ export function describe(s: SimState, cells: number[], mode: RouteMode): Route {
   const bridge: number[] = [];
   const cutting: number[] = [];
   const fill: number[] = [];
-  const newStation = !s.stations.some((st) => st.cell === to);
+  // the end gets a station when it is a site's cell with none; open ground and laid track get none
+  const newStation = s.sites.some((o) => idx(s, o.cx, o.cy) === to) && !s.stations.some((st) => st.cell === to);
   let cost = newStation ? STATION_COST : 0;
   let length = 0;
   let worst = 0;
@@ -385,6 +384,33 @@ export function routeOptions(s: SimState, from: number, to: number, startSide?: 
   return [cheap, short];
 }
 
+/**
+ * A route that passes through the tiles the player pointed at: the cheapest (or shortest) way between
+ * each two neighbouring points, joined. Null when a leg has no route or the legs would use a cell twice.
+ */
+export function routeVia(s: SimState, from: number, to: number, via: number[], mode: RouteMode = 'cheap', startSide?: number): Route | null {
+  if (!via.length) return route(s, from, to, mode, startSide);
+  const points = [from, ...via, to];
+  const cells: number[] = [];
+  for (let k = 0; k + 1 < points.length; k++) {
+    const seg = route(s, points[k], points[k + 1], mode, k === 0 ? startSide : undefined);
+    if (!seg) return null;
+    cells.push(...(k === 0 ? seg.cells : seg.cells.slice(1)));
+  }
+  if (new Set(cells).size !== cells.length) return null;
+  return describe(s, cells, mode);
+}
+
+/** the routes a drag through waypoints offers: the cheapest, and the shortest when it is a different path */
+export function routeOptionsVia(s: SimState, from: number, to: number, via: number[], startSide?: number): Route[] {
+  if (!via.length) return routeOptions(s, from, to, startSide);
+  const cheap = routeVia(s, from, to, via, 'cheap', startSide);
+  if (!cheap) return [];
+  const short = routeVia(s, from, to, via, 'short', startSide);
+  if (!short || short.length >= cheap.length - 0.5 || short.cells.join() === cheap.cells.join()) return [cheap];
+  return [cheap, short];
+}
+
 /** link two neighbouring cells with track, both ways */
 export function link(s: SimState, a: number, b: number): void {
   const dx = cx(s, b) - cx(s, a);
@@ -408,4 +434,111 @@ export function linked(s: SimState, i: number): number[] {
   const m = s.track[i];
   for (let d = 0; d < 8; d++) if (m & (1 << d)) out.push(idx(s, cx(s, i) + DIRS[d][0], cy(s, i) + DIRS[d][1]));
   return out;
+}
+
+/** a binary heap on two number arrays, priority and cell */
+class Heap {
+  private p: number[] = [];
+  private c: number[] = [];
+  get size(): number {
+    return this.p.length;
+  }
+  push(pri: number, cell: number): void {
+    let k = this.p.length;
+    this.p.push(pri);
+    this.c.push(cell);
+    while (k > 0) {
+      const q = (k - 1) >> 1;
+      if (this.p[q] <= pri) break;
+      this.p[k] = this.p[q];
+      this.c[k] = this.c[q];
+      k = q;
+    }
+    this.p[k] = pri;
+    this.c[k] = cell;
+  }
+  pop(): number {
+    const top = this.c[0];
+    const lp = this.p.pop()!;
+    const lc = this.c.pop()!;
+    const n = this.p.length;
+    if (n) {
+      let k = 0;
+      for (;;) {
+        let c = 2 * k + 1;
+        if (c >= n) break;
+        if (c + 1 < n && this.p[c + 1] < this.p[c]) c++;
+        if (this.p[c] >= lp) break;
+        this.p[k] = this.p[c];
+        this.c[k] = this.c[c];
+        k = c;
+      }
+      this.p[k] = lp;
+      this.c[k] = lc;
+    }
+    return top;
+  }
+}
+
+/**
+ * The cells a train runs from one stop to the next: A* over laid track only, each link costing its
+ * length. A station is entered and left along its own row, never on a diagonal and never from the
+ * yard side, and a train that passes through a station keeps straight on. Null when the laid track
+ * does not join the two cells.
+ */
+export function pathOver(s: SimState, from: number, to: number): number[] | null {
+  if (from === to || !s.track[from] || !s.track[to]) return null;
+  const n = s.w * s.h;
+  const g = new Float64Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const closed = new Uint8Array(n);
+  const station = new Set(s.stations.map((st) => st.cell));
+  const tx = cx(s, to);
+  const ty = cy(s, to);
+  const h = (i: number) => {
+    const dx = Math.abs(cx(s, i) - tx);
+    const dy = Math.abs(cy(s, i) - ty);
+    return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+  };
+  const open = new Heap();
+  g[from] = 0;
+  open.push(h(from), from);
+  while (open.size) {
+    const cur = open.pop();
+    if (closed[cur]) continue;
+    closed[cur] = 1;
+    if (cur === to) break;
+    const x = cx(s, cur);
+    const y = cy(s, cur);
+    // which way the train arrived, to keep straight on through a station
+    const arrived = prev[cur] >= 0 ? cx(s, cur) - cx(s, prev[cur]) : 0;
+    const arrivedY = prev[cur] >= 0 ? cy(s, cur) - cy(s, prev[cur]) : 0;
+    const m = s.track[cur];
+    for (let d = 0; d < 8; d++) {
+      if (!(m & (1 << d))) continue;
+      const [dx, dy] = DIRS[d];
+      const ni = idx(s, x + dx, y + dy);
+      if (closed[ni]) continue;
+      // a station is left along its row, and straight on when the train came through it
+      if (station.has(cur) && (dy !== 0 || (cur !== from && (dx !== arrived || dy !== arrivedY)))) continue;
+      if (station.has(ni) && dy !== 0) continue;
+      const c = g[cur] + stepLen(dx, dy);
+      if (c < g[ni]) {
+        g[ni] = c;
+        prev[ni] = cur;
+        open.push(c + h(ni), ni);
+      }
+    }
+  }
+  if (!closed[to]) return null;
+  const cells: number[] = [];
+  for (let i = to; i !== -1; i = prev[i]) cells.push(i);
+  return cells.reverse();
+}
+
+/** the length of a list of cells, in cells */
+export function lengthOf(s: { w: number }, cells: number[]): number {
+  let len = 0;
+  for (let k = 1; k < cells.length; k++) len += stepLen(cx(s, cells[k]) - cx(s, cells[k - 1]), cy(s, cells[k]) - cy(s, cells[k - 1]));
+  return len;
 }

@@ -101,6 +101,8 @@ async function fresh(orient = 'portrait') {
   await page.waitForTimeout(300);
   // Kuusikko ends the Korpela line, so the lift may ask: take the new line
   if ((await page.locator('.choice-card').count()) > 0) await tapButton(page.locator('[data-group-route="new"], [data-group-route="way"]').first());
+  // the lift builds nothing: the drawn route waits for Build
+  await tapButton(page.locator('[data-act="plan-build"]'));
   await page.waitForTimeout(300);
   await page.screenshot({ path: 'shots/yearend/setup.png' });
   await tapButton(page.locator('[data-track="card-buy-train"]'));
@@ -108,13 +110,16 @@ async function fresh(orient = 'portrait') {
   const st = await state();
   if (st.cards.length) await tapButton(page.locator('.card .round.close')).catch(() => undefined);
   await page.waitForTimeout(200);
+  // the view eased to the route while it waited for Build: back to the one the checks aim from
+  await page.evaluate(([w, h]) => { const r = window.__renderer; r.follow(null); (w < h ? r.setView(25, 51, Math.min(w / 26, (h - 230) / 43)) : r.setView(25.5, 32, 15)); }, [viewport.width, viewport.height]);
+  await page.waitForTimeout(500);
   return { page, context, touch, tap, tapButton, pos, move, state };
 }
 
 // seconds before the year end, on the sim's own clock
 const nearYearEnd = (page, seconds) => page.evaluate((sec) => { window.__sim.yearFrac = 1 - sec / 90; }, seconds);
 const closeCard = async (g) => {
-  const close = g.page.locator('.card .round.close').first();
+  const close = g.page.locator('.card .round.close, [data-act="plan-cancel"]').first();
   if ((await close.count()) > 0) await g.tapButton(close);
 };
 
@@ -169,6 +174,8 @@ try {
     if (s1.cards.includes('choice')) {
       const way = g.page.locator('[data-group-route="new"], [data-group-route="way"]').first();
       await g.tapButton(way);
+      await g.page.waitForTimeout(300);
+      await g.tapButton(g.page.locator('[data-act="plan-build"]'));
       await g.page.waitForTimeout(400);
     }
     s1 = await g.state();

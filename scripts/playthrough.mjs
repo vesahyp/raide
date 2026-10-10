@@ -171,8 +171,10 @@ async function run(orient) {
     return true;
   };
   // bring points into view the way a player does: the zoom button, and one-finger pans that start
-  // on bare ground (away from every site and train, or the finger would build or tap instead)
+  // on bare ground (away from every site, train and cell of laid track, or the finger would build or tap instead)
   const frameOn = async (pointsOf) => {
+    // the view may still be easing (to a drawn route, or back from it): the sites are looked for when it has stopped
+    await page.waitForFunction(() => { const r = window.__renderer; return r.zoomTo === null && !r.glide; }, null, { timeout: 8000 }).catch(() => undefined);
     for (let n = 0; n < 8; n++) {
       const v = await look(page);
       const pts = pointsOf(v);
@@ -206,12 +208,27 @@ async function run(orient) {
       const g = v.glass;
       let best = null;
       // the middle of the glass, so the stroke stays clear of the HUD and the zoom buttons
-      for (let i = 2; i < 6; i++)
-        for (let j = 2; j < 6; j++) {
-          const p = { x: g.l + (g.w * i) / 8, y: g.t + (g.h * j) / 8 };
-          const d = Math.min(...busy.map((b) => Math.hypot(b.x - p.x, b.y - p.y)));
-          if (!best || d > best.d) best = { p, d };
-        }
+      const spots = [];
+      for (let i = 1; i < 7; i++) for (let j = 1; j < 8; j++) spots.push({ x: g.l + (g.w * i) / 8, y: g.t + (g.h * j) / 8 });
+      // a finger that starts on laid track lays track, so a pan starts at least two cells from any
+      const bare = await page.evaluate((spots) => {
+        const s = window.__sim;
+        return spots.map((p) => {
+          const q = window.__renderer.pick(p.x, p.y);
+          if (!q) return false;
+          for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const x = Math.floor(q.x) + dx;
+            const y = Math.floor(q.y) + dy;
+            if (x >= 0 && y >= 0 && x < s.w && y < s.h && s.track[y * s.w + x]) return false;
+          }
+          return true;
+        });
+      }, spots);
+      spots.forEach((p, k) => {
+        if (!bare[k] && bare.some(Boolean)) return;
+        const d = Math.min(...busy.map((b) => Math.hypot(b.x - p.x, b.y - p.y)));
+        if (!best || d > best.d) best = { p, d };
+      });
       // the finger keeps to the glass: a long pan is made in several strokes
       const dx = Math.max(-g.w / 3, Math.min(g.w / 3, m.dx));
       const dy = Math.max(-g.h / 3, Math.min(g.h / 3, m.dy));
@@ -235,6 +252,7 @@ async function run(orient) {
   try {
     await page.goto(`http://localhost:${port}/raide/?lang=en${SPEED !== 1 ? `&speed=${SPEED}` : ''}`);
     await page.addScriptTag({ content: HAND_JS });
+    if (process.env.EVT) { page.on('console', (m) => { if (m.text().startsWith('EVT')) console.log(m.text()); }); await page.evaluate(() => { for (const k of ['pointerdown', 'pointerup', 'pointercancel']) document.addEventListener(k, (e) => console.log(`EVT ${k} id=${e.pointerId} t=${window.__sim ? window.__sim.time.toFixed(1) : '-'} x=${Math.round(e.clientX)} y=${Math.round(e.clientY)} target=${e.target.tagName}.${e.target.className}`), true); }); }
     await page.evaluate((sc) => { window.__hand = new window.__Hand(sc, 0.6); }, process.env.PLAN ? `${SCENARIO}:${process.env.PLAN}` : SCENARIO);
     await page.waitForTimeout(800);
     await tapButton(page.locator(`[data-scenario="${SCENARIO}"]`));
@@ -337,10 +355,32 @@ async function run(orient) {
           await touch('touchMove', [{ x: fx, y: fy, id: 1 }]);
           await page.waitForTimeout(25);
         }
+        // the lift leaves a route to wherever the finger is: steer until it is on the site, as a thumb watching the pillar would
+        const onSite = () => page.evaluate((id) => { const d = window.__input.drag; const o = window.__sim.sites.find((x) => x.id === id); return !!d && !d.loose && d.to === o.cy * window.__sim.w + o.cx; }, act.to);
+        for (let tries = 0; tries < 8 && !(await onSite()); tries++) {
+          for (let n = 0; n < 60; n++) {
+            b = (await look(page)).sites[act.to];
+            const d = Math.hypot(b.x - fx, b.y - fy);
+            if (d < 3) break;
+            const k = Math.min(1, 22 / d);
+            fx += (b.x - fx) * k;
+            fy += (b.y - fy) * k;
+            await touch('touchMove', [{ x: fx, y: fy, id: 1 }]);
+            await page.waitForTimeout(25);
+          }
+          await page.waitForTimeout(200);
+        }
         await page.waitForTimeout(150);
+        const landed = await onSite();
         await touch('touchEnd', []);
         stats.drags++;
         await page.waitForTimeout(300);
+        // a lift off the site left a route to open ground: Cancel takes it back and the hand drags again
+        if (!landed && (await page.locator('[data-act="plan-cancel"]').count())) {
+          await tapButton(page.locator('[data-act="plan-cancel"]'));
+          await page.waitForTimeout(600);
+          continue;
+        }
         const after = await look(page);
         // a year end that opens under the finger ends the drag: the hand makes it again after the choice
         if (!(after.lines.length > v.lines.length || after.card === 'choice' || after.yearEnd)) {
@@ -361,6 +401,8 @@ async function run(orient) {
         if (!(await btn.count())) btn = page.locator(group ? `[data-group="${group}"] [data-route]` : '[data-route]');
         if (!(await btn.count())) { stats.error = `no ${act.mode} route offered${group ? ` in ${group}` : ''}`; break; }
         await tapButton(btn);
+        // the drawn route waits for Build: a tap on it, as a player would
+        await tapButton(page.locator('[data-act="plan-build"]'));
         if (act.extend) stats.extended++;
         else if (group === 'new') stats.newLine++;
         stats.routes[act.mode]++;
@@ -494,7 +536,8 @@ async function run(orient) {
         await tapButton(page.locator('.round.close'));
         await page.waitForTimeout(200);
       } else if (act.kind === 'close') {
-        const c = page.locator('.round.close');
+        // a drawn route waiting for Build is closed with Cancel, any other card with its x
+        const c = (await page.locator('[data-act="plan-cancel"]').count()) ? page.locator('[data-act="plan-cancel"]') : page.locator('.round.close');
         if (await c.count()) await tapButton(c);
         await page.waitForTimeout(200);
       } else if (act.kind === 'choose') {

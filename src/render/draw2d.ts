@@ -541,13 +541,72 @@ export type Spoke = [number, number];
  * the heights in terraces at the two ends, `lm` at the centre, so a grade runs on without a step
  * between cells. A bridge has no ballast: the deck is drawn under it.
  */
-export function trackCell(v: View, x: number, y: number, links: Spoke[], las: number[], lm: number, bridge: boolean): void {
+export function trackCell(v: View, x: number, y: number, links: Spoke[], las: number[], lm: number, bridge: boolean, endStop = false): void {
   const { c, S } = v;
   const cxp = v.x(x + 0.5);
   const cyp = v.y(y + 0.5, lm);
   const end = (d: Spoke, l: number): [number, number] => [cxp + (d[0] * S) / 2, v.y(y + 0.5 + d[1] / 2, l)];
   if (links.length === 2) trackPiece(c, S, end(links[0], las[0]), end(links[1], las[1]), [cxp, cyp], true, bridge);
   else for (let i = 0; i < links.length; i++) trackPiece(c, S, end(links[i], las[i]), [cxp, cyp], [cxp, cyp], false, bridge);
+  // a track end: a buffer stop across the track at the cell's centre
+  if (endStop) {
+    const e = end(links[0], las[0]);
+    bufferStop(c, S, cxp, cyp, Math.atan2(cyp - e[1], cxp - e[0]));
+  }
+  // a junction: the two links that run most nearly straight on are the main line, the others branch off it in points
+  if (links.length >= 3 && !bridge) junctionPoints(v, x, y, links, las, lm);
+}
+
+/**
+ * The points of a junction: a bright switch tongue laid along each branch from the centre, and a
+ * switch stand with its lamp on the side away from the branch. The main line is the pair of links
+ * nearest to a straight line through the cell.
+ */
+function junctionPoints(v: View, x: number, y: number, links: Spoke[], las: number[], lm: number): void {
+  const { c, S } = v;
+  const cxp = v.x(x + 0.5);
+  const cyp = v.y(y + 0.5, lm);
+  let a = 0;
+  let b = 1;
+  let best = 2;
+  for (let i = 0; i < links.length; i++)
+    for (let j = i + 1; j < links.length; j++) {
+      const dot = (links[i][0] * links[j][0] + links[i][1] * links[j][1]) / (Math.hypot(...links[i]) * Math.hypot(...links[j]));
+      if (dot < best) {
+        best = dot;
+        a = i;
+        b = j;
+      }
+    }
+  links.forEach((d, i) => {
+    if (i === a || i === b) return;
+    const len = Math.hypot(d[0], d[1]);
+    const ux = d[0] / len;
+    const uy = d[1] / len;
+    // the switch blades: a pair of bright rails laid along the branch from the centre, drawn over the track
+    const to: [number, number] = [cxp + ux * S * 0.46, v.y(y + 0.5 + uy * 0.46, (lm + las[i]) / 2)];
+    const nx = -uy;
+    const ny = ux;
+    c.lineCap = 'round';
+    for (const o of [-0.17, 0.17]) {
+      const a0: [number, number] = [cxp + nx * o * S, cyp + ny * o * S * 0.9];
+      const a1: [number, number] = [to[0] + nx * o * S, to[1] + ny * o * S * 0.9];
+      c.strokeStyle = OUT;
+      c.lineWidth = Math.max(2.2, S * 0.12);
+      c.beginPath();
+      c.moveTo(a0[0], a0[1]);
+      c.lineTo(a1[0], a1[1]);
+      c.stroke();
+      c.strokeStyle = '#f1ead2';
+      c.lineWidth = Math.max(1.2, S * 0.06);
+      c.beginPath();
+      c.moveTo(a0[0], a0[1]);
+      c.lineTo(a1[0], a1[1]);
+      c.stroke();
+    }
+    // the stand beside the points, on the side the branch does not leave
+    switchStand(v, x + 0.5 - uy * 0.38 - ux * 0.1, y + 0.5 + ux * 0.38 - uy * 0.1, lm, ux);
+  });
 }
 
 function trackPiece(c: Ctx, S: number, a0: [number, number], b0: [number, number], mid: [number, number], curve: boolean, bridge: boolean): void {

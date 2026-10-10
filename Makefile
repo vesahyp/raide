@@ -31,6 +31,7 @@ buy-sheet: build
 #   make icon           # render public/icon.svg to the PNG icons
 #   make buy-check      # buys a train three ways (the map button, the station card, the tip) by touch; pictures into shots/buy/
 #   make touch-check    # lays track and buys a train by touch on an emulated phone
+#   make layout-check   # a track end, a trunk, a junction and a line made from a station card, by touch on an iPhone 16; pictures into shots/layout/
 #   make yearend-check  # the year end must wait for a held drag, a pick mode and an open card; a drag from a line's end builds a new line
 #   make rotate-check   # the year end against a drag, a pick mode and a card
 yearend-check:
@@ -54,7 +55,7 @@ PROFILE ?= personal
 AWS      = AWS_PROFILE=$(PROFILE) aws
 TF       = AWS_PROFILE=$(PROFILE) terraform -chdir=infra
 
-.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice wants ledger upgrades mixed orders-check people buy-check buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
+.PHONY: result dev build preview check balance shots-setup shots look spots home trains goods advice wants ledger upgrades mixed orders-check layout-check people buy-check buy-sheet drag-look icon money-look touch-check yearend-check rotate-check playthrough pwa-check mockups topdown plan apply outputs env deploy-pixel
 
 dev:
 	npm run dev
@@ -122,6 +123,10 @@ mixed: build
 # train orders by touch on an iPhone 16: a train passes Koskensaha through, then stops there again; pictures into shots/orders/
 orders-check: build
 	node scripts/orders-check.mjs
+
+# custom layouts by touch on an iPhone 16 (ADR 0004): a track end, a trunk, a junction, a line made from a station card, a train over the drawn track; pictures into shots/layout/
+layout-check: build
+	node scripts/layout-check.mjs
 
 # the result card, won and lost, Harju and Sawmill, portrait and landscape, fi and en, into shots/result/; fails when the card scrolls, a button is small or the lost card names nothing
 result: build

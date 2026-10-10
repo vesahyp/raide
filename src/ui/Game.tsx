@@ -7,15 +7,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Cargo, EngineId, Good, Line, Load, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
 import { createState, siteById, siteAt, goodsOnMap, stationAt } from '../game/state';
-import { DT, freeSide, canExtend, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, setFullLoad, sellTrain, fillOf, storeCap, eatsPerMonth, growthOutlook, goalProgress, lineOf, buyers, moveTrain, buyCrew, canMove, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, farePay, visited, townEats, fareTargets, wantsPeople, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice, buySiding, buyCrane, craneSite, sidingAt, defaultConsist, consistCycle, stopSite, stopGood, stopS, wagonRoutes, wagonWaste, wasteWagons, WAGON_BACK } from '../game/sim';
+import { DT, brokenLeg, freeSide, canExtend, step, buyTrain, undo, closeYearEnd, trainPrice, note, price, plan, make, makeLine, reaches, liftTrack, liftTrackValue, addWagon, removeWagon, setEngine, setFullLoad, sellTrain, fillOf, storeCap, eatsPerMonth, growthOutlook, goalProgress, lineOf, buyers, moveTrain, buyCrew, canMove, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, farePay, visited, townEats, fareTargets, wantsPeople, lineTrackUpkeep, runningCostYear, runPerTile, trainSpot, buyPlatform, platformPrice, buySiding, buyCrane, craneSite, sidingAt, defaultConsist, consistCycle, stopSite, stopGood, stopS, wagonRoutes, wagonWaste, wasteWagons, WAGON_BACK } from '../game/sim';
 import { Orders } from './Orders';
 import { HOUSES_PER_SIZE } from '../render/town';
-import { WAGON_GOODS, CRANE_GOODS, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, SIDING_LEN, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, YEAR_SECONDS, TOWN_MAX, TOWN_STORE_CAP, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, wagonFor } from '../game/content/economy';
+import { WAGON_GOODS, CRANE_GOODS, CRANE_PRICE, CREW_PRICE, SIDING_PRICE, SIDING_LEN, ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, YEAR_SECONDS, CELL_M, TOWN_MAX, TOWN_STORE_CAP, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_MAX, TRACK_UPKEEP, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
 import { earthWord, gradeText, GRADE_COL, perYear, routeKm, tripsByEngine } from './routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
 import { drawEngine, drawWagon } from '../render/draw2d';
-import { Input } from '../input/input';
+import { Input, planRoutes, type Plan } from '../input/input';
 import { Bot } from '../../tools/bot';
 import { tr, t as tt, num } from '../i18n';
 import { play, unlock, isMuted, setMuted } from '../audio';
@@ -33,8 +33,9 @@ const FAST = 3;
 type Card =
   | { kind: 'line'; lineId: number; /** open scrolled to "Buy a train" */ buy?: boolean }
   | { kind: 'train'; trainId: number }
-  | { kind: 'site'; siteId: string }
-  | { kind: 'choice'; options: Route[]; sx: number; sy: number; /** the lines the new stop could lengthen, each with the routes that do */ extend?: { lineId: number; options: Route[]; trainIds: number[] }[] }
+  | { kind: 'site'; siteId: string; /** open scrolled to the New line buttons, after track that built a station */ newLine?: boolean }
+  | { kind: 'track'; cell: number }
+  | { kind: 'choice'; plan: Plan; sx: number; sy: number; /** which of the plan's routes is chosen */ pick: number }
   | { kind: 'yearEnd' }
   | { kind: 'result' }
   | { kind: 'pause' }
@@ -111,19 +112,20 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       return line ? plan(s, a, b, freeSide(s, line, a)).filter((r) => canExtend(s, r, line.id)) : plan(s, a, b);
     };
     // the player's moves, for the scripts that set a scene up
-    w.__act = { plan: (a: number, b: number) => plan(s, a, b), build: (r: Route, ext?: number) => build(s, r, ext), buyTrain: (l: number, wg: WagonType | WagonType[], e: EngineId, n?: number) => buyTrain(s, l, wg, e, n), moveTrain: (t: number, l: number) => moveTrain(s, t, l), sellTrain: (t: number) => sellTrain(s, t), price: (e: EngineId, n: number) => trainPrice(e, n), ceiling: () => loanCeiling(s), buySiding: (l: number, cell?: number) => buySiding(s, l, cell), buyCrane: (st: number) => buyCrane(s, st), spotFree: (lineId: number, n: number) => { const l = s.lines.find((o) => o.id === lineId); const sp = l ? trainSpot(s, l, n) : null; return !!sp && !sp.parked; } };
+    w.__act = { plan: (a: number, b: number) => plan(s, a, b), build: (r: Route, ext?: number) => make(s, r, ext).line, make: (r: Route, ext?: number) => make(s, r, ext), makeLine: (stops: number[]) => makeLine(s, stops), buyTrain: (l: number, wg: WagonType | WagonType[], e: EngineId, n?: number) => buyTrain(s, l, wg, e, n), moveTrain: (t: number, l: number) => moveTrain(s, t, l), sellTrain: (t: number) => sellTrain(s, t), price: (e: EngineId, n: number) => trainPrice(e, n), ceiling: () => loanCeiling(s), buySiding: (l: number, cell?: number) => buySiding(s, l, cell), buyCrane: (st: number) => buyCrane(s, st), spotFree: (lineId: number, n: number) => { const l = s.lines.find((o) => o.id === lineId); const sp = l ? trainSpot(s, l, n) : null; return !!sp && !sp.parked; } };
     renderer.onBuyLine = (lineId) => setCard({ kind: 'line', lineId, buy: true });
     const input = new Input(
       canvas,
       s,
       renderer,
       {
-        onBuild: (line, sx, sy) => {
-          track('build', { scenario: scenario.id, cost: s.lastBuild?.cost ?? 0, bridge: s.lastBuild ? s.lastBuild.cells.filter((c) => s.water[c]).length : 0 });
-          setCancel({ x: sx, y: sy });
-          setCard({ kind: 'line', lineId: line.id });
+        onTrack: (cell) => setCard({ kind: 'track', cell }),
+        // the route the lift left waits for Build or Cancel; bending it or taking a waypoint away comes here again
+        onPlan: (p, sx, sy) => {
+          // a new route comes up with the view fitted above the sheet; a bend or a waypoint taken away leaves the view where it is
+          if (p && cardRef.current?.kind !== 'choice') renderer.fitRoute(p.options[0], Math.round(window.innerHeight * 0.52));
+          setCard(p ? { kind: 'choice', plan: p, sx, sy, pick: inputRef.current?.chosen ?? 0 } : null);
         },
-        onChoice: (options, sx, sy, extend) => setCard({ kind: 'choice', options, sx, sy, extend: extend ? extend.map((e) => ({ lineId: e.line.id, options: e.options, trainIds: e.trains.map((x) => x.id) })) : undefined }),
         onLine: (line) => setCard({ kind: 'line', lineId: line.id }),
         onTrain: (train) => {
           renderer.follow(train);
@@ -191,7 +193,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       } else if (s.yearEnd && !s.result && cardRef.current?.kind !== 'yearEnd') {
         // a held drag, a pick mode and any card the player opened come first: the ledger waits until they are done
         const kind = cardRef.current?.kind;
-        const busy = !!input.drag || busyRef.current.lay || busyRef.current.siding || (kind !== undefined && kind !== 'result');
+        const busy = !!input.drag || !!input.plan || busyRef.current.lay || busyRef.current.siding || (kind !== undefined && kind !== 'result');
         if (bot && !(holdLedger > 0 && s.history.length >= holdLedger)) bot.act(s);
         else if (busy) setLedgerWaits((x) => (x ? x : true));
         else setCard({ kind: 'yearEnd' });
@@ -202,7 +204,10 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       if (!s.lastBuild) setCancel((c) => (c ? null : c));
       const c = cardRef.current;
       input.update(real);
-      renderer.draw(real * speed, input.drag, hint, c?.kind === 'choice' ? (c.extend ? [...c.extend.flatMap((e) => e.options), ...c.options] : c.options) : null);
+      renderer.waypoints = input.drag ? input.drag.via : input.plan?.via ?? [];
+      renderer.chosen = input.chosen;
+      renderer.armCell = input.arm ? input.arm.cell : -1;
+      renderer.draw(real * speed, input.drag, hint, c?.kind === 'choice' && input.plan ? planRoutes(input.plan).map((x) => x.route) : null);
       if (frame % 30 === 0) refreshTip(now);
       if (++frame % 6 === 0) {
         setHud(readHud(s));
@@ -266,8 +271,21 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
   placeSidingRef.current = placeSiding;
   const endSidingPick = (placed: boolean) => endSidingRef.current(placed, sidingPick?.lineId);
 
+  useEffect(() => {
+    if (card?.kind !== 'choice' && inputRef.current?.plan) {
+      inputRef.current.cancelPlan();
+      rendRef.current?.endPlan(false);
+    }
+  }, [card]);
+
   const goal = scenario.goal;
   const close = () => setCard(null);
+  // after a build: the line card for a new line; for track that made none, the new station's card, or nothing (a track end)
+  function openAfterBuild(made: Line | null): void {
+    if (made) return setCard({ kind: 'line', lineId: made.id });
+    const st = s.lastBuild?.station != null ? s.stations.find((x) => x.id === s.lastBuild!.station) : undefined;
+    setCard(st ? { kind: 'site', siteId: st.siteId, newLine: true } : null);
+  }
   const line = card?.kind === 'line' ? s.lines.find((l) => l.id === card.lineId) ?? null : null;
   const train = card?.kind === 'train' ? s.trains.find((t) => t.id === card.trainId) ?? null : null;
   const site = card?.kind === 'site' ? s.sites.find((x) => x.id === card.siteId) ?? null : null;
@@ -301,6 +319,8 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
               className="tip-text"
               data-act="tip"
               onClick={() => {
+                // a route waits for Build or Cancel: the tip does not take it away
+                if (inputRef.current?.plan) return;
                 rendRef.current?.panToSite(tip.site);
                 // a line with no train: the tip opens the line card at "Buy a train"
                 setCard(tip.kind === 'idle-line' && tip.onLine !== undefined ? { kind: 'line', lineId: tip.onLine, buy: true } : { kind: 'site', siteId: tip.site });
@@ -409,21 +429,34 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       {card?.kind === 'choice' && (
         <ChoiceCard
           s={s}
-          options={card.options}
-          extend={card.extend ? card.extend.map((e) => ({ line: s.lines.find((l) => l.id === e.lineId)!, options: e.options, trains: e.trainIds.map((id) => s.trains.find((x) => x.id === id)).filter((x): x is Train => !!x) })) : undefined}
-          onPick={(r, extendId) => {
+          plan={card.plan}
+          pick={card.pick}
+          onPick={(i) => {
+            inputRef.current?.choose(i);
+            setCard({ ...card, pick: i });
+          }}
+          onBuild={() => {
+            const chosen = planRoutes(card.plan)[card.pick];
+            if (!chosen) return;
+            const r = chosen.route;
             if (r.cost > s.cash) {
               note(s, r.cells[r.cells.length - 1], tr('Ei rahaa', 'No cash'));
               return;
             }
-            const l = build(s, r, extendId);
-            if (l) {
-              track('build', { scenario: scenario.id, cost: r.cost, bridge: r.bridge.length, cutting: r.cutting.length, mode: r.mode, extend: extendId !== undefined });
+            const made = make(s, r, chosen.extendId);
+            if (made.ok) {
+              track('build', { scenario: scenario.id, cost: r.cost, bridge: r.bridge.length, cutting: r.cutting.length, mode: r.mode, extend: chosen.extendId !== undefined, via: card.plan.via.length });
+              inputRef.current?.cancelPlan();
+              rendRef.current?.endPlan(true);
               setCancel({ x: card.sx, y: card.sy });
-              setCard({ kind: 'line', lineId: l.id });
+              openAfterBuild(made.line);
             }
           }}
-          onClose={close}
+          onCancel={() => {
+            inputRef.current?.cancelPlan();
+            rendRef.current?.endPlan(false);
+            setCard(null);
+          }}
         />
       )}
       {line && (
@@ -455,14 +488,34 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
       {train && <TrainCard key={train.id} s={s} train={train} onClose={close} onSold={close} />}
       {site && (
         <SiteCard
+          key={site.id}
           s={s}
           site={site}
+          toNewLine={card?.kind === 'site' && !!card.newLine}
           onClose={close}
           onLay={() => {
             setCard(null);
             setLay({ siteId: site.id });
           }}
           onBuyLine={(lineId) => setCard({ kind: 'line', lineId, buy: true })}
+          onNewLine={(stops) => {
+            const made = makeLine(s, stops);
+            if (made) setCard({ kind: 'line', lineId: made.id, buy: true });
+          }}
+        />
+      )}
+      {card?.kind === 'track' && (
+        <TrackCard
+          s={s}
+          cell={card.cell}
+          onClose={close}
+          onLift={() => {
+            if (liftTrack(s, card.cell)) {
+              track('lift_track', { scenario: scenario.id });
+              setCancel(null);
+              setCard(null);
+            }
+          }}
         />
       )}
       {card?.kind === 'yearEnd' && s.yearEnd && (
@@ -547,7 +600,10 @@ function lineSiteIds(s: SimState, lineId: number | undefined): string | undefine
  * costs and runs. When the drag starts at the end of a line that has room for a stop, the card also
  * asks whether the new stop lengthens that line or starts a new one, and each way shows its own route.
  */
-function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; options: Route[]; extend?: { line: Line; options: Route[]; trains: Train[] }[]; onPick: (r: Route, extendId?: number) => void; onClose: () => void }) {
+function ChoiceCard({ s, plan, pick, onPick, onBuild, onCancel }: { s: SimState; plan: Plan; pick: number; onPick: (i: number) => void; onBuild: () => void; onCancel: () => void }) {
+  const options = plan.options;
+  const extend = plan.extend.length ? plan.extend : undefined;
+  const chosen = planRoutes(plan)[pick]?.route ?? options[0];
   const name = (r: Route) => (r.bridge.length ? tr('Silta', 'Bridge') : r.cutting.length ? tr('Leikkaus', 'Cutting') : r.mode === 'cheap' ? tr('Kierto', 'Around') : tr('Suora', 'Direct'));
   const target = siteAt(s, options[0].cells[options[0].cells.length - 1]);
   const groups: { key: string; label: string | null; routes: Route[]; from: number; extendId?: number; trains?: Train[] }[] = [];
@@ -562,7 +618,9 @@ function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; opti
   } else groups.push({ key: 'way', label: null, routes: options, from: 0 });
   return (
     <div className="card sheet choice-card" data-ui>
-      <CardHead title={extend ? tt(target!.name) : tr('Kumpaa kautta?', 'Which way?')} onClose={onClose} />
+      <div className="card-head">
+        <h2>{extend ? tt(target!.name) : options.length > 1 ? tr('Kumpaa kautta?', 'Which way?') : tr('Rakennetaanko?', 'Build it?')}</h2>
+      </div>
       {groups.map((g) => (
         <div key={g.key} className="grp" data-group={g.key}>
           {g.label && <div className="buy-label">{g.label}</div>}
@@ -577,10 +635,10 @@ function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; opti
               const earth = earthWord(r);
               const i = g.from + k;
               return (
-                <button key={r.mode} className="btn route" data-route={r.mode} data-group-route={g.key} disabled={r.cost > s.cash} style={{ borderColor: OPTION_COLOUR[i] }} onClick={() => onPick(r, g.extendId)}>
-                  <span className="swatch" style={{ background: OPTION_COLOUR[i] }} />
-                  <span className="name">{g.label && g.routes.length === 1 ? tr('Rakenna', 'Build') : name(r)}</span>
-                  <span className="cost num">{r.cost}</span>
+                <button key={r.mode} className={`btn route${i === pick ? ' on' : ''}`} data-route={r.mode} data-group-route={g.key} aria-pressed={i === pick} style={{ borderColor: OPTION_COLOUR[i % OPTION_COLOUR.length], borderWidth: i === pick ? 4 : 2 }} onClick={() => onPick(i)}>
+                  <span className="swatch" style={{ background: OPTION_COLOUR[i % OPTION_COLOUR.length] }} />
+                  <span className="name">{g.routes.length === 1 && !g.label ? tr('Reitti', 'Route') : name(r)}</span>
+                  <span className={`cost num${r.cost > s.cash ? ' red' : ''}`}>{r.cost}</span>
                   <small>
                     {routeKm(r)} km · <b style={{ color: GRADE_COL(r.worst) }}>{r.worst < 1 ? '' : '▲ '}{gradeText(r)}</b>
                     {earth ? ` · ${earth.text}` : ''}
@@ -597,11 +655,20 @@ function ChoiceCard({ s, options, extend, onPick, onClose }: { s: SimState; opti
           </div>
         </div>
       ))}
+      <p className="small hint-bend">{tr('Vedä reitin keskeltä taivuttaaksesi sitä. Napauta messinkipistettä poistaaksesi sen.', 'Drag the middle of the route to bend it. Tap a brass dot to take it away.')}</p>
       <p className="small">
         {extend
           ? tr('Jatkettu rata on yksi rata: juna ajaa päästä päähän ja pysähtyy välissä purkamaan ja lastaamaan.', 'A lengthened line is one line: the train runs end to end and stops in the middle to unload and load.')
           : tr('Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt veturi ryömii.', 'A short line makes more trips a year. On a steep climb the light engine crawls.')}
       </p>
+      <div className="confirm-row" data-sec="confirm">
+        <button className="btn cancel-plan" data-act="plan-cancel" onClick={onCancel}>
+          {tr('Peru', 'Cancel')}
+        </button>
+        <button className="btn primary build-plan" data-act="plan-build" disabled={chosen.cost > s.cash} onClick={onBuild}>
+          {tr('Rakenna', 'Build')} <b className="num">{chosen.cost}</b>
+        </button>
+      </div>
     </div>
   );
 }
@@ -840,6 +907,14 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onSiding, onLift, onClose }:
       <div className="buy-scroll" data-sec="buy-scroll" ref={scrollRef}>
         <div className="line-biz" data-sec="line-biz">
           {line.stops.length > 2 && <StopsRow s={s} line={line} />}
+          {line.cut && (
+            <p className="note red" data-sec="cut">
+              {(() => {
+                const k = Math.max(0, brokenLeg(s, line));
+                return tr(`Rata on poikki ${tt(stopSite(s, line, k).name)} ja ${tt(stopSite(s, line, k + 1).name)} välillä: junat odottavat asemalla.`, `The track is cut between ${tt(stopSite(s, line, k).name)} and ${tt(stopSite(s, line, k + 1).name)}: trains wait at their station.`);
+              })()}
+            </p>
+          )}
           <div className="money-row" data-sec="line-money">
             <div>
               <small>{tr('Tuotto', 'Earned')}</small>
@@ -972,6 +1047,66 @@ function LinesHere({ s, stationId, onBuy }: { s: SimState; stationId: number; on
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * "New line to..." on a station's card: a button for every station the laid track reaches from here that
+ * has no two-stop line to this one yet. A tap makes the line over the track and opens its buy card.
+ */
+function NewLineTo({ s, stationId, onMake, focus }: { s: SimState; stationId: number; onMake: (stops: number[]) => void; focus: boolean }) {
+  const list = reaches(s, stationId);
+  const row = useRef<HTMLDivElement>(null);
+  // a card opened by the track that built this station comes up with the buttons in view
+  useEffect(() => {
+    if (focus && row.current) row.current.scrollIntoView({ block: 'end' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!list.length) return null;
+  return (
+    <div className="srow new-line" data-sec="new-line" ref={row}>
+      <span className="sl">{tr('Uusi linja', 'New line')}</span>
+      <div className="chips">
+        {list.map((o) => {
+          const to = s.stations.find((x) => x.id === o.id)!;
+          return (
+            <button key={o.id} className="btn act" data-act="new-line" data-to={to.siteId} onClick={() => onMake([stationId, o.id])}>
+              <span>{tt(siteById(s, to.siteId).name)}</span>
+              <small>{((o.length * CELL_M) / 1000).toFixed(1)} km</small>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The card of laid track that no line runs over: what a dead-end stretch gives back when lifted,
+ * and why a junction or a stretch between two junctions cannot be lifted.
+ */
+function TrackCard({ s, cell, onClose, onLift }: { s: SimState; cell: number; onClose: () => void; onLift: () => void }) {
+  const lift = liftTrackValue(s, cell);
+  const upkeep = lift ? lift.cells * TRACK_UPKEEP : 0;
+  return (
+    <div className="card sheet track-card" data-ui data-sec="track-card">
+      <CardHead title={tr('Rata, jolla ei ole linjaa', 'Track with no line')} onClose={onClose} />
+      {lift ? (
+        <>
+          <p className="small">
+            {tr(`Umpikuja: ${lift.cells} ruutua, ylläpito ${num(upkeep)} vuodessa.`, `A dead end: ${lift.cells} tiles, upkeep ${num(upkeep)} a year.`)}
+          </p>
+          <button className="btn act lift" data-act="lift-track" onClick={onLift}>
+            <span>{tr('Nosta rata', 'Lift track')}</span>
+            <small>
+              {tr('puolet hinnasta takaisin', 'half the price back')} +{num(lift.back)}
+            </small>
+          </button>
+        </>
+      ) : (
+        <p className="small">{tr('Tämä rata yhdistää asemia tai risteyksiä. Vedä siitä rata uuteen paikkaan tai tee linja asemakortista.', 'This track joins stations or junctions. Drag from it to lay more, or make a line from a station card.')}</p>
+      )}
     </div>
   );
 }
@@ -1330,7 +1465,7 @@ function craneGoods(site: Site): Good[] {
  * The site card: what it has, what it wants and pays now, why it is stuck, who buys its output, and
  * a button that starts the track from here (or joins the site to the railway when it has no station).
  */
-function SiteCard({ s, site, onClose, onLay, onBuyLine }: { s: SimState; site: Site; onClose: () => void; onLay: () => void; onBuyLine: (lineId: number) => void }) {
+function SiteCard({ s, site, toNewLine, onClose, onLay, onBuyLine, onNewLine }: { s: SimState; site: Site; toNewLine?: boolean; onClose: () => void; onLay: () => void; onBuyLine: (lineId: number) => void; onNewLine: (stops: number[]) => void }) {
   const makes = MAKES[site.kind];
   const takes = TAKES[site.kind].filter((g) => goodsOnMap(s).includes(g));
   const cell = idx(s, site.cx, site.cy);
@@ -1454,6 +1589,7 @@ function SiteCard({ s, site, onClose, onLay, onBuyLine }: { s: SimState; site: S
       <button className="btn primary wide lay" data-act="lay" disabled={!reachable} onClick={onLay}>
         {hasStation ? tr('Vedä rata täältä', 'Lay track from here') : tr('Liitä rautatiehen', 'Join to the railway')}
       </button>
+      {station && <NewLineTo s={s} stationId={station.id} onMake={onNewLine} focus={!!toNewLine} />}
     </div>
   );
 }

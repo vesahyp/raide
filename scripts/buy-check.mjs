@@ -84,6 +84,8 @@ async function run(name, device) {
   let w = await sites();
   await drag(w.forest, w.sawmill);
   await page.waitForTimeout(300);
+  await tapButton(page.locator('[data-act="plan-build"]'));
+  await page.waitForTimeout(300);
   await page.locator('.card.sheet').waitFor({ timeout: 3000 });
   await tapButton(page.locator('.round.close'));
   await page.waitForTimeout(400);

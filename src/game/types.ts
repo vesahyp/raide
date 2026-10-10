@@ -159,6 +159,8 @@ export interface Line {
   legs: Leg[];
   /** the steepest step on the line, in percent */
   worst: number;
+  /** the laid track no longer joins the stops: the line's trains wait at their last station until it is mended */
+  cut: boolean;
   /** the passing siding, when the line has one (only a two-stop line can): it splits the block in two */
   siding: Siding | null;
   /** pay earned and running cost paid by this line's trains this year, for the line card */
@@ -335,6 +337,12 @@ export interface SimState {
   yardMask: Uint8Array;
   /** track links per cell: a bitmask of the eight directions that carry track out of the cell */
   track: Uint8Array;
+  /** the rail's height in metres per cell, set when the cell is first laid; read where track stands */
+  rail: Float32Array;
+  /** counts every change to the laid track, so the lines find their paths again when it moves */
+  netVersion: number;
+  /** the version the lines were last routed at */
+  routedVersion: number;
   sites: Site[];
   stations: Station[];
   lines: Line[];

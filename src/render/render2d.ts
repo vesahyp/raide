@@ -291,6 +291,12 @@ export class Renderer2D {
   /** the platform tracks of every station, and the most platform tracks each has needed */
   private aprons: Apron[] = [];
   private apronAt = new Map<number, Apron>();
+  /** the tiles the player's route is bent through, drawn as brass dots on the ghost; set by the game each frame */
+  waypoints: number[] = [];
+  /** the cell of laid track a resting finger is about to start a drag from, or -1 */
+  armCell = -1;
+  /** which of the pending routes is the chosen one: drawn solid on top, the others dashed */
+  chosen = 0;
   /** the pillars drawn this frame, by site, so the HTML labels keep clear of their bright foot */
   /** the cloud cover that fades in when the map is zoomed out */
   private clouds: Clouds;
@@ -389,7 +395,8 @@ export class Renderer2D {
     const s = this.s;
     const n = s.w * s.h;
     this.railA.fill(NaN);
-    for (const l of s.lines) l.path.forEach((c, k) => Number.isNaN(this.railA[c]) && (this.railA[c] = l.rail[k] / TERRACE_M));
+    // the rail height belongs to the cell, so free track has its own
+    for (let i = 0; i < n; i++) if (s.track[i]) this.railA[i] = s.rail[i] / TERRACE_M;
     for (let i = 0; i < n; i++) {
       const water = !!s.water[i];
       const rail = this.railA[i];
@@ -432,6 +439,7 @@ export class Renderer2D {
     let h = 17;
     for (const l of s.lines) h = (Math.imul(h, 31) + l.id) | 0;
     for (const st of s.stations) h = (Math.imul(h, 37) + st.id * 8 + this.platformsNeeded(st.cell) + (st.crew ? 1000003 : 0) + (st.crane ? 7000003 : 0)) | 0;
+    h = (Math.imul(h, 47) + s.netVersion) | 0;
     for (const l of s.lines) if (l.siding) h = (Math.imul(h, 43) + l.id * 16 + Math.round(l.siding.s0 * 10)) | 0;
     for (const site of s.sites) h = (Math.imul(h, 41) + (site.kind === 'town' ? this.townState(site).shown : 0)) | 0;
     return h;
@@ -1050,13 +1058,15 @@ export class Renderer2D {
     const links = this.linksOf(i);
     if (!links.length) return;
     const lm = Number.isNaN(this.railA[i]) ? this.lvA[i] : this.railA[i];
+    // a track end stops in a buffer stop; a station draws its own
+    const endStop = links.length === 1 && !bridge && !s.stations.some((st) => st.cell === i);
     // each end meets its neighbour at the height halfway between the two cells
     const las = links.map((d) => {
       const n = this.tileAt(x + d[0], y + d[1]);
       const ln = n >= 0 && !Number.isNaN(this.railA[n]) ? this.railA[n] : lm;
       return (lm + ln) / 2;
     });
-    trackCell(v, x, y, links, las, lm, bridge);
+    trackCell(v, x, y, links, las, lm, bridge, endStop);
   }
 
   /**
@@ -1564,6 +1574,49 @@ export class Renderer2D {
    * A route that is not built: a band along its cells. `colour` null colours each step by its grade;
    * a string is one colour for all. A dashed band is one that cannot be built yet.
    */
+  /** the waypoints of the route being drawn or bent: a small brass dot on each, a tap on one takes it away */
+  private drawWaypoints(): void {
+    const c = this.ctx;
+    const S = this.cam.s;
+    for (const cell of this.waypoints) {
+      const x = cell % this.s.w;
+      const y = Math.floor(cell / this.s.w);
+      const lv = Number.isNaN(this.railA[cell]) ? this.levelAt(x + 0.5, y + 0.5) : this.railA[cell];
+      const p = this.project(x + 0.5, y + 0.5, lv);
+      const r = Math.max(5, S * 0.34);
+      c.fillStyle = '#d8a63a';
+      c.strokeStyle = '#2a2418';
+      c.lineWidth = Math.max(2, S * 0.1);
+      c.beginPath();
+      c.arc(p.x, p.y, r, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+      c.fillStyle = '#fff3c4';
+      c.beginPath();
+      c.arc(p.x, p.y, r * 0.38, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+
+  /** a faint brass glow on the cell of laid track a drag starts from, where a junction will be made */
+  private drawStartGlow(cell: number): void {
+    const c = this.ctx;
+    const S = this.cam.s;
+    const x = cell % this.s.w;
+    const y = Math.floor(cell / this.s.w);
+    const lv = Number.isNaN(this.railA[cell]) ? this.levelAt(x + 0.5, y + 0.5) : this.railA[cell];
+    const p = this.project(x + 0.5, y + 0.5, lv);
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);
+    const r = Math.max(10, S * 1.1);
+    const g = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    g.addColorStop(0, `rgba(255,227,154,${(0.55 + 0.2 * pulse).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(255,227,154,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(p.x, p.y, r, 0, Math.PI * 2);
+    c.fill();
+  }
+
   private drawRoute(r: Route, colour: string | null, dashed: boolean, stripe: boolean): void {
     const c = this.ctx;
     const S = this.cam.s;
@@ -2211,6 +2264,47 @@ export class Renderer2D {
     this.zoomTo = Math.max(this.cam.s, PLAY_S);
   }
 
+  /** the view the player had before a drawn route was fitted into the free strip; it comes back on Cancel */
+  private planView: { x: number; y: number; s: number } | null = null;
+
+  /** the route is built or cancelled: the view comes back unless it was built (`keep`) */
+  endPlan(keep: boolean): void {
+    const v = this.planView;
+    this.planView = null;
+    if (!v || keep) return;
+    this.followId = null;
+    this.glide = { x: v.x, y: v.y };
+    this.zoomTo = v.s;
+  }
+
+  /**
+   * The drawn route waits for Build above a sheet that takes the lower part of the screen: the view eases to
+   * the closest one that shows the whole route in the free strip between the HUD and the sheet, never closer than
+   * play zoom and never wider than the map look.
+   */
+  fitRoute(r: Route, sheet: number): void {
+    this.planView ??= { x: this.cam.x, y: this.cam.y, s: this.cam.s };
+    const a = this.area();
+    const xs = r.cells.map((c) => c % this.s.w);
+    const ys = r.cells.map((c) => Math.floor(c / this.s.w));
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs) + 1;
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys) + 1;
+    const top = a.t + 70;
+    const bot = a.t + a.h - sheet;
+    if (bot - top < 60) return;
+    let S = Math.min((a.w - 70) / Math.max(1, x1 - x0), (bot - top) / Math.max(1, y1 - y0));
+    S = Math.max(LOD_S + 0.2, Math.min(S, PLAY_S));
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    const shiftY = ((top + bot) / 2 - this.oy) / S;
+    const shiftX = (a.l + a.w / 2 - this.ox) / S;
+    this.followId = null;
+    this.glide = { x: mx - shiftX, y: my - this.levelAt(mx, my) * LIFT - shiftY };
+    this.zoomTo = S;
+  }
+
   /** pick mode is over: the view the player had comes back unless `keep` */
   endPick(keep: boolean): void {
     this.sidingPick = null;
@@ -2322,12 +2416,18 @@ export class Renderer2D {
       this.drawRising();
     }
     // the route under the finger, and the two on offer after a lift
-    if (pending) pending.forEach((r, i) => this.drawRoute(r, OPTION_COLOUR[i] ?? OPTION_COLOUR[0], i > 0, true));
+    if (pending) {
+      const order = pending.map((_, i) => i).sort((a, b) => Number(a === this.chosen) - Number(b === this.chosen));
+      for (const i of order) this.drawRoute(pending[i], OPTION_COLOUR[i % OPTION_COLOUR.length], i !== this.chosen, true);
+    }
     else if (drag?.route) {
       // the way round beside the one the lift builds first: dashed cream
       if (!drag.loose && drag.options && drag.options.length > 1) this.drawRoute(drag.options[1], OPTION_COLOUR[0], true, false);
-      this.drawRoute(drag.route, drag.loose ? 'rgba(255,255,255,.85)' : null, false, false);
+      this.drawRoute(drag.route, null, false, false);
     }
+    if (drag && !this.s.stations.some((st) => st.cell === drag.from)) this.drawStartGlow(drag.from);
+    if (this.armCell >= 0 && !drag) this.drawStartGlow(this.armCell);
+    this.drawWaypoints();
     if (this.sidingPick) this.drawSidingPick();
     this.drawTrains(dt);
     this.drawCranes(dt);
@@ -2763,7 +2863,7 @@ export class Renderer2D {
   /** the plate on a route under the finger: cost and length, then worst grade, earthwork, trips a year; and the pill on the way round */
   private routePlate(drag: DragView | null, pending: Route[] | null): void {
     const r = drag?.route ?? null;
-    const show = !!r && !drag!.loose && !pending;
+    const show = !!r && !pending;
     if (!show) {
       if (this.plateEl) this.plateEl.style.display = 'none';
       if (this.pillEl) this.pillEl.style.display = 'none';
@@ -2775,7 +2875,8 @@ export class Renderer2D {
       this.overlay.appendChild(this.plateEl);
     }
     const earth = earthWord(r);
-    const trips = tripsByEngine(this.s, r)
+    // trips a year only mean something for a route to a site; open ground is track to build on
+    const trips = (drag!.loose ? [] : tripsByEngine(this.s, r))
       .map((x) => `<span class="eng"><i class="pic eng${x.engine === 'jyry' ? ' strong' : ''}"></i>${perYear(x.trips)}</span>`)
       .join('');
     const html =

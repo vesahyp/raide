@@ -64,6 +64,7 @@ try {
   await page.waitForTimeout(400);
   let w = await where();
   const cash0 = w.cash;
+  const cam0 = await page.evaluate(() => ({ x: window.__renderer.cam.x, y: window.__renderer.cam.y, s: window.__renderer.cam.s }));
   // a drag from a site with no station builds nothing
   // it pans the view instead: a short drag there and back leaves the map where it was
   const before = w.forest.x;
@@ -74,18 +75,32 @@ try {
   await page.waitForTimeout(200);
   w = await where();
   check(w.lines === 0 && w.cash === cash0 && Math.abs(w.forest.x - before) < 8, 'and back');
-  // a drag that lifts in the forest between the sites builds nothing, though the track showed under the finger
+  // a drag that lifts in the forest between the sites lays a track end and charges for it; Cancel takes it back
   const between = { x: w.forest.x + 120, y: w.forest.y + 40 };
   await touch('touchStart', [{ x: w.forest.x, y: w.forest.y, id: 1 }]);
   for (let i = 1; i <= 8; i++) {
     await page.waitForTimeout(25);
     await touch('touchMove', [{ x: w.forest.x + ((between.x - w.forest.x) * i) / 8, y: w.forest.y + ((between.y - w.forest.y) * i) / 8, id: 1 }]);
   }
-  const loose = await page.evaluate(() => window.__input.drag && window.__input.drag.route && { loose: window.__input.drag.loose, cells: window.__input.drag.route.cells.length });
+  const loose = await page.evaluate(() => window.__input.drag && window.__input.drag.route && { loose: window.__input.drag.loose, cells: window.__input.drag.route.cells.length, cost: window.__input.drag.route.cost });
   await touch('touchEnd', []);
+  await page.waitForTimeout(250);
+  w = await where();
+  // the lift builds nothing: the route waits with Build and Cancel, and no cash is spent
+  check((await page.locator('[data-act="plan-build"]').count()) === 1 && (await page.locator('[data-act="plan-cancel"]').count()) === 1 && w.cash === cash0, `the lift leaves the route on the map with Build and Cancel and spends nothing (cash ${w.cash})`);
+  await tapButton(page.locator('[data-act="plan-build"]'));
+  await page.waitForTimeout(300);
+  w = await where();
+  const laid = await page.evaluate(() => window.__sim.lastBuild && window.__sim.lastBuild.cost);
+  check(!!loose && loose.loose && loose.cells > 3 && w.lines === 0 && w.stations === 1 && laid > 0 && w.cash === cash0 - laid, `the track follows the finger and a lift in the open lays a track end and charges for it (${JSON.stringify(loose)}, cash ${cash0} -> ${w.cash})`);
+  await tapButton(page.locator('.btn.cancel'));
   await page.waitForTimeout(200);
   w = await where();
-  check(!!loose && loose.loose && loose.cells > 3 && w.lines === 0 && w.cash === cash0, `the track follows the finger and a lift off any site builds nothing (${JSON.stringify(loose)})`);
+  check(w.cash === cash0 && (await page.evaluate(() => window.__sim.track.every((v) => v === 0))), 'and Cancel takes it back');
+  // the view eased to the route while it waited: back to where the check began
+  await page.evaluate((c) => window.__renderer.setView(c.x, c.y, c.s), cam0);
+  await page.waitForTimeout(600);
+  w = await where();
   // the first line, with the cost shown while the finger moves
   await touch('touchStart', [{ x: w.forest.x, y: w.forest.y, id: 1 }]);
   for (let i = 1; i <= 12; i++) {
@@ -98,6 +113,10 @@ try {
   await page.waitForTimeout(120);
   await touch('touchEnd', []);
   await page.waitForTimeout(250);
+  w = await where();
+  check(w.lines === 0 && w.cash === cash0, 'lifting the finger spends nothing: the plate waits for Build');
+  await tapButton(page.locator('[data-act="plan-build"]'));
+  await page.waitForTimeout(300);
   w = await where();
   check(w.lines === 1 && w.stations === 2 && w.cash === cash0 - live.cost, `lifting the finger builds the line and the station (cash ${cash0} -> ${w.cash})`);
   check((await page.locator('.card.sheet').count()) === 1, 'the train card slides up after the build');
@@ -112,9 +131,13 @@ try {
   // build again, buy the train
   await drag(w.forest, w.sawmill);
   await page.waitForTimeout(250);
+  await tapButton(page.locator('[data-act="plan-build"]'));
+  await page.waitForTimeout(300);
   await page.locator('.card.sheet').waitFor({ timeout: 3000 });
   const strip = await page.locator('[data-sec="consist"] [data-consist]').evaluateAll((els) => els.map((e) => e.dataset.type));
   check(strip.join() === 'flat,flat', `the card starts a train from the forest with two flat wagons (${strip.join(' ')})`);
+  // the undo second runs out first, or its button would stand over the money card
+  await page.waitForTimeout(2000);
   // the train costs more than the cash left: the cash chip opens the money card, Borrow takes a hundred
   await page.evaluate(() => { window.__sim.cash = 100; });
   await page.waitForTimeout(250);

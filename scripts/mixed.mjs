@@ -69,6 +69,8 @@ try {
     // 1. Kuusikko to Koskensaha by a drag, then the drag from Koskensaha to Hämeenlinna: the card offers to lengthen the line
     await between('forest', 'sawmill', 13);
     await drag('forest', 'sawmill');
+    await page.locator('[data-act="plan-build"]').tap();
+    await page.waitForTimeout(500);
     await closeCards();
     await between('sawmill', 'hameenlinna', 9.5);
     await drag('sawmill', 'hameenlinna');
@@ -76,6 +78,7 @@ try {
     if (!(await page.locator('.choice-card [data-group="new"]').count())) errors.push(`${orient}: the extension card has no new line`);
     await shot('extend-card');
     await page.locator('.choice-card [data-group^="extend-"] [data-route]').first().tap();
+    await page.locator('[data-act="plan-build"]').tap();
     await page.waitForTimeout(600);
     const stops = await page.evaluate(() => window.__sim.lines.map((l) => l.stops.length));
     if (stops.join() !== '3') errors.push(`${orient}: the lengthening did not make one line of three stops (${stops.join()})`);

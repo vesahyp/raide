@@ -8,7 +8,7 @@
  */
 import type { Cargo, Contract, EngineId, Fare, Good, LastBuild, Leg, Line, Load, SimState, Site, SiteKind, Train, WagonType, Float } from './types';
 import { CARGOS, FARES, GOODS } from './types';
-import { routeOptions, link, unlink, idx, cx, cy, stepLen, gradeOf, DIRS, STATION_COST, type Route } from './grid';
+import { routeOptions, routeOptionsVia, pathOver, lengthOf, link, unlink, linked, idx, cx, cy, stepLen, gradeOf, DIRS, STATION_COST, type Route } from './grid';
 import { siteAt, stationAt, siteById, goodsOnMap, zeroCargo } from './state';
 import {
   BANKRUPT_YEARS, BASE_FARE, BASE_PRICE, FARE_DECAY, FARE_FLOOR, FARE_SPEED, MAIL_CAP, MAIL_RATE, PAX_CAP, PAX_GROW_SIZE, PAX_MEMORY, PAX_RATE, WAGON_FARE, BRIDGE_UPKEEP, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, CREW_CUT, CREW_PRICE, GROW_LOSS, GROW_MONTHS, LIFT_BACK, LOAN_BASE, LOAN_RATE, LOAN_SHARE, MAKES, MILL_EATS, MONTHS,
@@ -789,11 +789,24 @@ export function trainPrice(engine: EngineId = 'hilma', nWagons = WAGONS_DEFAULT)
   return ENGINES[engine].price + nWagons * WAGON_PRICE;
 }
 
-/** the routes a drag from a station cell to a site or station cell would build: one, or a cheap and a short one */
-export function plan(s: SimState, from: number, to: number, startSide?: number): Route[] {
-  if (!stationAt(s, from)) return [];
-  if (!siteAt(s, to) && !stationAt(s, to)) return [];
-  return routeOptions(s, from, to, startSide);
+/**
+ * Whether a drag may end on a cell: a site or a station, or open dry ground outside every yard. Open
+ * ground leaves a track end that a later drag can start from.
+ */
+export function endable(s: SimState, to: number): boolean {
+  if (siteAt(s, to) || stationAt(s, to)) return true;
+  return !s.water[to] && s.yardMask[to] === 0;
+}
+
+/**
+ * The routes a drag would build: from a station, or from any cell of laid track (a junction is made
+ * there), to a site, a station or any other tile, through the tiles in `via` when the player bent the
+ * route. One route, or a cheap and a short one.
+ */
+export function plan(s: SimState, from: number, to: number, startSide?: number, via: number[] = []): Route[] {
+  if (!stationAt(s, from) && !s.track[from]) return [];
+  if (!endable(s, to)) return [];
+  return via.length ? routeOptionsVia(s, from, to, via, startSide) : routeOptions(s, from, to, startSide);
 }
 
 /**
@@ -823,6 +836,7 @@ export function canExtend(s: SimState, r: Route, lineId: number): boolean {
   if (!front && !back) return false;
   const to = stationAt(s, r.cells[r.cells.length - 1]);
   if (to && line.stops.includes(to.id)) return false;
+  if (!to && !siteAt(s, r.cells[r.cells.length - 1])) return false;
   const k = back ? line.path.length - 1 : 0;
   const arrives = Math.sign(cx(s, line.path[back ? k - 1 : k + 1]) - cx(s, r.cells[0]));
   const leaves = Math.sign(cx(s, r.cells[1]) - cx(s, r.cells[0]));
@@ -852,43 +866,88 @@ function legOf(path: number[], a: number, b: number, worst: number): Leg {
   return { a, b, block: new Set(path.slice(a + 1, b)), worst };
 }
 
+/** the steepest step of the cells a..b of a path, in percent */
+function worstOf(rail: number[], dist: number[], a: number, b: number): number {
+  let worst = 0;
+  for (let k = a + 1; k <= b; k++) worst = Math.max(worst, Math.abs(gradeOf(rail[k] - rail[k - 1], dist[k] - dist[k - 1])));
+  return worst;
+}
+
+/** set a line's path, distances, rail, stop marks and legs from the cells of each leg, the rail read from the laid cells */
+function fitLine(s: SimState, line: Line, legCells: number[][]): void {
+  const path: number[] = [];
+  const stopAt = [0];
+  legCells.forEach((cells, k) => {
+    path.push(...(k ? cells.slice(1) : cells));
+    stopAt.push(path.length - 1);
+  });
+  const dist = pathDist(s, path);
+  const rail = path.map((c) => s.rail[c]);
+  line.path = path;
+  line.dist = dist;
+  line.rail = rail;
+  line.stopAt = stopAt;
+  line.legs = legCells.map((_, k) => legOf(path, stopAt[k], stopAt[k + 1], worstOf(rail, dist, stopAt[k], stopAt[k + 1])));
+  line.worst = Math.max(...line.legs.map((lg) => lg.worst));
+}
+
+/** the station cells of a line's stops */
+function stopCells(s: SimState, stops: number[]): number[] {
+  return stops.map((id) => s.stations.find((st) => st.id === id)!.cell);
+}
+
+/** whether laid track links every pair of neighbouring cells in the list */
+function intact(s: SimState, cells: number[]): boolean {
+  for (let k = 1; k < cells.length; k++) {
+    const d = DIRS.findIndex(([dx, dy]) => dx === cx(s, cells[k]) - cx(s, cells[k - 1]) && dy === cy(s, cells[k]) - cy(s, cells[k - 1]));
+    if (d < 0 || !(s.track[cells[k - 1]] & (1 << d))) return false;
+  }
+  return true;
+}
+
 /**
- * Build a planned route: pay, lay the track, place the station at the end when there is none,
- * and make the line between the two stations when there is none. With `extend` (a line's id) the
- * route lengthens that line instead: the new station becomes its last stop, or its first when the
- * route starts at the line's first stop. Returns the line, or null when the cash is short or the
- * line cannot take the route.
+ * Build a planned route: pay, lay the track, place the station at the end when the end is a site
+ * with none, and make the line between the two stations when the drag ran from one station to
+ * another and there is none. With `extend` (a line's id) the route lengthens that line instead: the
+ * new station becomes its last stop, or its first when the route starts at the line's first stop.
+ * A drag from the middle of laid track makes a junction there; a drag that ends on open ground
+ * leaves a track end. `ok` is false when the cash is short or the line cannot take the route;
+ * `line` is null when the track made no line.
  */
-export function build(s: SimState, r: Route, extend?: number): Line | null {
-  if (r.cost > s.cash) return null;
-  if (extend !== undefined && !canExtend(s, r, extend)) return null;
+export function make(s: SimState, r: Route, extend?: number): { ok: boolean; line: Line | null } {
+  if (r.cost > s.cash) return { ok: false, line: null };
+  if (extend !== undefined && !canExtend(s, r, extend)) return { ok: false, line: null };
   s.cash -= r.cost;
-  // what each new cell cost, for the refund when the line is lifted; the station is not in it
+  // what each new cell cost, for the refund when it is lifted; the station is not in it
   const per = (r.cost - (r.newStation ? STATION_COST : 0)) / Math.max(1, r.added.length);
   for (const c of r.added) s.paid[c] = per;
   s.assets += r.cost;
+  // the rail height belongs to the cell and is set when the cell is first laid
+  for (let k = 0; k < r.cells.length; k++) if (!s.track[r.cells[k]]) s.rail[r.cells[k]] = r.rail[k];
   for (let k = 1; k < r.cells.length; k++) link(s, r.cells[k - 1], r.cells[k]);
+  s.netVersion++;
   const from = r.cells[0];
   const to = r.cells[r.cells.length - 1];
   let station = stationAt(s, to);
   let newStation: number | null = null;
-  if (!station) {
+  if (!station && siteAt(s, to)) {
     station = { id: s.nextId++, cell: to, siteId: siteAt(s, to)!.id, crew: false, platforms: PLATFORMS_START, crane: false };
     s.stations.push(station);
     newStation = station.id;
   }
-  const a = stationAt(s, from)!;
+  const a = stationAt(s, from);
   let line: Line | undefined;
   let newLine: number | null = null;
   let extended: LastBuild['extend'] = null;
-  if (extend !== undefined) {
+  if (a && station && extend !== undefined) {
     line = s.lines.find((l) => l.id === extend)!;
     extended = { lineId: line.id, before: { stops: line.stops, path: line.path, dist: line.dist, rail: line.rail, stopAt: line.stopAt, legs: line.legs, worst: line.worst }, shift: 0 };
     lengthen(s, line, r, a.id, station.id, extended);
-  } else {
+  } else if (a && station) {
     line = s.lines.find((l) => l.stops.length === 2 && ((l.stops[0] === a.id && l.stops[1] === station!.id) || (l.stops[0] === station!.id && l.stops[1] === a.id)));
     if (!line) {
-      line = { id: s.nextId++, stops: [a.id, station.id], path: r.cells, dist: pathDist(s, r.cells), rail: r.rail, stopAt: [0, r.cells.length - 1], legs: [legOf(r.cells, 0, r.cells.length - 1, r.worst)], worst: r.worst, siding: null, earnedYear: 0, runYear: 0 };
+      line = { id: s.nextId++, stops: [a.id, station.id], path: [], dist: [], rail: [], stopAt: [], legs: [], worst: 0, cut: false, siding: null, earnedYear: 0, runYear: 0 };
+      fitLine(s, line, [r.cells]);
       s.lines.push(line);
       newLine = line.id;
     }
@@ -897,7 +956,122 @@ export function build(s: SimState, r: Route, extend?: number): Line | null {
   const p = centre(s, to);
   if (r.cost > 0) s.floats.push({ x: p.x, y: p.y, text: `-${r.cost}`, age: 0, kind: 'cost' });
   s.sounds.push('build');
+  return { ok: true, line: line ?? null };
+}
+
+/** `make`, for the callers that want the line: null when nothing was built or the track made no line */
+export function build(s: SimState, r: Route, extend?: number): Line | null {
+  return make(s, r, extend).line;
+}
+
+/**
+ * A line over the laid track through these stations in order (two to four). Its path is found over
+ * the track between each pair of neighbours. Null when the track does not join them, when a cell
+ * would be used twice (a stop on a spur the path must back out of), or the stops repeat. A line
+ * through the same stops already is handed back.
+ */
+export function makeLine(s: SimState, stops: number[]): Line | null {
+  if (stops.length < 2 || stops.length > LINE_STOPS_MAX || new Set(stops).size !== stops.length) return null;
+  if (stops.some((id) => !s.stations.some((st) => st.id === id))) return null;
+  const same = (a: number[], b: number[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const old = s.lines.find((l) => same(l.stops, stops) || same(l.stops, stops.slice().reverse()));
+  if (old) return old;
+  const cells = stopCells(s, stops);
+  const legs: number[][] = [];
+  for (let k = 0; k + 1 < cells.length; k++) {
+    const p = pathOver(s, cells[k], cells[k + 1]);
+    if (!p) return null;
+    legs.push(p);
+  }
+  const all = legs.flatMap((p, k) => (k ? p.slice(1) : p));
+  if (new Set(all).size !== all.length) return null;
+  const line: Line = { id: s.nextId++, stops: stops.slice(), path: [], dist: [], rail: [], stopAt: [], legs: [], worst: 0, cut: false, siding: null, earnedYear: 0, runYear: 0 };
+  fitLine(s, line, legs);
+  s.lines.push(line);
+  s.sounds.push('build');
   return line;
+}
+
+/** the stations the laid track reaches from this one, apart from those it already has a two-stop line to */
+export function reaches(s: SimState, stationId: number): { id: number; length: number }[] {
+  const from = s.stations.find((st) => st.id === stationId);
+  if (!from || !s.track[from.cell]) return [];
+  const out: { id: number; length: number }[] = [];
+  for (const st of s.stations) {
+    if (st.id === stationId || !s.track[st.cell]) continue;
+    if (s.lines.some((l) => l.stops.length === 2 && l.stops.includes(st.id) && l.stops.includes(stationId))) continue;
+    const p = pathOver(s, from.cell, st.cell);
+    if (p) out.push({ id: st.id, length: lengthOf(s, p) });
+  }
+  return out;
+}
+
+/** the first leg of a line whose track is broken, for the line card; -1 when the line is whole */
+export function brokenLeg(s: SimState, line: Line): number {
+  return line.legs.findIndex((_, k) => !intact(s, line.path.slice(line.stopAt[k], line.stopAt[k + 1] + 1)));
+}
+
+/** a leg is laid again only when the track gives a way this many cells shorter: a gain of a cell is not worth a path moving under the trains */
+const REROUTE_GAIN = 2;
+
+/** whether a train of the line runs (or waits to run) over the leg: its path must not change under it */
+function legBusy(s: SimState, line: Line, k: number): boolean {
+  return s.trains.some((t) => t.lineId === line.id && t.state === 'run' && Math.min(t.idx, t.to) <= k && k < Math.max(t.idx, t.to));
+}
+
+/**
+ * Find a line's path again over the laid track. A leg is replaced when the track gives a shorter
+ * way between its two stops (or the old one is broken), and no train runs over it. A line whose
+ * stops the track no longer joins is marked cut. Returns false when a change waits for a train to
+ * clear the leg.
+ */
+function rerouteLine(s: SimState, line: Line): boolean {
+  const cells = stopCells(s, line.stops);
+  const legs: number[][] = [];
+  let changed = false;
+  let settled = true;
+  for (let k = 0; k < line.legs.length; k++) {
+    const old = line.path.slice(line.stopAt[k], line.stopAt[k + 1] + 1);
+    let use = old;
+    if (!line.siding) {
+      const fresh = pathOver(s, cells[k], cells[k + 1]);
+      if (fresh && (!intact(s, old) || lengthOf(s, fresh) < lengthOf(s, old) - Math.max(REROUTE_GAIN, 0.03 * lengthOf(s, old)))) {
+        if (legBusy(s, line, k)) settled = false;
+        else {
+          use = fresh;
+          changed = true;
+        }
+      }
+    }
+    legs.push(use);
+  }
+  if (changed) {
+    const all = legs.flatMap((p, k) => (k ? p.slice(1) : p));
+    // a path that would use a cell twice is not a path a train can run
+    if (new Set(all).size === all.length) {
+      const was = line.stopAt.map((k) => line.dist[k]);
+      fitLine(s, line, legs);
+      for (const t of s.trains) {
+        if (t.lineId !== line.id) continue;
+        if (t.state === 'stop') t.s = stopS(line, t.idx);
+        else {
+          let j = 0;
+          while (j < was.length - 2 && was[j + 1] <= t.s) j++;
+          t.s = stopS(line, j) + (t.s - was[j]);
+        }
+      }
+    }
+  }
+  line.cut = !intact(s, line.path);
+  return settled;
+}
+
+/** find every line's path again; true when none waits for a train to clear */
+export function reroute(s: SimState): boolean {
+  let settled = true;
+  for (const line of s.lines) if (!rerouteLine(s, line)) settled = false;
+  s.routedVersion = settled ? s.netVersion : s.routedVersion;
+  return settled;
 }
 
 /**
@@ -967,6 +1141,7 @@ export function undo(s: SimState): boolean {
   }
   // a line that used a removed cell is gone too
   s.lines = s.lines.filter((l) => !l.path.some((c) => gone.has(c)));
+  s.netVersion++;
   s.lastBuild = null;
   s.sounds.push('undo');
   return true;
@@ -1739,37 +1914,57 @@ function sharedLinks(s: SimState, line: Line): Set<string> {
 }
 const linkKey = (a: number, b: number): string => (a < b ? `${a},${b}` : `${b},${a}`);
 
+/**
+ * What lifting a line takes away: the links no other line runs over, and the cells that are left
+ * with no track at all. A cell that other track still touches (a branch, another line) stays.
+ */
+function liftPlan(s: SimState, line: Line): { links: [number, number][]; free: number[] } {
+  const shared = sharedLinks(s, line);
+  const links: [number, number][] = [];
+  const left = new Map<number, number>();
+  for (const c of line.path) left.set(c, s.track[c]);
+  for (let k = 1; k < line.path.length; k++) {
+    const a = line.path[k - 1];
+    const b = line.path[k];
+    if (shared.has(linkKey(a, b))) continue;
+    links.push([a, b]);
+    const d = DIRS.findIndex(([dx, dy]) => dx === cx(s, b) - cx(s, a) && dy === cy(s, b) - cy(s, a));
+    left.set(a, left.get(a)! & ~(1 << d));
+    left.set(b, left.get(b)! & ~(1 << ((d + 4) % 8)));
+  }
+  return { links, free: [...left].filter(([, m]) => m === 0).map(([c]) => c) };
+}
+
 /** what lifting a line would give back: half the build price of the cells that would lose their track */
 export function liftValue(s: SimState, line: Line): number {
-  const shared = sharedLinks(s, line);
-  // a cell keeps its track when a link that stays touches it
-  const keeps = new Set<number>();
-  for (const o of s.lines) if (o !== line) for (const c of o.path) keeps.add(c);
   let back = 0;
-  for (let k = 0; k < line.path.length; k++) {
-    const c = line.path[k];
-    const stays = keeps.has(c) || (k > 0 && shared.has(linkKey(line.path[k - 1], c))) || (k < line.path.length - 1 && shared.has(linkKey(c, line.path[k + 1])));
-    if (!stays) back += s.paid[c] * LIFT_BACK;
-  }
+  for (const c of liftPlan(s, line).free) back += s.paid[c] * LIFT_BACK;
   return back;
 }
 
-/**
- * Lift a line that has no trains: its track goes and half its build price comes back. Track that
- * another line runs on stays, and so do the stations. False when a train still runs on it.
- */
-export function liftLine(s: SimState, lineId: number): boolean {
-  const line = s.lines.find((l) => l.id === lineId);
-  if (!line || s.trains.some((t) => t.lineId === lineId)) return false;
-  const shared = sharedLinks(s, line);
-  for (let k = 1; k < line.path.length; k++) if (!shared.has(linkKey(line.path[k - 1], line.path[k]))) unlink(s, line.path[k - 1], line.path[k]);
+/** give the cells their refund and take them off the books */
+function refund(s: SimState, cells: number[]): number {
   let back = 0;
-  for (const c of line.path)
+  for (const c of cells)
     if (!s.track[c] && s.paid[c] > 0) {
       back += s.paid[c] * LIFT_BACK;
       s.assets -= s.paid[c];
       s.paid[c] = 0;
     }
+  return back;
+}
+
+/**
+ * Lift a line that has no trains: the track no other line uses goes and half its build price comes
+ * back. Track that another line runs on stays, and so do the stations and the branches that leave
+ * it. False when a train still runs on it.
+ */
+export function liftLine(s: SimState, lineId: number): boolean {
+  const line = s.lines.find((l) => l.id === lineId);
+  if (!line || s.trains.some((t) => t.lineId === lineId)) return false;
+  const plan = liftPlan(s, line);
+  for (const [a, b] of plan.links) unlink(s, a, b);
+  let back = refund(s, plan.free);
   // the passing siding goes with the line and half its price comes back
   if (line.siding) {
     back += SIDING_PRICE * LIFT_BACK;
@@ -1777,8 +1972,65 @@ export function liftLine(s: SimState, lineId: number): boolean {
   }
   s.cash += back;
   s.lines = s.lines.filter((l) => l !== line);
+  s.netVersion++;
   if (s.lastBuild && s.lastBuild.line === lineId) s.lastBuild = null;
   const p = centre(s, line.path[line.path.length - 1]);
+  if (back > 0) s.floats.push({ x: p.x, y: p.y, text: `+${Math.round(back)}`, age: 0, kind: 'pay' });
+  s.sounds.push('undo');
+  return true;
+}
+
+/**
+ * The dead-end stretch of free track a cell lies on: from a track end back to the nearest junction,
+ * station or line. Null when the cell is not on laid track used by no line, or the stretch is not a
+ * dead end (it joins two junctions or two stations).
+ */
+export function deadEnd(s: SimState, cell: number): number[] | null {
+  if (!s.track[cell] || stationAt(s, cell)) return null;
+  const used = new Set<number>();
+  for (const l of s.lines) for (const c of l.path) used.add(c);
+  if (used.has(cell)) return null;
+  const first = linked(s, cell);
+  if (first.length > 2) return null;
+  const out = [cell];
+  let ends = first.length === 1 ? 1 : 0;
+  for (const start of first) {
+    let prev = cell;
+    let cur = start;
+    for (;;) {
+      // a station, a line's cell or a junction stays: it is where the stretch stops
+      if (stationAt(s, cur) || used.has(cur) || linked(s, cur).length >= 3) break;
+      if (cur === cell) return null;
+      out.push(cur);
+      const next = linked(s, cur).filter((n) => n !== prev);
+      if (!next.length) {
+        ends++;
+        break;
+      }
+      prev = cur;
+      cur = next[0];
+    }
+  }
+  return ends > 0 ? out : null;
+}
+
+/** what lifting the dead-end stretch at a cell would give back, or null when it is not one */
+export function liftTrackValue(s: SimState, cell: number): { back: number; cells: number } | null {
+  const cells = deadEnd(s, cell);
+  if (!cells) return null;
+  return { back: cells.reduce((a, c) => a + s.paid[c] * LIFT_BACK, 0), cells: cells.length };
+}
+
+/** Lift the dead-end stretch at a cell: the track goes, half its price comes back. */
+export function liftTrack(s: SimState, cell: number): boolean {
+  const cells = deadEnd(s, cell);
+  if (!cells) return false;
+  for (const c of cells) for (const n of linked(s, c)) unlink(s, c, n);
+  const back = refund(s, cells);
+  s.cash += back;
+  s.netVersion++;
+  s.lastBuild = null;
+  const p = centre(s, cell);
   if (back > 0) s.floats.push({ x: p.x, y: p.y, text: `+${Math.round(back)}`, age: 0, kind: 'pay' });
   s.sounds.push('undo');
   return true;
@@ -2051,6 +2303,8 @@ function waitingForLoad(s: SimState, t: Train): boolean {
 }
 
 function depart(s: SimState, t: Train, line: Line): boolean {
+  // a line the laid track no longer joins: the train waits at its last station
+  if (line.cut) return false;
   // a train turns at the ends and runs on through a middle stop; it runs to the next stop it stops at
   const { leg, dir, to } = departSpan(t, line);
   if (blockBusy(s, t, line, leg) || (line.siding && sidingBusy(s, t, line, dir))) {
@@ -2232,6 +2486,8 @@ export function step(s: SimState): void {
     s.lastBuild.left -= DT;
     if (s.lastBuild.left <= 0) s.lastBuild = null;
   }
+  // the lines find their paths again once the track has changed and the undo second is over
+  if (s.netVersion !== s.routedVersion && !s.lastBuild && Math.round(s.time * 60) % 60 === 0) reroute(s);
   for (const f of s.floats) f.age += DT;
   eatStores(s);
   s.floats = s.floats.filter((f) => f.age < (f.life ?? 1.6));

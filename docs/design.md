@@ -222,35 +222,82 @@ sandbox is a generated map, endless, with the full era ladder.
 
 ### Track laying with a thumb
 
-- **Input**: drag from any station or track end to any site, station or
-  track point. The game routes track between them. The route follows a grid
-  the player never sees (eight directions, a cell about 8 mm on a phone), so
-  snapping is to cells, sites, stations and existing track.
+Track is a network the player lays freely, and a line is a list of stops
+routed over it (ADR 0004). Laying track and making a line are two moves.
+
+- **Input**: drag from any station, or from any cell of laid track, to any
+  tile: a site, a station, laid track or open ground. The game routes track
+  between them. The route follows a grid the player never sees (eight
+  directions, a cell about 8 mm on a phone), so snapping is to cells, sites,
+  stations and existing track. A finger that rests on laid track for 0.3 s
+  starts the drag there, with a brass glow under it; a finger that moves at
+  once pans the map, so track never blocks panning. A station starts a drag
+  at once. The green pillars stand on the sites a drag can end on.
+- **The player shapes the route.** The route follows the finger, not only its
+  end. A finger that stays on one open tile for about 0.3 s pins a waypoint
+  there (a small brass dot on the ghost), and the route runs through it, found
+  by the usual cheapest routing between waypoints. A quick straight drag has
+  none and gives the plain path.
+- **Confirm before money is spent.** Lifting the finger builds nothing. The
+  ghost route stays on the map and a sheet comes up with the cost (red when the
+  cash is short), the length, the worst grade, the earthworks and the trips a
+  year of each engine, and two big buttons, **Build** and **Cancel**. A tap on
+  the map does not cancel: only Cancel does. When the way round and the short
+  way differ, or a line could be lengthened, each route is a button that
+  previews itself on the map, and Build builds the chosen one. After Build the
+  Cancel button under the thumb stays for a second as an undo.
+- **Bending a route**: before Build, drag a point in the middle of the ghost and
+  it moves through that tile (a waypoint is added and both halves are routed
+  again), the way a map app moves a driving route. A tap on a brass dot takes
+  that waypoint away. Drag and pick mode share this path.
 - **Live cost on the line**: cost, worst grade, and length update while the
-  finger moves. Grade is coloured along the line: flat, 2 %, 4 %. Lifting the
-  finger builds; a Cancel button is under the thumb for the first second.
-- **Three route buttons** appear after lift when the route crosses a ridge or
-  a lake: Around, Over, Through. Each shows its cost and its worst grade.
-  Over is a bridge (lakes, rivers); Through is a tunnel (ridges). This is the
-  whole terrain decision, in three taps or none.
-- **Bending a route**: drag the middle of a ghost route to move it through a
-  different point, the way a map app moves a driving route. One waypoint per
-  drag.
-- **Branches**: drag from any point on existing track and a junction is
-  placed there. Junctions are automatic; the sim resolves them.
-- **Costs** (starting values, tuned by the sim): plain track 1 per cell;
-  each percent of grade adds 25 %; bridge 4 per cell; tunnel 8 per cell;
-  station 20, upgrade 40 and 80. Demolish refunds half.
+  finger moves. Grade is coloured along the line: flat, 2 %, 4 %.
+- **Open ground**: a drag that ends on open ground leaves a track end, drawn
+  with a red buffer stop, and the cash is spent. A later drag may start from
+  it. Dead track costs upkeep every month like any other, so the card of a
+  stretch no line uses says what it costs a year and offers to lift it.
+- **Two route buttons** appear after lift when the route crosses a ridge or
+  a lake: the cheap way round, and the short way over a bridge or through a
+  cutting. Each shows its cost and its worst grade. This is the whole terrain
+  decision, in two taps or none.
+- **Junctions**: a drag from the middle of laid track makes a junction there.
+  The cell carries three or more links and is drawn with switch blades and a
+  lamp on a stand. Nothing else is asked of the player: a train takes the
+  way its line's path says.
+- **The rail height belongs to the cell**, set when the cell is first laid.
+  A later drag meets old track at the height it has, so free track has a
+  profile of its own and grades follow from the cells.
+- **A line is a list of two to four stations, routed over the laid track.**
+  The path between neighbouring stops is the shortest over laid cells
+  (untracked cells are not passable). A drag from a station that ends on a
+  site builds, on Build, the station and the line between the two,
+  and offers to lengthen a line there under the same rule. A drag that starts
+  on a track cell, or ends on open ground, builds track only. A station's
+  card has **New line** buttons, one for every station the track reaches
+  that it has no two-stop line to yet. A line may not use a cell twice, so a
+  stop on a spur that the path must back out of is not made.
+- **Lines find their path again** when track is laid or lifted, a second after
+  the undo window closes. A leg is replaced only when the track gives a way at
+  least two cells and 3 % shorter, and only when no train runs over it. A
+  line the track no longer joins is marked cut on its card, with the stretch
+  that is missing, and its trains wait at their last station.
+- **Lifting**: a line with no train lifts and takes only the cells no other
+  track touches, with half the price back. A dead-end stretch (a track end back
+  to the nearest junction, station or line) is lifted from its own card, with
+  half back. A stretch between two junctions is no dead end and stays.
+- **Blocks**: the cells of a leg are its block, and legs that share a cell
+  share the block, so lines over one trunk run one train at a time over it.
+  Junctions add no signals.
+- **Costs**: plain track 1 per cell; each percent of grade adds 25 %; bridge 4
+  per cell; station 40, upgrades 60 to 150. Lifting refunds half.
 - **Grades** cost time: an engine's power and the
   train's loaded weight set its speed on a grade, so a cheap steep line with
   a weak engine crawls, and the player sees it crawl.
-- **Single and double track**: single track by default; a second drag over an
-  existing line doubles it for 80 % of the cost. On single track, trains wait
-  at stations for each other and the sim never deadlocks. On double track
-  they pass. No signals exist in the UI.
+- **Single track only**: on a block, trains wait at stations for each other and
+  the sim never deadlocks. No signals exist in the UI.
 - **Pinch to zoom, two fingers to pan** while a drag is in progress, so a
-  long route is possible on a small screen; one finger pans when no drag is
-  active.
+  long route is possible on a small screen. One finger pans when it starts
+  away from stations and track; a finger that starts on track lays track.
 
 ### Engines and carriages
 

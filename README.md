@@ -40,11 +40,37 @@ on siltaa. Lappu sormen yllä kertoo hinnan, pituuden ja jyrkimmän nousun. Kun 
 on lähellä ruudun reunaa, kartta liukuu sinne päin, joten pitkänkin radan
 voi vetää yhdellä vedolla.
 Mäki leikataan ja notko pengerretään rataa varten, ja se maksaa. Nosta
-sormi, niin rata on valmis; peruutusnappi on sormen alla sekunnin ajan.
-Kun matkalla on järvi tai mäki, nostaessa aukeaa kaksi nappia: **kierto**,
+sormi, niin reitti jää kartalle haamuna ja alas nousee kortti: hinta (punainen,
+jos raha ei riitä), pituus, jyrkin nousu ja junamäärät, sekä isot napit
+**Rakenna** ja **Peru**. Mitään ei osteta, ennen kuin painat Rakenna; kartan
+napautus ei peru reittiä, vain Peru. Rakentamisen jälkeen peruutusnappi on
+sormen alla vielä sekunnin ajan.
+**Muotoile reitti.** Jos pidät sormen paikallaan yhdellä ruudulla noin 0,3
+sekuntia, reitti kulkee sen kautta (messinkipiste). Nostamisen jälkeen voit
+vetää haamun keskeltä, niin reitti taipuu vedettyyn ruutuun; pisteen
+napautus poistaa sen.
+Kun matkalla on järvi tai mäki, kortissa on kaksi reittiä, joista valittu näkyy kartalla: **kierto**,
 joka on halpa ja pitkä, tai **silta** tai **leikkaus**, joka on kallis ja
 lyhyt. Lyhyt rata tekee enemmän matkoja vuodessa. Jyrkässä nousussa kevyt
 veturi ryömii, ja kuorma hidastaa sitä lisää.
+
+**Oma ratakartta.** Rata on vapaa: sitä ei tarvitse vetää linjan mukaan.
+Vedon voi aloittaa asemalta tai mistä tahansa rakennetun radan ruudusta:
+pidä sormea radalla hetki, kunnes sen alla hohtaa messinki, ja vedä
+(heti liikkuva sormi vierittää karttaa), ja sen voi päättää mihin tahansa ruutuun.
+Jos nostat sormen tyhjälle maalle, rata jää päättymään punaiseen
+puskuriin, ja siitä voi vetää eteenpäin myöhemmin. Jos aloitat vedon radan
+keskeltä, siihen tulee vaihde: radasta haarautuu toinen rata, ja vaihteessa
+on valkoiset kielet ja lamppu. Näin teet runkoradan ja sivuradan.
+Linja syntyy asemakortin napista **Uusi linja**: se näyttää jokaisen aseman,
+jonne rata ulottuu. Linja ajaa lyhintä rataa pitkin, ja kaksi linjaa voi
+käyttää samaa runkorataa, jolloin niiden junat ajavat osuuden yksi
+kerrallaan. Jos vedät asemien väliin uuden, selvästi lyhyemmän radan, linja
+löytää sen itse sekunnin kuluttua. Jos rata katkeaa, linjan kortti kertoo
+minne, ja junat odottavat asemalla. Umpikujaa ylläpidetään joka vuosi
+kuten muutakin rataa: napauta sitä ja paina **Nosta rata**, niin puolet
+hinnasta tulee takaisin. Linjan nosto ottaa pois vain ne ruudut, joita
+mikään muu rata ei käytä.
 
 **Osta juna.** Kun rata on valmis, linjakortti nousee ruudun alareunaan. Kortin yläosassa on radan oma tilanne (tuotto, kulut, tulos, radan nosto ja ohitusraide, joka on teksti, kun sitä ei voi ostaa), sen alla **Osta juna** vierittyy, ja Osta-nappi on kortin alareunassa kiinteänä, joten se ei peitä mitään. Vaunut ovat paikkoja veturin perässä: tyhjä paikka on katkoviivalla, ja vaunun poistat napauttamalla sitä. Vaunulajin rivillä on + ja hinta; lajia, joka ei kuljeta tällä radalla mitään, ei voi lisätä tästä.
 **Mistä junan voi ostaa myöhemmin?** Jokaisen radan varrella on pyöreä messinkinappi, jossa on + ja pieni veturi. Jos radalla ei ole junaa, nappi sykkii ja on vähän isompi; kun junia on, nappi on rauhallinen ja sen vieressä on junien määrä. Napin kosketus avaa linjakortin suoraan **Osta juna** -kohtaan. Samaan pääsee aseman kortin **Linjat täällä** -osiosta (jokaisella asemaa koskettavalla radalla on oma Osta juna -nappi, pysäkit, junien määrä ja vuoden tulos) ja vihjeestä "Rata ... on ilman junaa: napauta ja osta juna". Koko kartan näkymässä nappi on pieni piste.

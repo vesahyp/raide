@@ -266,16 +266,16 @@ export interface Lengthen {
  * and the forced straight run then ends in a bridge and a hairpin). Everything else is
  * a new line. The drag and the pick mode both ask here.
  */
-export function lengthenOptions(s: SimState, from: number, to: number): Lengthen[] {
+export function lengthenOptions(s: SimState, from: number, to: number, via: number[] = []): Lengthen[] {
   const site = siteAt(s, to);
   if (!site) return [];
-  const fresh = plan(s, from, to);
+  const fresh = plan(s, from, to, undefined, via);
   const dry = fresh.length ? Math.min(...fresh.map((r) => r.bridge.length)) : 0;
   const out: Lengthen[] = [];
   for (const line of extendable(s, from)) {
     const trains = s.trains.filter((t) => t.lineId === line.id && t.wagons.some((w) => carriesAt(s, line, w, site)));
     if (!trains.length) continue;
-    const options = plan(s, from, to, freeSide(s, line, from)).filter((r) => canExtend(s, r, line.id) && r.bridge.length <= dry);
+    const options = plan(s, from, to, freeSide(s, line, from), via).filter((r) => canExtend(s, r, line.id) && r.bridge.length <= dry);
     if (options.length) out.push({ line, options, trains });
   }
   return out;
