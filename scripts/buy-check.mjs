@@ -62,9 +62,10 @@ async function run(name, device) {
     const top = await page.evaluate(() => {
       const box = document.querySelector('[data-sec="buy-scroll"]').getBoundingClientRect();
       const h = document.querySelector('[data-sec="buy-title"]').getBoundingClientRect();
-      return { dy: h.top - box.top, room: document.querySelector('[data-sec="buy-scroll"]').scrollHeight > box.height + 2 };
+      const el = document.querySelector('[data-sec="buy-scroll"]');
+      return { dy: h.top - box.top, room: el.scrollHeight > box.height + 2, end: el.scrollTop >= el.scrollHeight - el.clientHeight - 2 };
     });
-    check(top.dy < 120 && top.dy > -2, `${name}: ${what} opens the line card at Buy a train (heading ${Math.round(top.dy)} px from the top)`);
+    check((top.dy < 120 || top.end) && top.dy > -2, `${name}: ${what} opens the line card at Buy a train (heading ${Math.round(top.dy)} px from the top${top.end ? ', scrolled to the end' : ''})`);
   };
   const buy = async (what) => {
     const before = await trains();

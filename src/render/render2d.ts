@@ -1640,6 +1640,12 @@ export class Renderer2D {
     // the view stays on the map, with a little ground beyond its edge (and the lift of the northern terraces)
     const hx = a.w / 2 / c.s;
     const hy = a.h / 2 / c.s;
+    // in portrait the whole map is on the screen and never moves (ADR 0006)
+    if (!this.backdrop && !this.landscape) {
+      c.x = s.w / 2;
+      c.y = s.h / 2;
+      return;
+    }
     c.x = s.w <= 2 * hx - 2 ? s.w / 2 : Math.max(hx - 1, Math.min(s.w - hx + 1, c.x));
     c.y = s.h <= 2 * hy - 2 ? s.h / 2 : Math.max(hy - 2, Math.min(s.h - hy + 1, c.y));
   }

@@ -64,12 +64,11 @@ try {
   await page.waitForTimeout(400);
   let w = await where();
   const cash0 = w.cash;
-  // a drag from a site with no station builds nothing
-  // it pans the view instead: a short drag there and back leaves the map where it was
+  // a drag from a site with no station builds nothing, and the map, which fits the screen, stays put
   const before = w.forest.x;
   await drag(w.sawmill, { x: w.sawmill.x - 60, y: w.sawmill.y + 40 });
   let moved = await where();
-  check(moved.lines === 0 && moved.cash === cash0 && Math.abs(moved.forest.x - (before - 60)) < 8, 'a drag from a site with no station builds nothing and pans the view');
+  check(moved.lines === 0 && moved.cash === cash0 && Math.abs(moved.forest.x - before) < 2, `a drag from a site with no station builds nothing and the map stays put (${moved.lines} lines, cash ${moved.cash} of ${cash0}, forest x ${before.toFixed(0)} -> ${moved.forest.x.toFixed(0)})`);
   await drag({ x: moved.sawmill.x, y: moved.sawmill.y }, { x: moved.sawmill.x + 60, y: moved.sawmill.y - 40 });
   await page.waitForTimeout(200);
   w = await where();
@@ -113,10 +112,10 @@ try {
   await drag(w.forest, w.sawmill);
   await page.waitForTimeout(250);
   await page.locator('.card.sheet').waitFor({ timeout: 3000 });
-  const strip = await page.locator('[data-sec="consist"] [data-consist]').evaluateAll((els) => els.map((e) => e.dataset.type));
-  check(strip.join() === 'flat,flat', `the card starts a train from the forest with two flat wagons (${strip.join(' ')})`);
+  const label = (await page.locator('.buy-card .buy-label').nth(1).textContent()) ?? '';
+  check(/Flat wagons\s*2\/3/.test(label), `the card starts a train from the forest with two flat wagons (${label})`);
   // the train costs more than the cash left: the cash chip opens the money card, Borrow takes a hundred
-  await page.evaluate(() => { window.__sim.cash = 100; });
+  await page.evaluate(() => { window.__sim.cash = 40; });
   await page.waitForTimeout(250);
   check(await page.locator('[data-track="card-buy-train"]').isDisabled(), 'the Buy button waits while the cash is short');
   await tapButton(page.locator('[data-act="money"]'));
@@ -130,7 +129,7 @@ try {
   await page.waitForTimeout(200);
   const onTrack = await page.evaluate(() => {
     const s = window.__sim;
-    const c = s.lines[0].path[3];
+    const c = s.lines[0].path[Math.floor(s.lines[0].path.length / 2)];
     return window.__renderer.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
   });
   await tap(onTrack.x, onTrack.y);
@@ -145,7 +144,7 @@ try {
   // a tap on the track opens the card again
   const mid = await page.evaluate(() => {
     const s = window.__sim;
-    const c = s.lines[0].path[3];
+    const c = s.lines[0].path[Math.floor(s.lines[0].path.length / 2)];
     return window.__renderer.project((c % s.w) + 0.5, Math.floor(c / s.w) + 0.5, 2);
   });
   await tap(mid.x, mid.y);
