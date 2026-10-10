@@ -675,7 +675,7 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onLift, onClose }: { s: SimS
   // what the line does now, and with this train on it
   const now = lineYear(s, line);
   const withIt = lineYear(s, line, { engine, wagons: count });
-  const added = withIt.loads - now.loads;
+  const added = Math.max(0, withIt.loads - now.loads);
   const runs = runningCostMinute(line, engine, count, withIt.each[withIt.each.length - 1]);
   const earned = line.earnedYear;
   const trackCost = lineTrackUpkeep(s, line) * s.yearFrac;

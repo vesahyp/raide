@@ -167,7 +167,11 @@ export function advice(s: SimState): Advice[] {
   for (const line of s.lines) {
     const g = lineGood(s, line);
     if (!g) continue;
-    if (!s.trains.some((t) => t.lineId === line.id && t.state === 'stop' && t.idx === g.from && t.waited > 3)) continue;
+    // the trains stand waiting for loads, or two or more of them keep the forest or farm's pile near empty
+    const waiting = s.trains.some((t) => t.lineId === line.id && t.state === 'stop' && t.idx === g.from && t.waited > 3);
+    const src = stopSite(s, line, g.from);
+    const drained = expandPrice(src) !== null && src.stock < 2 && s.trains.filter((t) => t.lineId === line.id).length >= 2;
+    if (!waiting && !drained) continue;
     // trains waiting at a sawmill or a mill wait for the forest or the farm that feeds it
     let site = stopSite(s, line, g.from);
     if (expandPrice(site) === null)

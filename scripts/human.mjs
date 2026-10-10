@@ -42,7 +42,10 @@ const wait = (ms) => page.waitForTimeout(ms);
 // a person's pause before a move: a little longer for a card to read
 const think = (base = 900) => wait(base + Math.random() * 600);
 
-const tap = async (x, y) => {
+/** whether the pick is on the screen: a tap meant for the map or a card must not land on it */
+const pickUp = () => page.evaluate(() => !!window.__sim.pick);
+const tap = async (x, y, pick = false) => {
+  if (!pick && (await pickUp())) return false;
   await touch('touchStart', [{ x, y, id: 1 }]);
   await wait(70);
   await touch('touchEnd', []);
@@ -56,11 +59,12 @@ const tapButton = async (sel) => {
   await wait(120);
   const b = await loc.boundingBox().catch(() => null);
   if (!b) return false;
-  await tap(b.x + b.width / 2, b.y + b.height / 2);
+  if ((await tap(b.x + b.width / 2, b.y + b.height / 2, sel.includes('pick-'))) === false) return false;
   return true;
 };
 /** a thumb's drag: down, a short hold, then along a slightly curved path at a thumb's speed */
 const drag = async (a, b) => {
+  if (await pickUp()) return;
   await touch('touchStart', [{ x: a.x, y: a.y, id: 1 }]);
   await wait(120);
   const d = Math.hypot(b.x - a.x, b.y - a.y);

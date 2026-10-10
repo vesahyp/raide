@@ -48,7 +48,7 @@ export const MILL_EATS = 1.5;
  * take it to the next size. A load counts VARIETY_BONUS more when every other good the town takes
  * arrived within VARIETY_SECONDS too, so a second chain speeds growth. Nothing takes growth away.
  */
-export const GROW_NEED = [0, 110, 180, 245, 320];
+export const GROW_NEED = [0, 125, 200, 275, 350];
 export const VARIETY_BONUS = 0.5;
 export const VARIETY_SECONDS = 30;
 export const TOWN_MAX = 5;
