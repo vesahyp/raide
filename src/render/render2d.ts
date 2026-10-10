@@ -1539,7 +1539,12 @@ export class Renderer2D {
   area(): { l: number; t: number; w: number; h: number } {
     // the landscape HUD column is 150 px wide at an 8 px margin; in portrait the HUD bar and the goal strip under it take the top 120 px
     const l = this.landscape && !this.backdrop ? 160 : 0;
-    const t = this.landscape || this.backdrop ? 0 : 118;
+    // in portrait the map starts under the HUD, however tall the goal strip is
+    let t = this.landscape || this.backdrop ? 0 : 118;
+    if (!this.landscape && !this.backdrop) {
+      const hud = document.querySelector('.goal-strip');
+      if (hud) t = Math.max(t, Math.ceil(hud.getBoundingClientRect().bottom) + 4);
+    }
     return { l, t, w: this.w - l, h: this.h - t };
   }
 

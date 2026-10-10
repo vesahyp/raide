@@ -20,7 +20,7 @@ import {
   BANKRUPT_YEARS, BASE_PRICE, BRIDGE_UPKEEP, CELL_M, DEMAND_FILL, DEMAND_FLOOR, DIST_BONUS, DIST_CAP, ENGINES, ENGINE_LEN, GRADE_LOAD, GRADE_MAX, LIFT_BACK, LOAN_BASE, LOAN_RATE, LOAN_SHARE, MAKES, MILL_EATS, MONTHS,
   RAW_RATE, RESALE, SERVED_MEMORY, SERVED_RATE, STOP_SECONDS, TAKES, TOWN_EATS, EAT_GROWTH, TOWN_MAX, TOWN_STORE_CAP, TRACK_UPKEEP, UNDO_SECONDS, GROW_NEED, VARIETY_BONUS, VARIETY_SECONDS,
   WAGON_DWELL, WAGON_LEN, WAGON_PRICE, WAGON_RUN, WAGONS_DEFAULT, WAGONS_MAX, YEAR_SECONDS, STATION_LINES, WAIT_FULL, FOLLOW_GAP, wagonFor,
-  PICK_SECONDS, PERK_MAX, PERK_SPEED, PERK_OUTPUT, PERK_LOADING, PERK_TRACK, PERK_FAIR, PERK_CASH, PERK_CASH_STEP,
+  EXPAND_PRICE, EXPAND_OUTPUT, PICK_SECONDS, PERK_MAX, PERK_SPEED, PERK_OUTPUT, PERK_LOADING, PERK_TRACK, PERK_FAIR, PERK_CASH, PERK_CASH_STEP,
 } from './content/economy';
 
 export const DT = 1 / 60;
@@ -193,17 +193,35 @@ function seeded(text: string): () => number {
 const CAPACITY: PerkId[] = ['wagon', 'speed', 'output', 'loading', 'fair'];
 const BUILD: PerkId[] = ['track', 'train', 'cash'];
 
-/** draw the next pick: one upgrade that makes the network carry more, one that helps build it */
+/** whether some pair of sites that trade has no line yet, with a station at one end: more track would still be of use */
+function linksLeft(s: SimState): boolean {
+  for (const a of s.sites)
+    for (const b of s.sites) {
+      if (a === b || !tradeOf(a.kind, b.kind)) continue;
+      const sa = s.stations.find((st) => st.siteId === a.id);
+      const sb = s.stations.find((st) => st.siteId === b.id);
+      if (!sa && !sb) continue;
+      if (sa && sb && s.lines.some((l) => l.stops.includes(sa.id) && l.stops.includes(sb.id))) continue;
+      return true;
+    }
+  return false;
+}
+
+/**
+ * Draw the next pick: one upgrade that makes the network carry more, one that helps build it. An
+ * upgrade of no use now is never offered: cheaper track when every link is built, cash when the
+ * cash is already plenty; then both come from the first group.
+ */
 function drawPick(s: SimState): void {
   s.picks++;
   const rnd = seeded(`${s.scenario.id}:${s.picks}`);
   const from = (list: PerkId[]) => {
-    const open = list.filter((p) => perkOpen(s, p));
+    const open = list.filter((p) => perkOpen(s, p) && (p !== 'track' || linksLeft(s)) && (p !== 'cash' || s.cash < 3 * trainPrice()));
     return open.length ? open[Math.floor(rnd() * open.length)] : null;
   };
-  const a = from(CAPACITY) ?? 'cash';
-  let b = from(BUILD) ?? 'cash';
-  if (b === a) b = 'train';
+  const a = from(CAPACITY) ?? 'train';
+  let b = from(BUILD) ?? from(CAPACITY.filter((p) => p !== a)) ?? 'cash';
+  if (b === a) b = a === 'train' ? 'cash' : 'train';
   s.pick = { n: s.picks, options: [a, b], cash: PERK_CASH + PERK_CASH_STEP * (s.picks - 1) };
   s.sounds.push('bell');
 }
@@ -292,7 +310,7 @@ export function routeTrips(s: SimState, r: Route, engine: EngineId, wagons = WAG
 
 /** what a site makes a minute now, in loads: a raw site by its rate, a refinery by what comes in */
 export function supplyPerMinute(s: SimState, site: Site): number {
-  if (RAW_RATE[site.kind]) return site.rawRate * SERVED_RATE * (1 + PERK_OUTPUT * perk(s, 'output')) * (MONTHS * 60) / YEAR_SECONDS;
+  if (RAW_RATE[site.kind]) return site.rawRate * SERVED_RATE * outputFactor(s, site) * (MONTHS * 60) / YEAR_SECONDS;
   const good = MAKES[site.kind];
   if (!good) return 0;
   // a refinery makes what its feeding lines bring
@@ -310,7 +328,7 @@ export function supplyPerMinute(s: SimState, site: Site): number {
  * given: each train's free-running loads, capped by what the loading stop makes (the lines that load
  * there share it). This is the number the buy card shows; the trains do not wait for each other.
  */
-export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wagons: number }): { trips: number; loads: number; limit: 'free' | 'supply'; each: number[] } {
+export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wagons: number }): { trips: number; loads: number; limit: 'free' | 'supply' | 'platform'; each: number[] } {
   const mine = s.trains.filter((o) => o.lineId === line.id).map((o) => ({ engine: o.engine, wagons: o.nWagons }));
   if (extra) mine.push(extra);
   const each = mine.map((m) => 60 / roundTrip(s, line, m.engine, m.wagons));
@@ -328,9 +346,15 @@ export function lineYear(s: SimState, line: Line, extra?: { engine: EngineId; wa
       cap = (supplyPerMinute(s, from) + from.stock / PILE_MINUTES) / Math.max(1, sharers + (extra && !s.trains.some((t) => t.lineId === line.id) ? 1 : 0));
     }
   }
-  const loads = Math.min(free, cap);
+  // one platform a line at each end: a train stands there for its stop and its wagons, and the next runs in behind it
+  const n = mine.length ? mine.reduce((a, m) => a + m.wagons, 0) / mine.length : WAGONS_DEFAULT;
+  const engine = mine[0]?.engine ?? 'hilma';
+  const turn = STOP_SECONDS + n * dwellAt(s) + (ENGINE_LEN + n * WAGON_LEN + FOLLOW_GAP) / speedOf(s, engine);
+  const platform = mine.length > 1 ? (60 / turn) * n : Infinity;
+  const loads = Math.min(free, cap, platform);
   const k = free > 0 ? loads / free : 0;
-  return { trips: each.reduce((a, b) => a + b, 0) * k, loads, limit: free > cap ? 'supply' : 'free', each: each.map((e) => e * k) };
+  const limit = loads >= free - 1e-9 ? 'free' : cap <= platform ? 'supply' : 'platform';
+  return { trips: each.reduce((a, b) => a + b, 0) * k, loads, limit, each: each.map((e) => e * k) };
 }
 
 /** the minutes over which the buy card counts a waiting pile as loads a train can take */
@@ -834,7 +858,8 @@ function tickDock(s: SimState, t: Train): boolean {
   const g = lineGood(s, line);
   let job = t.loads.findIndex((l) => !!l && TAKES[site.kind].includes(l.good));
   let kind: 'load' | 'unload' | null = job >= 0 ? 'unload' : null;
-  if (job < 0 && g && g.from === t.idx && site.stock >= 1) {
+  // the pile is shared by every line that loads here: the train that has waited longest takes the next load
+  if (job < 0 && g && g.from === t.idx && site.stock >= 1 && !waitsLonger(s, t)) {
     job = t.loads.findIndex((l) => !l);
     if (job >= 0) kind = 'load';
   }
@@ -879,6 +904,16 @@ function tickDock(s: SimState, t: Train): boolean {
     s.sounds.push('load');
   }
   return true;
+}
+
+/** whether another train standing at the same station has waited longer for a load from the same pile */
+function waitsLonger(s: SimState, t: Train): boolean {
+  for (const o of s.trains) {
+    if (o === t || o.state !== 'stop' || o.at !== t.at || o.waited <= t.waited || o.cargo >= o.nWagons) continue;
+    const g = lineGood(s, lineOf(s, o));
+    if (g && g.from === o.idx) return true;
+  }
+  return false;
 }
 
 /** a load arrives at a site: a town grows by it, a refinery turns it into its own good */
@@ -1082,12 +1117,35 @@ function chargeMonth(s: SimState): void {
   s.trackUp += track;
 }
 
+/** what a raw site makes against its base: the output upgrades and its own expansions */
+export function outputFactor(s: SimState, site: Site): number {
+  return (1 + PERK_OUTPUT * perk(s, 'output')) * (1 + EXPAND_OUTPUT * site.level);
+}
+
+/** what the next expansion of a forest or a farm costs, or null when it has them all or is no raw site */
+export function expandPrice(site: Site): number | null {
+  return RAW_RATE[site.kind] && site.level < EXPAND_PRICE.length ? EXPAND_PRICE[site.level] : null;
+}
+
+/** Expand a forest or a farm: it makes EXPAND_OUTPUT more of its good, and its pile holds more. */
+export function expandSite(s: SimState, siteId: string): boolean {
+  const site = siteById(s, siteId);
+  const cost = expandPrice(site);
+  if (cost === null || cost > s.cash) return false;
+  s.cash -= cost;
+  s.assets += cost;
+  site.level++;
+  s.floats.push({ x: site.cx + 0.5, y: site.cy - 2, text: `-${cost}`, age: 0, kind: 'cost' });
+  s.sounds.push('build');
+  return true;
+}
+
 /** months tick: upkeep, production, demand recovery */
 function monthTick(s: SimState): void {
   chargeMonth(s);
-  const boost = 1 + PERK_OUTPUT * perk(s, 'output');
   for (const site of s.sites) {
     if (RAW_RATE[site.kind]) {
+      const boost = outputFactor(s, site);
       // a served site makes more: the rate climbs while pickups keep coming and falls back after
       const base = site.rawRate;
       const recent = s.time - site.lastPickup < SERVED_MEMORY * (YEAR_SECONDS / MONTHS);

@@ -36,7 +36,9 @@ päällä. Se voi ylittää toisen radan tasoristeyksessä, ja junat ajavat siit
 odottamatta. Rata on kaksiraiteinen: menevät ja tulevat junat ohittavat
 toisensa, ja saman suunnan junat pitävät väliä. Siksi uusi juna lisää aina
 kuljetuksia, kunnes metsä tai pelto ei tuota enempää; silloin junat odottavat
-kuormaa asemalla, ja kortti sanoo sen. Asemalle mahtuu neljä rataa.
+kuormaa asemalla, ja kortti sanoo sen. Silloin metsän tai maatilan voi
+**laajentaa** sen kortista: jokainen laajennus (kolme kertaa) tuottaa 40 %
+enemmän. Asemalle mahtuu neljä rataa.
 
 **Osta juna.** Kun rata on valmis, linjakortti aukeaa **Osta juna**
 -kohtaan. Valitse veturi (Pikku-Hilma on kevyt ja nopea, Jyry hidas ja vahva

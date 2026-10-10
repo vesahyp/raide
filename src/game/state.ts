@@ -54,6 +54,7 @@ export function createState(sc: ScenarioDef): SimState {
     lastPickup: -Infinity,
     size: d.kind === 'town' ? d.size ?? 1 : 0,
     grewAt: -Infinity,
+    level: 0,
   }));
   // a site's cell and its yard are land at the site's terrace; only a town's yard keeps its streets
   for (const d of sc.sites) {

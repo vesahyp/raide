@@ -200,6 +200,11 @@ const buyTrain = async (lineId, why) => {
   if (v.lineCard !== lineId || !v.buy || v.buy.disabled) return false;
   const adds = (await page.locator('[data-sec="buy-trips"]').first().textContent().catch(() => '')) ?? '';
   await think(1200);
+  // the card says this train would add nothing: a player reads that and keeps the cash
+  if (/^\+0\.0/.test(adds.trim()) && !/no train/.test(why)) {
+    await tapButton('.card .close');
+    return false;
+  }
   const price = /(free|ilmainen|\d+)/.exec(v.buy.text.replace(/Buy train\s*/, ''))?.[1] ?? '?';
   if (!(await tapButton('[data-act="buy"]'))) return false;
   await wait(400);
@@ -254,6 +259,22 @@ for (;;) {
   if (idle && (v.cash >= v.trainPrice || v.free)) {
     if (await buyTrain(idle.id, 'the line had no train')) continue;
   }
+  // the tip, when it says the trains wait for loads at a forest or a farm: tap it, and expand the site from its card
+  if (v.tip?.kind === 'expand') {
+    await think(1200);
+    await tapButton('[data-act="tip"]');
+    await wait(500);
+    const levels = () => page.evaluate(() => window.__sim.sites.reduce((n, o) => n + o.level, 0));
+    const before = await levels();
+    const price = await page.locator('[data-act="expand"] small').first().textContent().catch(() => '?');
+    if ((await tapButton('[data-act="expand"]')) && (await levels()) > before) {
+      const w = await look();
+      await decide(w, 'expand', `${v.tip.text.replace(/: expand it for \d+$/, '')}: expanded for ${price}`);
+      await tapButton('.card .close');
+      continue;
+    }
+    await tapButton('.card .close');
+  }
   // the tip, when it says to buy a train on a line where the goods wait
   if (v.tip?.kind === 'more' && (v.cash >= v.trainPrice || v.free)) {
     const lineId = await page.evaluate(() => { const r = window.__renderer; return r.advice?.onLine ?? null; });
@@ -288,7 +309,7 @@ rmSync(join(OUT, 'tmp'), { recursive: true, force: true });
 await browser.close();
 server.kill();
 
-const moves = log.filter((d) => ['line', 'train', 'pick', 'route'].includes(d.kind));
+const moves = log.filter((d) => ['line', 'train', 'pick', 'route', 'expand'].includes(d.kind));
 const times = [0, ...moves.map((d) => d.t)];
 const gaps = times.slice(1).map((t, i) => t - times[i]);
 const maxGap = Math.max(...gaps);
@@ -303,7 +324,7 @@ const md = [
   `iPhone 16 portrait, clock ×${SPEED}, ${new Date().toISOString().slice(0, 16)}; the game ran at ${(log[log.length - 1].t / ((Date.now() - start) / 1000)).toFixed(2)} game seconds a real second.`,
   '',
   `- Result: ${end?.what ?? 'none'}`,
-  `- Decisions: ${moves.length} (${moves.filter((d) => d.kind === 'line').length} lines, ${moves.filter((d) => d.kind === 'train').length} trains, ${moves.filter((d) => d.kind === 'pick').length} picks, ${moves.filter((d) => d.kind === 'route').length} route choices)`,
+  `- Decisions: ${moves.length} (${moves.filter((d) => d.kind === 'line').length} lines, ${moves.filter((d) => d.kind === 'train').length} trains, ${moves.filter((d) => d.kind === 'expand').length} expansions, ${moves.filter((d) => d.kind === 'pick').length} picks, ${moves.filter((d) => d.kind === 'route').length} route choices)`,
   `- Longest gap between decisions: ${maxGap.toFixed(0)} s of game time; mean ${(gaps.reduce((a, b) => a + b, 0) / Math.max(1, gaps.length)).toFixed(0)} s`,
   `- First town growth seen at the 30 s snapshot of ${firstGrowT ?? 'none'} s`,
   '',

@@ -8,9 +8,9 @@ import type { Good, SimState, Site } from './types';
 import { MAKES, TAKES, WAGONS_DEFAULT, VARIETY_SECONDS } from './content/economy';
 import { siteById, stationAt } from './state';
 import { idx } from './grid';
-import { plan, lineYear, trainPrice, wantedGoods, stopSite, lineGood } from './sim';
+import { plan, lineYear, trainPrice, wantedGoods, stopSite, lineGood, expandPrice } from './sim';
 
-export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'cash' | 'idle-line';
+export type AdviceKind = 'first' | 'stuck' | 'starved' | 'more' | 'cash' | 'idle-line' | 'expand';
 
 export interface Advice {
   kind: AdviceKind;
@@ -163,6 +163,24 @@ export function advice(s: SimState): Advice[] {
     out.push({ kind: 'more', site: site.id, to: to.id, good: g.good, amount: Math.floor(site.stock), onLine: line.id, score: 92 + site.stock * (raw ? 2 : 4) + (goal.includes(to) ? 15 : 0) });
   }
 
+  // trains that stand waiting for loads at a forest or a farm: the site is the limit, expand it
+  for (const line of s.lines) {
+    const g = lineGood(s, line);
+    if (!g) continue;
+    if (!s.trains.some((t) => t.lineId === line.id && t.state === 'stop' && t.idx === g.from && t.waited > 3)) continue;
+    // trains waiting at a sawmill or a mill wait for the forest or the farm that feeds it
+    let site = stopSite(s, line, g.from);
+    if (expandPrice(site) === null)
+      for (const l of s.lines) {
+        const lg = lineGood(s, l);
+        if (lg && stopSite(s, l, lg.to) === site && expandPrice(stopSite(s, l, lg.from)) !== null) site = stopSite(s, l, lg.from);
+      }
+    const price = expandPrice(site);
+    if (price === null || price > s.cash) continue;
+    if (out.some((a) => a.kind === 'expand' && a.site === site.id)) continue;
+    out.push({ kind: 'expand', site: site.id, good: g.good, cost: price, score: 96 });
+  }
+
   // a goal town with a station that has no line from anything that makes a good it wants: the second good speeds its growth
   for (const town of goal) {
     if (town.kind !== 'town' || !hasStation(s, town)) continue;
@@ -196,5 +214,5 @@ export function advice(s: SimState): Advice[] {
 
 /** a key that stays the same while the advice says the same thing, for holding a tip on screen */
 export function adviceKey(a: Advice): string {
-  return `${a.kind}:${a.site}:${a.to ?? ''}:${a.good ?? ''}:${a.onLine ?? ''}`;
+  return `${a.kind}:${a.site}:${a.to ?? ''}:${a.good ?? ''}:${a.onLine ?? ''}:${a.kind === 'expand' ? a.cost : ''}`;
 }

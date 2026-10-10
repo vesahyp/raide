@@ -48,7 +48,7 @@ export const MILL_EATS = 1.5;
  * take it to the next size. A load counts VARIETY_BONUS more when every other good the town takes
  * arrived within VARIETY_SECONDS too, so a second chain speeds growth. Nothing takes growth away.
  */
-export const GROW_NEED = [0, 80, 125, 170, 230];
+export const GROW_NEED = [0, 105, 165, 225, 300];
 export const VARIETY_BONUS = 0.5;
 export const VARIETY_SECONDS = 30;
 export const TOWN_MAX = 5;
@@ -157,6 +157,10 @@ export const PERK_FAIR = 0.25;
 /** the cash upgrade: this, and this much more for every pick before it */
 export const PERK_CASH = 120;
 export const PERK_CASH_STEP = 30;
+
+/** a forest or a farm expanded from its card: the price of each step, and the output each step adds */
+export const EXPAND_PRICE = [120, 200, 320];
+export const EXPAND_OUTPUT = 0.4;
 
 /** seconds the Cancel button stays under the thumb after a build */
 export const UNDO_SECONDS = 1.5;

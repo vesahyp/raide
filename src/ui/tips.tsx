@@ -37,6 +37,8 @@ export function tipText(s: SimState, a: Advice): string {
       return tr(`${here}: ${a.amount} ${some(g!)} odottaa: osta linjalle toinen juna`, `${here} has ${a.amount} ${some(g!)} waiting: buy another train for its line`);
     case 'cash':
       return tr(`Rahaa ${num(a.amount ?? 0)}: rata ${here} → ${there} maksaa ${a.cost}`, `You have ${num(a.amount ?? 0)}: a line ${here} → ${there} costs ${a.cost}`);
+    case 'expand':
+      return tr(`Junat odottavat kuormaa paikassa ${here}: laajenna se (${a.cost})`, `Trains wait for loads at ${here}: expand it for ${a.cost}`);
     case 'idle-line': {
       const line = s.lines.find((l) => l.id === a.onLine);
       const nm = line ? lineName(s, line) : '';

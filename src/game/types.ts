@@ -92,6 +92,8 @@ export interface Site extends SiteDef {
   size: number;
   /** the sim time a town last grew; minus infinity before */
   grewAt: number;
+  /** a forest's or a farm's expansions bought, 0 to EXPAND_PRICE.length: each makes more */
+  level: number;
 }
 
 export interface Station {

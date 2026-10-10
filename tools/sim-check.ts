@@ -7,7 +7,7 @@
  */
 import { createState, siteById } from '../src/game/state';
 import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, plan, build, undo, buyTrain, DT, drawnLength, lineYear, liftLine, takePick, lineGood, stopSite, growFrac, addWagon } from '../src/game/sim';
+import { step, plan, build, undo, buyTrain, DT, drawnLength, lineYear, liftLine, takePick, lineGood, stopSite, growFrac, addWagon, expandSite } from '../src/game/sim';
 import { idx, APPROACH, cx, cy } from '../src/game/grid';
 import { Bot } from './bot';
 import { FOLLOW_GAP, PICK_SECONDS, YEAR_SECONDS } from '../src/game/content/economy';
@@ -120,7 +120,7 @@ for (const sc of [SAWMILL, HARJU]) {
   check(s.trains.every((t) => t.trips > 0), `${sc.id}: every train has made a trip (${s.trains.map((t) => t.trips).join(', ')})`);
   if (sc === HARJU) {
     const t = s.result?.time ?? Infinity;
-    check(t >= 180 && t <= 720, `harju: the bot's win takes 3 to 12 minutes, so a human's takes about 10 to 15 (${(t / 60).toFixed(1)} min)`);
+    check(t >= 180 && t <= 840, `harju: the bot's win takes 3 to 14 minutes (the human-like run is the measure) (${(t / 60).toFixed(1)} min)`);
   }
 }
 
@@ -167,6 +167,19 @@ for (const sc of [SAWMILL, HARJU]) {
     }
   }
   check(!bad, `harju: the eight links the goal needs build in any of 120 orders${bad ? `: ${bad} is walled off` : ''}`);
+}
+
+// expanding a forest makes the line carry more when the forest is the limit
+{
+  const s = createState(HARJU);
+  s.cash = 1e5;
+  const line = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
+  for (let i = 0; i < 4; i++) buyTrain(s, line.id);
+  const before = lineYear(s, line);
+  check(expandSite(s, 'forest') && siteById(s, 'forest').level === 1, 'a forest can be expanded from its card');
+  const after = lineYear(s, line);
+  check(before.limit === 'supply' && after.loads > before.loads + 1, `the expansion lifts what four trains carry (${before.loads.toFixed(1)} to ${after.loads.toFixed(1)} a minute)`);
+  check(!expandSite(s, 'sawmill'), 'a sawmill is not expanded');
 }
 
 // lifting a line gives half its track back

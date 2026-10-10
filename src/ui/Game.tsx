@@ -7,9 +7,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineId, Good, Line, Load, PerkId, ScenarioDef, SimState, Site, Train, WagonType } from '../game/types';
 import { createState, siteById, goodsOnMap, stationAt } from '../game/state';
-import { DT, step, buyTrain, undo, trainPrice, nextTrainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, sellTrain, fillOf, storeCap, growthOutlook, goalProgress, lineOf, buyers, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, lineTrackUpkeep, runningCostMinute, runPerTile, stopSite, lineGood, lineWagon, growNeed, growFrac, takePick, wagonsMax, dwellAt, held, perk, WAGON_BACK } from '../game/sim';
+import { DT, step, buyTrain, undo, trainPrice, nextTrainPrice, note, price, plan, build, addWagon, removeWagon, setEngine, sellTrain, fillOf, storeCap, growthOutlook, goalProgress, lineOf, buyers, tripTimes, gradeFactor, borrow, repay, loanCeiling, netWorth, liftLine, liftValue, lineYear, lineTrackUpkeep, runningCostMinute, runPerTile, stopSite, lineGood, lineWagon, growNeed, growFrac, takePick, wagonsMax, dwellAt, held, perk, expandPrice, expandSite, outputFactor, WAGON_BACK } from '../game/sim';
 import { HOUSES_PER_SIZE } from '../render/town';
-import { ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, TOWN_MAX, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, PERK_MAX, PERK_SPEED, PERK_OUTPUT, PERK_LOADING, PERK_TRACK, PERK_FAIR, VARIETY_BONUS, wagonFor } from '../game/content/economy';
+import { ENGINES, ENGINE_LEN, GOOD_NAME, LOAN_RATE, LOAN_STEP, MAKES, MONTHS, TOWN_MAX, RAW_RATE, RESALE, TAKES, WAGON_LEN, WAGON_NAME, WAGON_PRICE, WAGONS_DEFAULT, PERK_MAX, PERK_SPEED, PERK_OUTPUT, PERK_LOADING, PERK_TRACK, PERK_FAIR, VARIETY_BONUS, EXPAND_OUTPUT, EXPAND_PRICE, MONTHS as MONTHS_A_YEAR, YEAR_SECONDS, wagonFor } from '../game/content/economy';
 import { idx, type Route } from '../game/grid';
 import { earthWord, gradeText, GRADE_COL, perMin, routeKm, tripsByEngine } from './routeinfo';
 import { Renderer2D, OPTION_COLOUR } from '../render/render2d';
@@ -775,7 +775,8 @@ function LineCard({ s, line, toBuy, onBuy, onTrain, onLift, onClose }: { s: SimS
             <span className="num">
               <b className={added < 0.3 ? 'red' : 'gold'}>+{added.toFixed(1)}</b> {tr('kuormaa/min', 'loads/min')} <small>({now.loads.toFixed(1)} → {withIt.loads.toFixed(1)})</small> · <b data-sec="adds-cost">{num(runs)}</b> <small>{tr('kulut/min', 'costs/min')}</small>
             </span>
-            {withIt.limit === 'supply' && g && <small className="why">{tr(`${tt(stopSite(s, line, g.from).name)} ei tuota enempää: junat odottavat kuormaa`, `${tt(stopSite(s, line, g.from).name)} makes no more: the trains wait for loads`)}</small>}
+            {withIt.limit === 'platform' && <small className="why">{tr('Asemalla on jono: pidempi juna kuljettaa enemmän kuin uusi juna', 'The trains queue at the platform: longer trains carry more than another train')}</small>}
+            {withIt.limit === 'supply' && g && <small className="why">{expandPrice(stopSite(s, line, g.from)) !== null ? tr(`${tt(stopSite(s, line, g.from).name)} ei tuota enempää: laajenna se sen kortista`, `${tt(stopSite(s, line, g.from).name)} makes no more: expand it from its card`) : tr(`${tt(stopSite(s, line, g.from).name)} ei tuota enempää: junat odottavat kuormaa`, `${tt(stopSite(s, line, g.from).name)} makes no more: the trains wait for loads`)}</small>}
           </div>
         </div>
       </div>
@@ -1082,6 +1083,24 @@ function SiteCard({ s, site, onClose, onLay, onBuyLine }: { s: SimState; site: S
       {takes.length > 0 && site.kind === 'town' && <TownRows s={s} site={site} takes={takes} railed={hasStation} />}
       {stuck && <p className="stuck">{stuck}</p>}
       {station && <LinesHere s={s} stationId={station.id} onBuy={onBuyLine} />}
+      {raw && (
+        <div className="srow" data-sec="expand">
+          <span className="sl">{tr('Laajennus', 'Expand')}</span>
+          <div className="crew-row">
+            <span>
+              {tr(`+${Math.round(EXPAND_OUTPUT * 100)} % ${NONE_OF[makes!][0]}`, `+${Math.round(EXPAND_OUTPUT * 100)} % ${NONE_OF[makes!][1]}`)} · {tr('nyt', 'now')} {(site.rawRate * outputFactor(s, site) * MONTHS_A_YEAR * 60 / YEAR_SECONDS).toFixed(0)}/min · {site.level}/{EXPAND_PRICE.length}
+            </span>
+            {expandPrice(site) === null ? (
+              <b className="bought">{tr('Täysi', 'Full')}</b>
+            ) : (
+              <button className="btn act" data-act="expand" disabled={s.cash < expandPrice(site)!} onClick={() => expandSite(s, site.id)}>
+                <span>{tr('Laajenna', 'Expand')}</span>
+                <small>{expandPrice(site)}</small>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {list.length > 0 && (
         <div className="srow" data-sec="buyers">
           <span className="sl">{tr('Ostajat', 'Buyers')}</span>

@@ -693,7 +693,7 @@ button.hud-cash:active { transform: translateY(2px); box-shadow: none; }
 .perk-loading::after { content: '⇅'; }
 .perk-track::after { content: '−%'; font-size: 18px; }
 .perk-train::after { content: '+1'; }
-.perk-cash::after { content: '¤'; }
+.perk-cash::after { content: ''; width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f1cf6e, #d8a63a 60%, #a97a1f); border: 2px solid #16120e; box-sizing: border-box; }
 .perk-fair::after { content: '⌂'; }
 
 /* the wagons of a train being bought: fewer, the train drawn, more */
