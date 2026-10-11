@@ -1,38 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ScenarioDef, SimState } from '../game/types';
 import { HARJU, SCENARIOS } from '../game/content/scenarios';
-import { createState, siteById } from '../game/state';
-import { DT, step, plan, build, buyTrain } from '../game/sim';
-import { idx } from '../game/grid';
+import { createState } from '../game/state';
+import { DT, step } from '../game/sim';
+import { Bot, PLANS } from '../game/bot';
 import { Renderer2D, mapPreview } from '../render/render2d';
 import { tr, t, lang, setLang } from '../i18n';
 import { bestStars } from '../results';
 import { BUILD_NAME } from '../version';
 
-/** a live Harju for the start screen: a few lines and six trains, so the map is running */
+/** a live Harju for the start screen: the careful plan's network, built at once, with its trains running */
 function backdropState(): SimState {
   const s = createState(HARJU);
   s.cash = 1e6;
-  const line = (a: string, b: string, mode: 'cheap' | 'short') => {
-    const from = siteById(s, a);
-    const to = siteById(s, b);
-    const options = plan(s, idx(s, from.cx, from.cy), idx(s, to.cx, to.cy));
-    const r = options.find((o) => o.mode === mode) ?? options[0];
-    return r ? build(s, r) : null;
-  };
-  const run = (l: ReturnType<typeof line>, engine: 'hilma' | 'jyry' = 'hilma') => l && buyTrain(s, l.id, engine, 3);
-  run(line('forest', 'sawmill', 'cheap'));
-  run(line('sawmill', 'hameenlinna', 'cheap'));
-  run(line('farm', 'mill', 'cheap'), 'jyry');
-  run(line('mill', 'hameenlinna', 'cheap'));
-  run(line('mill', 'lahti', 'cheap'));
-  s.nextPickAt = Infinity;
-  for (let i = 0; i < 900; i++) step(s);
+  const bot = new Bot(PLANS.harju.careful);
+  for (let n = 0; n < 400 && !bot.done(); n++) {
+    bot.act(s);
+    step(s);
+  }
+  for (let i = 0; i < 1800; i++) step(s);
   return s;
 }
 
 /** the slow tour of the valley: tile points the camera goes between and back, and tiles a second */
-const TOUR: [number, number][] = [[10, 12], [20, 28], [12, 42]];
+const TOUR: [number, number][] = [[12, 14], [24, 34], [16, 46]];
 const TOUR_SPEED = 2;
 const TOUR_SCALE = 20;
 
@@ -70,15 +61,13 @@ function Backdrop() {
       acc += real;
       for (let n = 0; acc >= DT && n < 8; n++, acc -= DT) {
         s.cash = 1e6;
-        s.pick = null;
-        s.nextPickAt = Infinity;
         s.result = null;
         step(s);
       }
       // a cosine ease at each end of the tour
       const p = at(total * (0.5 - 0.5 * Math.cos((2 * Math.PI * clock) / period)));
       r.setView(p[0], p[1], TOUR_SCALE);
-      r.draw(real, null, null);
+      r.draw(real);
     };
     raf = requestAnimationFrame(tick);
     const onResize = () => r.resize();
@@ -121,7 +110,7 @@ export function Title({ onPlay }: { onPlay: (sc: ScenarioDef) => void }) {
       <div className="home-shade" />
       <div className="home-head">
         <h1>Raide</h1>
-        <p className="tagline">{tr('Vedä rata. Osta juna. Kuljeta tukit.', 'Drag track. Buy a train. Haul the timber.')}</p>
+        <p className="tagline">{tr('Rakenna rata. Aja junia. Älä mene konkurssiin.', 'Lay track. Run trains. Do not go broke.')}</p>
       </div>
       <div className="home-cards">
         {SCENARIOS.map((sc) => (

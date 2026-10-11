@@ -1,63 +1,62 @@
 /**
- * Fingers on the map. A drag that starts on a station builds a line to the
- * site or station it ends on; the route and its cost follow the finger,
- * and when the lake or a hill offers two routes that differ the lift hands
- * them to the UI to choose from. The map fits the screen in portrait
- * (ADR 0006), so a drag elsewhere and a pinch do nothing there; in
- * landscape a drag pans up and down, and near an edge a drag scrolls the
- * view (`update`, called each frame). A tap on
- * a train opens its card; a tap on a site or on its
- * name and chips opens the site's; a tap on a station or a track cell the line's. Pointer events, so a
- * mouse works the same way (one finger only). With `laying` set (the site card's
- * "lay track from here") a tap on a marked site builds as the lift of a drag would.
+ * Fingers on the map (ADR 0007): RT2's mouse controls mapped to a thumb.
+ *
+ * Browse: one finger pans, two fingers pinch, a tap opens what is under it (a train, a station, a
+ * site, a piece of track).
+ *
+ * Track: one finger lays track. The drag starts on any tile (snapping to laid track or a station
+ * near the finger) and the route follows the finger; a finger that rests a moment on a tile pins
+ * the route through it (a bend point). The lift leaves the planned route on the map for Build or
+ * Cancel. Two fingers move and pinch the map. A tap on laid track selects the piece for removal.
+ *
+ * Station: the catchment square follows the finger, snapped to the nearest straight laid track; the
+ * lift leaves it for the card's Build.
+ *
+ * Route: a tap on a station adds it as the next stop; one finger still pans.
+ *
+ * Pointer events, so a mouse works the same way. Near the edge of the screen a drag in track mode
+ * scrolls the map.
  */
-import type { SimState, Line, Site, Train } from '../game/types';
-import { plan, build } from '../game/sim';
-import { idx, inside, route, type Route } from '../game/grid';
+import type { SimState, Site, Station, Train } from '../game/types';
+import { idx, linksOf, routeOptions, type Route } from '../game/grid';
 import { stationAt } from '../game/state';
+import { stationBlock } from '../game/sim';
 import type { Renderer2D } from '../render/render2d';
 
-export interface Drag {
+export type Tool = 'browse' | 'track' | 'station' | 'route';
+
+export interface Plan {
   from: number;
-  to: number | null;
-  /** the route drawn under the finger: the cheap one of the options, or the loose preview */
-  route: Route | null;
+  to: number;
+  via: number[];
   options: Route[];
-  /** the finger, screen px */
-  sx: number;
-  sy: number;
-  ok: boolean;
-  /** the route runs to the finger's cell, not to a site: a preview that builds nothing */
-  loose: boolean;
 }
 
 export interface InputEvents {
-  /** a build landed: the line, and where the finger lifted (screen px) */
-  onBuild: (line: Line, sx: number, sy: number) => void;
-  /** the lift offers two routes that differ (one cheaper, one faster): the UI asks which */
-  onChoice: (options: Route[], sx: number, sy: number) => void;
-  onLine: (line: Line) => void;
-  onTrain: (train: Train) => void;
+  onTrain: (t: Train) => void;
+  onStation: (st: Station) => void;
   onSite: (site: Site) => void;
-  /** a tap on nothing: the cards close, the camera lets go of its train */
+  /** a tap on laid track: in browse mode and track mode alike */
+  onTrack: (cell: number) => void;
+  /** a tap on nothing */
   onGround: () => void;
-  /** a build the cash does not cover */
-  onNote: (cell: number, text: string) => void;
+  /** track mode: the drag ended with a route to build, or none */
+  onPlan: (plan: Plan | null) => void;
+  /** station mode: the finger lifted on a cell (ok says whether a station can stand there) */
+  onStationSpot: (cell: number, ok: boolean) => void;
+  /** route mode: a station was tapped */
+  onStop: (st: Station) => void;
+  /** any touch */
   onAny: () => void;
-  /** pick mode is over: a tap built or offered the choice (`kept`, the view stays) or fell on nothing */
-  onLayEnd: (kept: boolean) => void;
 }
 
-/** how close to a station's centre a finger must land to start a drag, in cells, and at least in screen px (the map fits the screen, so a cell is small) */
-const GRAB = 1.1;
-const GRAB_PX = 26;
-/** how close to a site's centre the finger must be for the route to snap to it, the same two ways */
-const SNAP = 1.4;
-const SNAP_PX = 30;
-/** a dragging finger this close to the edge of the free area scrolls the view, in px */
-const EDGE = 48;
-/** the scroll speed at the edge, px a second */
-const EDGE_SPEED = 600;
+/** seconds a finger rests on a tile before the route bends through it */
+const DWELL = 0.35;
+/** a dragging finger this close to the edge of the free area scrolls the map, px, and the speed, px a second */
+const EDGE = 44;
+const EDGE_SPEED = 520;
+/** px a finger may move and still be a tap */
+const TAP = 12;
 
 interface Finger {
   id: number;
@@ -68,86 +67,105 @@ interface Finger {
 }
 
 export class Input {
-  drag: Drag | null = null;
-  /**
-   * Pick mode, from the site card's "lay track from here": `cell` is the site's cell. A tap on a
-   * marked site does what the lift of a drag on it does; `reverse` is a site with no station,
-   * where the marked ones are the stations that can reach it and the track runs from the one tapped.
-   */
-  laying: { cell: number; reverse: boolean } | null = null;
+  tool: Tool = 'browse';
+  /** the drag that lays track, while the finger is down */
+  drag: { from: number; to: number; via: number[]; route: Route | null; sx: number; sy: number } | null = null;
+  /** station mode: the cell the catchment square stands on, and whether a station fits there */
+  spot: { cell: number; ok: boolean } | null = null;
   private fingers: Finger[] = [];
-  private mode: 'none' | 'build' | 'pan' = 'none';
-  private pinch: { dist: number; ang: number; mx: number; my: number } | null = null;
-  /** the finger that holds the drag */
-  private dragId = -1;
+  private mode: 'none' | 'pan' | 'lay' | 'spot' = 'none';
+  private pinch: { dist: number; mx: number; my: number } | null = null;
   private moved = 0;
-  /** until this time (performance.now) the touch that ends sends no click */
+  private dragId = -1;
+  private dwell = 0;
+  private dwellCell = -1;
   private noClickUntil = 0;
+
   constructor(
     private canvas: HTMLCanvasElement,
     private s: SimState,
     private r: Renderer2D,
     private ev: InputEvents,
   ) {
-    canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
     canvas.addEventListener('pointerup', this.onUp);
-    canvas.addEventListener('pointercancel', this.onUp);
+    canvas.addEventListener('pointercancel', this.onCancel);
     canvas.addEventListener('touchend', this.onTouchEnd, { passive: false });
+    canvas.addEventListener('wheel', this.onWheel, { passive: false });
   }
-
-  /**
-   * A tap in pick mode opens a card or a Cancel button under the finger. The browser sends the
-   * tap's own click after the touch ends, and it would land on that new button (the first
-   * "Extend" choice, or Cancel). Cancelling the touch's default stops the click.
-   */
-  private onTouchEnd = (e: TouchEvent): void => {
-    if (performance.now() < this.noClickUntil) e.preventDefault();
-  };
 
   dispose(): void {
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
-    this.canvas.removeEventListener('pointercancel', this.onUp);
+    this.canvas.removeEventListener('pointercancel', this.onCancel);
     this.canvas.removeEventListener('touchend', this.onTouchEnd);
+    this.canvas.removeEventListener('wheel', this.onWheel);
   }
 
-  private cellAt(sx: number, sy: number): { cell: number; x: number; y: number } | null {
+  setTool(t: Tool): void {
+    this.tool = t;
+    this.drag = null;
+    this.spot = null;
+    this.mode = 'none';
+  }
+
+  /** a tap that opens a card must not send its click on to the button the card puts under the finger */
+  private onTouchEnd = (e: TouchEvent): void => {
+    if (performance.now() < this.noClickUntil) e.preventDefault();
+  };
+
+  private onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    this.r.pinch(Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY);
+  };
+
+  /** the start of a drag in track mode: laid track or a station within reach of the finger, else the tile itself */
+  private snapStart(sx: number, sy: number): number {
+    const st = this.r.stationNear(sx, sy);
+    if (st) return st.cell;
+    return this.snapTrack(sx, sy) ?? this.r.cellAt(sx, sy);
+  }
+
+  /** the laid cell nearest the finger within reach, preferring track ends */
+  private snapTrack(sx: number, sy: number): number | null {
     const p = this.r.pick(sx, sy);
-    if (!p) return null;
-    const x = Math.floor(p.x);
-    const y = Math.floor(p.y);
-    if (!inside(this.s, x, y)) return null;
-    return { cell: idx(this.s, x, y), x: p.x, y: p.y };
-  }
-
-  /** the station within reach of a world point */
-  private stationNear(x: number, y: number, reach: number): number | null {
+    const reach = Math.max(0.75, 18 / this.r.scale);
     let best: number | null = null;
     let bd = reach;
-    for (const st of this.s.stations) {
-      const d = Math.hypot((st.cell % this.s.w) + 0.5 - x, Math.floor(st.cell / this.s.w) + 0.5 - y);
-      if (d < bd) {
-        bd = d;
-        best = st.cell;
+    const s = this.s;
+    for (let y = Math.floor(p.y - 2); y <= Math.floor(p.y + 2); y++)
+      for (let x = Math.floor(p.x - 2); x <= Math.floor(p.x + 2); x++) {
+        if (x < 0 || y < 0 || x >= s.w || y >= s.h) continue;
+        const i = idx(s, x, y);
+        if (!s.track[i]) continue;
+        const d = Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - (linksOf(s, i).length === 1 ? 0.25 : 0);
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
       }
-    }
     return best;
   }
 
-  private siteNear(x: number, y: number, reach: number): Site | null {
-    let best: Site | null = null;
-    let bd = reach;
-    for (const site of this.s.sites) {
-      const d = Math.hypot(site.cx + 0.5 - x, site.cy + 0.5 - y);
-      if (d < bd) {
-        bd = d;
-        best = site;
+  /** the cell a station would stand on: the nearest laid track cell to the finger where one fits, else the nearest laid cell */
+  private snapStation(sx: number, sy: number): { cell: number; ok: boolean } | null {
+    const p = this.r.pick(sx, sy);
+    const s = this.s;
+    let best: { cell: number; ok: boolean; d: number } | null = null;
+    for (let y = Math.floor(p.y - 2); y <= Math.floor(p.y + 2); y++)
+      for (let x = Math.floor(p.x - 2); x <= Math.floor(p.x + 2); x++) {
+        if (x < 0 || y < 0 || x >= s.w || y >= s.h) continue;
+        const i = idx(s, x, y);
+        if (!s.track[i]) continue;
+        const ok = stationBlock(s, i) === null;
+        const d = Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y) - (ok ? 0.6 : 0);
+        if (!best || d < best.d) best = { cell: i, ok, d };
       }
-    }
-    return best;
+    if (best) return { cell: best.cell, ok: best.ok };
+    const c = this.r.cellAt(sx, sy);
+    return c < 0 ? null : { cell: c, ok: false };
   }
 
   private onDown = (e: PointerEvent): void => {
@@ -156,38 +174,62 @@ export class Input {
     this.fingers.push({ id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY });
     if (this.fingers.length === 1) {
       this.moved = 0;
-      const at = this.cellAt(e.clientX, e.clientY);
-      const from = at ? this.stationNear(at.x, at.y, this.grab()) : null;
-      if (from !== null && !this.r.whole && !this.laying) {
-        this.mode = 'build';
-        this.dragId = e.pointerId;
-        this.drag = { from, to: null, route: null, options: [], sx: e.clientX, sy: e.clientY, ok: false, loose: true };
-      } else this.mode = 'pan';
+      this.dragId = e.pointerId;
+      if (this.tool === 'track' && !this.r.whole) {
+        const from = this.snapStart(e.clientX, e.clientY);
+        if (from >= 0) {
+          this.mode = 'lay';
+          this.drag = { from, to: from, via: [], route: null, sx: e.clientX, sy: e.clientY };
+          this.dwell = 0;
+          this.dwellCell = from;
+          return;
+        }
+      }
+      if (this.tool === 'station' && !this.r.whole) {
+        this.mode = 'spot';
+        this.spot = this.snapStation(e.clientX, e.clientY);
+        return;
+      }
+      this.mode = 'pan';
     } else if (this.fingers.length === 2) {
-      // a second finger: the view pinches; a drag from a station goes on under its own finger
-      if (this.mode === 'none') this.mode = 'pan';
+      // a second finger: the map pinches, and a drag in progress is dropped
+      this.drag = null;
+      this.mode = 'pan';
+      this.moved = 99;
       this.startPinch();
     }
   };
 
   private startPinch(): void {
     const [a, b] = this.fingers;
-    this.pinch = { dist: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+    this.pinch = { dist: Math.hypot(b.x - a.x, b.y - a.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
   }
 
-  /** each frame: a drag near the edge scrolls the view, and the route follows the map moving under the finger */
+  /** each frame: a finger resting during a drag bends the route; a drag at the edge scrolls the map */
   update(dt: number): void {
     const d = this.drag;
-    if (!d || this.mode !== 'build') return;
+    if (!d || this.mode !== 'lay') return;
+    const cell = this.r.cellAt(d.sx, d.sy);
+    if (cell === this.dwellCell) {
+      this.dwell += dt;
+      const last = d.via.length ? d.via[d.via.length - 1] : d.from;
+      const far = Math.hypot((cell % this.s.w) - (last % this.s.w), Math.floor(cell / this.s.w) - Math.floor(last / this.s.w)) >= 3;
+      if (this.dwell >= DWELL && far && this.moved > TAP && d.route) {
+        d.via.push(cell);
+        this.dwell = -99;
+        this.aim();
+      }
+    } else {
+      this.dwellCell = cell;
+      this.dwell = 0;
+    }
     const a = this.r.area();
-    // 1 at the edge or beyond it, 0 at EDGE away
     const near = (dist: number) => Math.min(1, Math.max(0, (EDGE - dist) / EDGE));
     const vx = near(a.l + a.w - d.sx) - near(d.sx - a.l);
     const vy = near(a.t + a.h - d.sy) - near(d.sy - a.t);
     if (vx === 0 && vy === 0) return;
-    // the view moves toward the edge, so the map moves the other way under the finger
     this.r.pan(-vx * EDGE_SPEED * dt, -vy * EDGE_SPEED * dt);
-    this.aim(d);
+    this.aim();
   }
 
   private onMove = (e: PointerEvent): void => {
@@ -201,101 +243,51 @@ export class Input {
     if (this.pinch && this.fingers.length >= 2) {
       const [a, b] = this.fingers;
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
-      const ang = Math.atan2(b.y - a.y, b.x - a.x);
       const mx = (a.x + b.x) / 2;
       const my = (a.y + b.y) / 2;
-      this.r.pinch(dist / Math.max(1, this.pinch.dist), 0, mx, my, this.pinch.mx, this.pinch.my);
-      this.pinch = { dist, ang, mx, my };
-      // the drag's finger may not have moved, but the map did
-      const held = this.fingers.find((o) => o.id === this.dragId);
-      if (this.drag && held) {
-        this.drag.sx = held.x;
-        this.drag.sy = held.y;
-        this.aim(this.drag);
-      }
+      this.r.pinch(dist / Math.max(1, this.pinch.dist), mx, my, this.pinch.mx, this.pinch.my);
+      this.pinch = { dist, mx, my };
       return;
     }
     if (this.mode === 'pan') {
       if (this.moved > 6) this.r.pan(dx, dy);
       return;
     }
-    if (this.mode !== 'build' || !this.drag) return;
-    if (e.pointerId !== this.dragId) return;
-    const d = this.drag;
-    d.sx = e.clientX;
-    d.sy = e.clientY;
-    this.aim(d);
-  };
-
-  /** plan the route to what is under the drag's finger now */
-  private aim(d: Drag): void {
-    const at = this.cellAt(d.sx, d.sy);
-    if (!at) {
-      d.to = null;
-      d.route = null;
-      d.options = [];
+    if (this.mode === 'spot') {
+      this.spot = this.snapStation(e.clientX, e.clientY);
       return;
     }
-    const site = this.siteNear(at.x, at.y, Math.max(SNAP, SNAP_PX / this.r.scale));
-    const target = site ? idx(this.s, site.cx, site.cy) : null;
-    // snapped to a site: the routes that could be built; elsewhere: the track under the finger, a preview
-    const to = target ?? at.cell;
-    if (to === d.to) return;
+    if (this.mode === 'lay' && this.drag && e.pointerId === this.dragId) {
+      this.drag.sx = e.clientX;
+      this.drag.sy = e.clientY;
+      this.aim();
+    }
+  };
+
+  /** the route from the drag's start through its bend points to the tile under the finger (laid track near it snaps) */
+  private aim(): void {
+    const d = this.drag;
+    if (!d) return;
+    const raw = this.r.cellAt(d.sx, d.sy);
+    if (raw < 0) return;
+    const to = this.snapTrack(d.sx, d.sy) ?? raw;
+    if (to === d.to && d.route) return;
     d.to = to;
-    d.loose = target === null;
     if (to === d.from) {
       d.route = null;
-      d.options = [];
-    } else if (target !== null) {
-      d.options = plan(this.s, d.from, target);
-      d.route = d.options[0] ?? null;
-    } else {
-      d.options = [];
-      d.route = route(this.s, d.from, to);
+      return;
     }
-    d.ok = !d.loose && !!d.route && d.route.cost <= this.s.cash;
+    d.route = routeOptions(this.s, d.from, to, d.via)[0] ?? null;
   }
 
-  /** a tap in pick mode: the marked site under the finger gets its track, anything else ends the mode */
-  private tapLaying(sx: number, sy: number): void {
-    const lay = this.laying!;
-    this.laying = null;
-    let best: number | null = null;
-    let bd = 44;
-    for (const site of this.s.sites) {
-      const cell = idx(this.s, site.cx, site.cy);
-      if (cell === lay.cell || (lay.reverse && !stationAt(this.s, cell))) continue;
-      const p = this.r.project(site.cx + 0.5, site.cy + 0.5, 0);
-      const d = Math.hypot(p.x - sx, p.y - sy);
-      if (d < bd) {
-        bd = d;
-        best = cell;
-      }
-    }
-    const from = best === null ? null : lay.reverse ? best : lay.cell;
-    const to = best === null ? null : lay.reverse ? lay.cell : best;
-    const options = from === null || to === null ? [] : plan(this.s, from, to);
-    this.ev.onLayEnd(options.length > 0);
-    if (!options.length || from === null || to === null) return;
-    this.noClickUntil = performance.now() + 300;
-    this.lifted(options, from, to, sx, sy);
-  }
-
-  /** the reach of a finger on a station, in cells */
-  private grab(): number {
-    return Math.max(GRAB, GRAB_PX / this.r.scale);
-  }
-
-  /**
-   * A drag or a tap in pick mode has settled on a site: two routes that differ ask which way, one route
-   * is built. The drag and the pick mode both come here.
-   */
-  private lifted(options: Route[], _from: number, _to: number, sx: number, sy: number): void {
-    if (options.length > 1) return this.ev.onChoice(options, sx, sy);
-    if (options[0].cost > this.s.cash) return this.ev.onNote(options[0].cells[options[0].cells.length - 1], 'cash');
-    const line = build(this.s, options[0]);
-    if (line) this.ev.onBuild(line, sx, sy);
-  }
+  private onCancel = (e: PointerEvent): void => {
+    const k = this.fingers.findIndex((o) => o.id === e.pointerId);
+    if (k >= 0) this.fingers.splice(k, 1);
+    this.pinch = null;
+    this.drag = null;
+    this.spot = null;
+    this.mode = 'none';
+  };
 
   private onUp = (e: PointerEvent): void => {
     const k = this.fingers.findIndex((o) => o.id === e.pointerId);
@@ -304,60 +296,71 @@ export class Input {
     if (this.pinch) {
       this.pinch = null;
       if (this.fingers.length >= 2) this.startPinch();
-      else if (this.mode === 'build' && this.drag && e.pointerId !== this.dragId) {
-        // the drag's finger stays and goes on aiming
-        this.drag.sx = this.fingers[0].x;
-        this.drag.sy = this.fingers[0].y;
-        this.aim(this.drag);
-      } else {
-        // the pinch ended, or the drag's own finger left: one finger left pans
-        this.drag = null;
-        this.mode = 'pan';
-        this.moved = 99;
+      else this.mode = 'pan';
+      return;
+    }
+    if (this.fingers.length) return;
+    const mode = this.mode;
+    this.mode = 'none';
+    const moved = this.moved;
+    if (mode === 'lay') {
+      const d = this.drag;
+      this.drag = null;
+      if (d && moved > TAP && d.route) {
+        const options = routeOptions(this.s, d.from, d.to, d.via);
+        this.noClickUntil = performance.now() + 300;
+        this.ev.onPlan(options.length ? { from: d.from, to: d.to, via: d.via, options } : null);
+        return;
+      }
+      // a tap in track mode: a piece of track is selected
+      const cell = this.r.cellAt(e.clientX, e.clientY);
+      const snap = this.snapTrack(e.clientX, e.clientY);
+      if (snap !== null) return this.ev.onTrack(snap);
+      if (cell >= 0 && this.s.track[cell]) return this.ev.onTrack(cell);
+      this.ev.onPlan(null);
+      return;
+    }
+    if (mode === 'spot') {
+      const sp = this.spot;
+      if (sp) {
+        this.noClickUntil = performance.now() + 300;
+        this.ev.onStationSpot(sp.cell, sp.ok);
       }
       return;
     }
-    const mode = this.mode;
-    const drag = this.drag;
-    this.mode = 'none';
-    this.drag = null;
-    if (this.fingers.length) return;
-    const moved = this.moved;
-    if (mode === 'build' && drag && drag.route && !drag.loose && moved > 12) {
-      this.lifted(drag.options.length ? drag.options : [drag.route], drag.from, drag.route.cells[drag.route.cells.length - 1], e.clientX, e.clientY);
-      return;
-    }
-    if (moved > 12) return;
-    if (this.laying) return this.tapLaying(e.clientX, e.clientY);
-    // a tap: a train, a station, a track cell, or a site
-    const train = this.r.trainAt(e.clientX, e.clientY);
-    if (this.r.whole) {
-      // the whole map is a map: a train is followed, anything else zooms in there
-      if (train) return this.ev.onTrain(train);
-      this.r.zoomAt(e.clientX, e.clientY);
-      return this.ev.onGround();
-    }
-    // a tap on a site's name and chips opens the site
-    const tagged = this.r.siteTagAt(e.clientX, e.clientY);
-    if (tagged) return this.ev.onSite(tagged);
-    const at = this.cellAt(e.clientX, e.clientY);
-    if (!at) {
-      if (train) return this.ev.onTrain(train);
-      return this.ev.onGround();
-    }
-    // the site's own cell is the site's, even with a train standing in its station
-    const close = this.siteNear(at.x, at.y, 0.7);
-    if (close) return this.ev.onSite(close);
-    if (train) return this.ev.onTrain(train);
-    const st = stationAt(this.s, at.cell) ? at.cell : this.stationNear(at.x, at.y, this.grab());
-    const site = this.siteNear(at.x, at.y, Math.max(SNAP, SNAP_PX / this.r.scale));
-    if (site) return this.ev.onSite(site);
-    if (st !== null) {
-      const line = this.s.lines.find((l) => l.path[0] === st || l.path[l.path.length - 1] === st);
-      if (line) return this.ev.onLine(line);
-    }
-    const onTrack = this.s.lines.find((l) => l.path.includes(at.cell));
-    if (onTrack) return this.ev.onLine(onTrack);
-    this.ev.onGround();
+    if (moved > TAP) return;
+    this.noClickUntil = performance.now() + 300;
+    this.tap(e.clientX, e.clientY);
   };
+
+  private tap(sx: number, sy: number): void {
+    const s = this.s;
+    if (this.r.whole) {
+      const p = this.r.pick(sx, sy);
+      this.r.glideTo(p.x, p.y, 22);
+      return this.ev.onGround();
+    }
+    if (this.tool === 'route') {
+      const st = this.r.stationNear(sx, sy);
+      if (st) return this.ev.onStop(st);
+      return this.ev.onGround();
+    }
+    const train = this.r.trainAt(sx, sy);
+    if (train) return this.ev.onTrain(train);
+    const st = this.r.stationNear(sx, sy);
+    if (st) return this.ev.onStation(st);
+    const cell = this.r.cellAt(sx, sy);
+    if (cell >= 0) {
+      const k = s.siteOf[cell];
+      if (k >= 0) return this.ev.onSite(s.sites[k]);
+      const snap = this.snapTrack(sx, sy);
+      if (snap !== null && !stationAt(s, snap)) return this.ev.onTrack(snap);
+      // a site's name tag stands above its buildings
+      for (const site of s.sites) {
+        const p = this.r.project(site.cx + 0.5, site.cy + 0.5 - (site.kind === 'town' ? 3.4 : 2.2));
+        if (Math.abs(p.x - sx) < 50 && Math.abs(p.y - sy) < 16) return this.ev.onSite(site);
+      }
+    }
+    this.ev.onGround();
+  }
 }

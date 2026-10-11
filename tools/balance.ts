@@ -5,7 +5,7 @@
 import { createState } from '../src/game/state';
 import { SCENARIO_BY_ID } from '../src/game/content/scenarios';
 import { step, worth, money, debt, ageOf } from '../src/game/sim';
-import { Bot, PLANS } from './bot';
+import { Bot, PLANS } from '../src/game/bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
 
 declare const process: { env: Record<string, string | undefined> };

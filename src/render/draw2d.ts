@@ -4,7 +4,8 @@
  * the two maps from tile coordinates to pixels. The same code serves the cached chunks, the
  * cached piles and the live frame, because only the View differs.
  */
-import type { Cargo, EngineId, Good, WagonType } from '../game/types';
+import type { Cargo, LocoId } from '../game/types';
+import { CAR_LOOK } from '../game/content/economy';
 
 export const OUT = '#16120e';
 /** a terrace step on screen, in tiles of height per terrace */
@@ -21,6 +22,13 @@ export interface View {
   x(x: number): number;
   /** a tile y at a height in terraces to a pixel y */
   y(y: number, lv?: number): number;
+}
+
+/** a view drawn k times smaller, about the tile point (x, y) at level lv: for a sprite made for a bigger footprint */
+export function scaled(v: View, x: number, y: number, lv: number, k: number): View {
+  const X = v.x(x);
+  const Y = v.y(y, lv);
+  return { c: v.c, S: v.S * k, x: (tx) => X + (tx - x) * v.S * k, y: (ty, l = lv) => Y + (ty - y) * v.S * k - (l - lv) * LIFT * v.S * k };
 }
 
 /** a view whose tile (ox, oy) is at pixel (0, 0) */
@@ -679,10 +687,15 @@ export function bridgeRails(v: View, x: number, y: number, ang: number, lv: numb
 
 // ------------------------------------------------------------------ trains
 
+/** each locomotive's colours: the cab and the boiler */
+const LOCO_CAB: Record<LocoId, string> = { hilma: '#6e1a13', jyry: '#2d4a6e', ukko: '#1f5a3a', karhu: '#5a3a1a' };
+const LOCO_BOILER: Record<LocoId, string> = { hilma: '#1f3a2a', jyry: '#1d1d21', ukko: '#183d6b', karhu: '#2a2420' };
+
 /** the engine, drawn with its centre at the origin, facing +x; L and s in pixels */
-export function drawEngine(c: Ctx, L: number, s: number, id: EngineId): void {
+export function drawEngine(c: Ctx, L: number, s: number, id: LocoId): void {
   const h = L / 2;
-  const big = id === 'jyry';
+  const big = id === 'jyry' || id === 'karhu';
+  const cab = LOCO_CAB[id];
   c.lineWidth = Math.max(1, s * 0.05);
   c.strokeStyle = OUT;
   c.fillStyle = '#2b2b30';
@@ -691,7 +704,7 @@ export function drawEngine(c: Ctx, L: number, s: number, id: EngineId): void {
   c.fill();
   c.stroke();
   // the cab
-  c.fillStyle = '#6e1a13';
+  c.fillStyle = cab;
   c.fillRect(-h + s * 0.62, -s * 0.33, s * 0.5, s * 0.66);
   c.strokeRect(-h + s * 0.62, -s * 0.33, s * 0.5, s * 0.66);
   c.fillStyle = '#3a3a3e';
@@ -710,7 +723,7 @@ export function drawEngine(c: Ctx, L: number, s: number, id: EngineId): void {
   const bx = -h + s * 1.16;
   const bl = L - s * 1.3;
   const bw = big ? 0.25 : 0.22;
-  c.fillStyle = big ? '#1d1d21' : '#1f3a2a';
+  c.fillStyle = LOCO_BOILER[id];
   c.beginPath();
   c.roundRect(bx, -s * bw, bl, s * bw * 2, s * 0.2);
   c.fill();
@@ -747,8 +760,11 @@ export function drawEngine(c: Ctx, L: number, s: number, id: EngineId): void {
 }
 
 /** a wagon, drawn with its centre at the origin; `fill` is the share of the load aboard, in thirds from 0 to 1 */
-export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: Cargo | null, fill: number): void {
+export function drawWagon(c: Ctx, L: number, s: number, good: Cargo, fill: number): void {
   const h = L / 2;
+  const look = CAR_LOOK[good];
+  if (look.body === 'coach' || look.body === 'van') return coach(c, L, s, look.colour, look.body === 'van');
+  const type = look.body === 'flat' ? 'flat' : look.body === 'hopper' ? 'hopper' : 'box';
   c.lineWidth = Math.max(1, s * 0.05);
   c.strokeStyle = OUT;
   const hasLoad = fill > 0.05;
@@ -769,7 +785,14 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: C
     c.strokeStyle = OUT;
     c.fillStyle = '#2a2018';
     for (const a of [-1, 1]) for (const b of [-1, 1]) c.fillRect(a * (h - s * 0.12) - s * 0.04, b * s * 0.29 - s * 0.04, s * 0.08, s * 0.08);
-    for (let k = 0; k < thirds; k++) {
+    if (good === 'lumber')
+      for (let k = 0; k < thirds; k++) {
+        c.fillStyle = k % 2 ? '#e6cf98' : '#d9bd84';
+        const w = L - s * 0.3 - k * s * 0.08;
+        c.fillRect(-w / 2, -s * 0.22 + k * s * 0.03, w, s * 0.44 - k * s * 0.06);
+        c.strokeRect(-w / 2, -s * 0.22 + k * s * 0.03, w, s * 0.44 - k * s * 0.06);
+      }
+    else for (let k = 0; k < thirds; k++) {
       const yy = -s * 0.2 + k * s * 0.135;
       c.fillStyle = k % 2 ? '#8a5a2b' : '#7a4f26';
       c.beginPath();
@@ -785,19 +808,19 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: C
   }
   if (type === 'box') {
     // an open box wagon: the sides, the dark floor inside, and the boards or sacks showing over the rim
-    c.fillStyle = '#8f3b2e';
+    c.fillStyle = look.colour;
     c.fillRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
     c.strokeRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62);
     c.fillStyle = '#4a2018';
     c.fillRect(-h + s * 0.12, -s * 0.22, L - s * 0.24, s * 0.44);
-    if (hasLoad && good === 'flour') {
+    if (hasLoad && good === 'food') {
       const cols = 4;
       const shown = Math.ceil(fill * 2 * cols);
       for (let i = 0; i < cols; i++)
         for (const [j, r] of [-1, 1].entries()) {
           if (i * 2 + j >= shown) continue;
           const X = -h + s * 0.3 + ((L - s * 0.6) * (i + 0.5)) / cols;
-          c.fillStyle = '#f4f0e4';
+          c.fillStyle = '#e8dcc0';
           c.beginPath();
           c.ellipse(X, r * s * 0.11, s * 0.17, s * 0.1, 0, 0, 7);
           c.fill();
@@ -805,7 +828,7 @@ export function drawWagon(c: Ctx, L: number, s: number, type: WagonType, good: C
         }
     } else if (hasLoad) {
       for (let k = 0; k < thirds; k++) {
-        c.fillStyle = k % 2 ? '#e6cf98' : '#d9bd84';
+        c.fillStyle = good === 'paper' ? (k % 2 ? '#f6f3ea' : '#e4dfd2') : k % 2 ? '#e6cf98' : '#d9bd84';
         const w = L - s * 0.3 - k * s * 0.08;
         c.fillRect(-w / 2, -s * 0.2 + k * s * 0.03, w, s * 0.4 - k * s * 0.06);
         c.strokeRect(-w / 2, -s * 0.2 + k * s * 0.03, w, s * 0.4 - k * s * 0.06);
@@ -848,240 +871,30 @@ export function trackSpur(c: Ctx, S: number, a: [number, number], b: [number, nu
   trackPiece(c, S, a, b, a, false, false);
 }
 
-/** the loading crew by the platform: two workers in caps and a handcart, at tile (x, y) on the platform's top */
-export function crew(v: View, x: number, y: number, lv: number): void {
-  const { c, S } = v;
-  c.lineWidth = Math.max(1, S * 0.04);
+/** a passenger coach or a mail van, closed, with windows down the side or a red van body; centre at the origin */
+function coach(c: Ctx, L: number, s: number, colour: string, van: boolean): void {
+  const h = L / 2;
+  c.lineWidth = Math.max(1, s * 0.05);
   c.strokeStyle = OUT;
-  const worker = (wx: number, tabard: string) => {
-    const X = v.x(wx);
-    const Y = v.y(y, lv);
-    shadowEll(c, X + S * 0.05, Y + S * 0.12, S * 0.14, S * 0.06);
-    c.fillStyle = tabard;
-    c.beginPath();
-    c.roundRect(X - S * 0.09, Y - S * 0.12, S * 0.18, S * 0.24, S * 0.05);
-    c.fill();
-    c.stroke();
-    c.fillStyle = '#e8c39a';
-    c.beginPath();
-    c.arc(X, Y - S * 0.2, S * 0.085, 0, 7);
-    c.fill();
-    c.stroke();
-    c.fillStyle = '#2f3f66';
-    c.beginPath();
-    c.arc(X, Y - S * 0.23, S * 0.085, Math.PI, 0);
-    c.fill();
-    c.stroke();
-  };
-  worker(x, '#d98a2b');
-  worker(x + 0.5, '#3f7a52');
-  // the handcart
-  const X = v.x(x + 1.2);
-  const Y = v.y(y, lv);
-  c.fillStyle = '#7a5230';
+  c.fillStyle = colour;
   c.beginPath();
-  c.roundRect(X - S * 0.22, Y - S * 0.08, S * 0.44, S * 0.2, S * 0.03);
+  c.roundRect(-h + s * 0.04, -s * 0.31, L - s * 0.08, s * 0.62, s * 0.1);
   c.fill();
   c.stroke();
-  c.fillStyle = '#2a2018';
-  for (const d of [-0.12, 0.12]) {
-    c.beginPath();
-    c.arc(X + S * d, Y + S * 0.14, S * 0.06, 0, 7);
-    c.fill();
-  }
-}
-
-/**
- * A handcart on its way from a town's pile into the streets: a wooden bed on one wheel with two
- * handles behind, a small load on it, a little bob as it is pushed. (x, y) is the middle of the
- * bed; `dir` is +1 when it heads east and -1 when it heads west, `up` is 1 when it heads north
- * (away from the viewer), which shows the load's back. The load is boards or flour sacks.
- */
-export function handcart(v: View, x: number, y: number, dir: number, up: number, good: Good, lv: number, bob: number): void {
-  const { c, S } = v;
-  const X = v.x(x);
-  const Y = v.y(y, lv) - Math.abs(Math.sin(bob)) * S * 0.04;
-  const lw = Math.max(1, S * 0.04);
-  const bw = S * 0.5;
-  const bd = S * 0.3;
-  shadowEll(c, X, Y + S * 0.17, S * 0.34, S * 0.1);
-  // the porter walks behind the bed and holds the handles: a dark coat and a round head
-  c.fillStyle = '#2f4a6a';
-  c.strokeStyle = OUT;
-  c.lineWidth = lw;
-  if (up) {
-    const py = Y + bd * 1.25;
-    c.strokeStyle = '#5b3d1f';
-    c.lineWidth = Math.max(1.2, S * 0.045);
-    c.beginPath();
-    c.moveTo(X - bw * 0.3, Y + bd * 0.4);
-    c.lineTo(X - bw * 0.14, py);
-    c.moveTo(X + bw * 0.3, Y + bd * 0.4);
-    c.lineTo(X + bw * 0.14, py);
-    c.stroke();
-    c.strokeStyle = OUT;
-    c.lineWidth = lw;
-    c.beginPath();
-    c.ellipse(X, py + S * 0.04, S * 0.15, S * 0.1, 0, 0, 7);
-    c.fill();
-    c.stroke();
-    c.fillStyle = '#e8c9a0';
-    c.beginPath();
-    c.arc(X, py + S * 0.02, S * 0.08, 0, 7);
-    c.fill();
-    c.stroke();
-  } else {
-    const px = X - dir * bw * 1.05;
-    c.strokeStyle = '#5b3d1f';
-    c.lineWidth = Math.max(1.2, S * 0.045);
-    c.beginPath();
-    c.moveTo(X - dir * bw * 0.5, Y);
-    c.lineTo(px + dir * S * 0.05, Y);
-    c.stroke();
-    c.strokeStyle = OUT;
-    c.lineWidth = lw;
-    c.beginPath();
-    c.ellipse(px, Y - S * 0.02, S * 0.1, S * 0.15, 0, 0, 7);
-    c.fill();
-    c.stroke();
-    c.fillStyle = '#e8c9a0';
-    c.beginPath();
-    c.arc(px, Y - S * 0.14, S * 0.08, 0, 7);
-    c.fill();
-    c.stroke();
-  }
-  // the bed
-  c.fillStyle = '#9a6a35';
-  c.strokeStyle = OUT;
-  c.lineWidth = lw;
-  c.beginPath();
-  c.roundRect(X - bw / 2, Y - bd / 2, bw, bd, S * 0.05);
-  c.fill();
-  c.stroke();
-  // the load
-  if (good === 'flour') {
-    for (let i = 0; i < 2; i++) {
-      c.fillStyle = '#f4f0e4';
-      c.beginPath();
-      c.ellipse(X - bw * 0.18 + i * bw * 0.36, Y - bd * 0.18, S * 0.12, S * 0.1, 0, 0, 7);
-      c.fill();
-      c.stroke();
+  // the roof: a lighter strip down the middle
+  c.fillStyle = van ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.25)';
+  c.fillRect(-h + s * 0.12, -s * 0.1, L - s * 0.24, s * 0.2);
+  if (!van) {
+    c.fillStyle = '#f4e3a8';
+    const n = Math.max(2, Math.floor((L / s) * 2));
+    for (let k = 0; k < n; k++) {
+      const x = -h + s * 0.2 + ((L - s * 0.4) * (k + 0.5)) / n;
+      for (const y of [-0.24, 0.24]) c.fillRect(x - s * 0.07, y * s - s * 0.04, s * 0.14, s * 0.08);
     }
   } else {
-    for (let i = 0; i < 3; i++) {
-      c.fillStyle = i % 2 ? '#d9bd84' : '#ead4a0';
-      c.fillRect(X - bw * 0.4, Y - bd * 0.46 - i * S * 0.05, bw * 0.8, S * 0.05);
-      c.strokeRect(X - bw * 0.4, Y - bd * 0.46 - i * S * 0.05, bw * 0.8, S * 0.05);
-    }
-  }
-  // the wheel, at the front
-  c.fillStyle = '#3a2a1a';
-  c.beginPath();
-  if (up) c.arc(X, Y - bd * 0.62, S * 0.07, 0, 7);
-  else c.arc(X + dir * bw * 0.52, Y + bd * 0.28, S * 0.08, 0, 7);
-  c.fill();
-  c.stroke();
-}
-
-/**
- * The crane at an industry's platform: a timber derrick. (X, Y) is its foot in px, (tx, ty) the end
- * of its boom, `hang` the rope below the boom in tiles and `load` the good on the hook, if any. The
- * mast is an A-frame of two legs and a brace; the boom is one beam from the top with a stay back to
- * the foot; the rope ends in a hook.
- */
-export function derrick(c: Ctx, S: number, X: number, Y: number, tx: number, ty: number, hang: number, load: Good | null): void {
-  const top: [number, number] = [X, Y - S * 1.45];
-  const lw = Math.max(1, S * 0.05);
-  const beam = (ax: number, ay: number, bx: number, by: number, w: number, col: string) => {
-    c.lineCap = 'round';
-    c.strokeStyle = OUT;
-    c.lineWidth = w + lw * 2;
+    c.fillStyle = '#f4e3a8';
     c.beginPath();
-    c.moveTo(ax, ay);
-    c.lineTo(bx, by);
-    c.stroke();
-    c.strokeStyle = col;
-    c.lineWidth = w;
-    c.beginPath();
-    c.moveTo(ax, ay);
-    c.lineTo(bx, by);
-    c.stroke();
-  };
-  shadowEll(c, X + S * 0.1, Y + S * 0.06, S * 0.34, S * 0.1);
-  // the stay from the boom's end back to the foot, behind the mast
-  c.strokeStyle = 'rgba(40,30,20,.7)';
-  c.lineWidth = Math.max(1, S * 0.025);
-  c.beginPath();
-  c.moveTo(tx, ty);
-  c.lineTo(X - Math.sign(tx - X || 1) * S * 0.3, Y);
-  c.stroke();
-  // the A-frame: two legs and the brace between them
-  beam(X - S * 0.26, Y, top[0], top[1], S * 0.1, '#8a5a2b');
-  beam(X + S * 0.26, Y, top[0], top[1], S * 0.1, '#7a4c24');
-  beam(X - S * 0.17, Y - S * 0.5, X + S * 0.17, Y - S * 0.5, S * 0.06, '#6a4220');
-  // the boom, from the top to its end
-  beam(top[0], top[1], tx, ty, S * 0.1, '#a67132');
-  // the sheave at the top and the rope with its hook
-  c.fillStyle = '#2a2018';
-  c.beginPath();
-  c.arc(top[0], top[1], S * 0.07, 0, 7);
-  c.fill();
-  const hy = ty + hang * S;
-  c.strokeStyle = '#e5d9b4';
-  c.lineWidth = Math.max(1, S * 0.03);
-  c.beginPath();
-  c.moveTo(tx, ty);
-  c.lineTo(tx, hy);
-  c.stroke();
-  c.strokeStyle = OUT;
-  c.lineWidth = Math.max(1, S * 0.045);
-  c.beginPath();
-  c.arc(tx, hy + S * 0.05, S * 0.055, 0, Math.PI * 1.4);
-  c.stroke();
-  if (load) {
-    c.save();
-    c.translate(tx, hy + S * 0.14);
-    c.strokeStyle = OUT;
-    c.lineWidth = Math.max(1, S * 0.04);
-    if (load === 'timber') {
-      c.fillStyle = '#8a5a2b';
-      c.beginPath();
-      c.roundRect(-S * 0.3, -S * 0.07, S * 0.6, S * 0.14, S * 0.07);
-    } else if (load === 'boards') {
-      c.fillStyle = '#e6cf98';
-      c.beginPath();
-      c.rect(-S * 0.27, -S * 0.07, S * 0.54, S * 0.14);
-    } else {
-      c.fillStyle = load === 'flour' ? '#f4f0e4' : '#e2c04a';
-      c.beginPath();
-      c.ellipse(0, 0, S * 0.17, S * 0.12, 0, 0, 7);
-    }
+    c.arc(0, 0, s * 0.08, 0, 7);
     c.fill();
-    c.stroke();
-    c.restore();
   }
-}
-
-/** the points of a passing siding: a small switch stand beside the track and the lamp on it, at (x, y) tile, lit toward `ang` */
-export function switchStand(v: View, x: number, y: number, lv: number, ang: number): void {
-  const { c, S } = v;
-  const X = v.x(x);
-  const Y = v.y(y, lv);
-  c.lineWidth = Math.max(1, S * 0.04);
-  c.strokeStyle = OUT;
-  shadowEll(c, X + S * 0.04, Y + S * 0.08, S * 0.12, S * 0.05);
-  c.fillStyle = '#4a3a2a';
-  c.beginPath();
-  c.roundRect(X - S * 0.04, Y - S * 0.26, S * 0.08, S * 0.3, S * 0.02);
-  c.fill();
-  c.stroke();
-  c.fillStyle = '#d8a63a';
-  c.beginPath();
-  c.arc(X, Y - S * 0.3, S * 0.1, 0, 7);
-  c.fill();
-  c.stroke();
-  c.fillStyle = Math.cos(ang) >= 0 ? '#b5382c' : '#e9e2c9';
-  c.beginPath();
-  c.arc(X, Y - S * 0.3, S * 0.045, 0, 7);
-  c.fill();
 }

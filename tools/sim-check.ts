@@ -9,7 +9,7 @@ import {
   buildTrack, buildStation, buyTrain, step, stationBlock, removeTrack, pieceAt, issueBond, repayBond, canIssue, debt, accepts, acceptsAt,
   suppliesAt, setRoute, sellTrain, worth, quote, pay,
 } from '../src/game/sim';
-import { Bot, PLANS } from './bot';
+import { Bot, PLANS } from '../src/game/bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
 import type { SimState } from '../src/game/types';
 

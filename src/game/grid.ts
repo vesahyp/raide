@@ -126,6 +126,8 @@ export interface Route {
   worst: number;
 }
 
+const isStation = (s: SimState, cell: number): boolean => s.stations.some((st) => st.cell === cell);
+
 /** whether a cell may carry track: on the map, and no building or house on it */
 function open(s: SimState, i: number): boolean {
   return !s.blocked[i];
@@ -141,7 +143,8 @@ function canLeave(s: SimState, cell: number, arriving: number): boolean {
 /** whether a new route may leave a laid cell in direction `d`: a train coming along some link of it can go on that way */
 function canJoinFrom(s: SimState, cell: number, d: number): boolean {
   const m = s.track[cell];
-  if (!m) return true;
+  // a train reverses at a station, so track may leave a station any way
+  if (!m || isStation(s, cell)) return true;
   for (let l = 0; l < 8; l++) if (m & (1 << l) && turn((l + 4) % 8, d) <= 1) return true;
   return false;
 }
@@ -171,6 +174,8 @@ function stepCost(s: SimState, a: number, b: number, d: number, mode: RouteMode)
 }
 
 const STATES = 8;
+/** a reversal on the way, in tiles of running: the time it takes to stop and run back */
+const REVERSE_COST = 4;
 
 /**
  * The cheapest route from one cell to another through the given waypoints, each leg an A* over
@@ -233,7 +238,7 @@ function searchLeg(s: SimState, from: number, to: number, heading: number, mode:
     const d0 = key % STATES;
     if (cur === to) {
       // the end on laid track: a train arriving along the route can run on along some link of it
-      if (!last || !s.track[cur] || canLeave(s, cur, d0) || canLeaveBack(s, cur, d0)) {
+      if (!last || !s.track[cur] || isStation(s, cur) || canLeave(s, cur, d0) || canLeaveBack(s, cur, d0)) {
         found = key;
         break;
       }
@@ -389,7 +394,8 @@ export function linksOf(s: SimState, i: number): number[] {
 /**
  * The way a train runs from one cell to another over laid track: A* over (cell, heading), no turn
  * sharper than 45 degrees. The train may leave its start either way (it reverses at a station).
- * Null when the track does not join them.
+ * It may turn round at a station or a track end on the way, as RT2's trains do. Null when the
+ * track does not join them.
  */
 export function trackPath(s: SimState, from: number, to: number): number[] | null {
   if (from === to || !s.track[from] || !s.track[to]) return null;
@@ -428,12 +434,16 @@ export function trackPath(s: SimState, from: number, to: number): number[] | nul
     const x = cx(s, cur);
     const y = cy(s, cur);
     const m = s.track[cur];
-    for (const d of [d0, (d0 + 1) % 8, (d0 + 7) % 8]) {
+    // a train turns round at a station it passes and at the end of the track, never at a junction
+    const turnable = isStation(s, cur) || linksOf(s, cur).length === 1;
+    for (let d = 0; d < 8; d++) {
       if (!(m & (1 << d))) continue;
+      const bend = turn(d0, d);
+      if (bend > 1 && !turnable) continue;
       const ni = idx(s, x + DIRS[d][0], y + DIRS[d][1]);
       const nk = ni * STATES + d;
       if (closed[nk]) continue;
-      const c = g[key] + stepLen(d);
+      const c = g[key] + stepLen(d) + (bend > 1 ? REVERSE_COST : 0);
       if (c < g[nk]) {
         g[nk] = c;
         prev[nk] = key;

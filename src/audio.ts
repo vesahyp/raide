@@ -51,6 +51,7 @@ export function play(name: string): void {
       tone(220, 0.12, 'triangle', 0.12, -60);
       tone(330, 0.1, 'triangle', 0.1, 0, 0.1);
       break;
+    case 'remove':
     case 'undo':
       tone(330, 0.1, 'triangle', 0.1, -120);
       break;
@@ -58,6 +59,7 @@ export function play(name: string): void {
       tone(440, 0.08, 'square', 0.07);
       tone(660, 0.12, 'square', 0.07, 0, 0.07);
       break;
+    case 'horn':
     case 'whistle':
       tone(1046, 0.35, 'sine', 0.06, 60);
       tone(1318, 0.35, 'sine', 0.04, 60);
@@ -74,6 +76,10 @@ export function play(name: string): void {
       break;
     case 'win':
       [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.25, 'square', 0.07, 0, i * 0.14));
+      break;
+    case 'break':
+      tone(140, 0.25, 'sawtooth', 0.07, -60);
+      tone(90, 0.3, 'sawtooth', 0.06, -30, 0.2);
       break;
     case 'lose':
       [392, 349, 311].forEach((f, i) => tone(f, 0.3, 'triangle', 0.08, 0, i * 0.22));

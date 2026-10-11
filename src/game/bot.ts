@@ -5,11 +5,11 @@
  * a route of linked sites, issue a bond. The careful plan and the careless
  * plan for a scenario must end apart: one wins, one loses (ADR 0007).
  */
-import type { Cargo, LocoId, SimState, Site, StationSize } from '../src/game/types';
-import { idx, cx, cy, routeOptions, type RouteMode } from '../src/game/grid';
-import { buildTrack, buildStation, buyTrain, autoCars, issueBond, stationBlock, money, covered } from '../src/game/sim';
-import { STATIONS, LOCOS } from '../src/game/content/economy';
-import { siteById, stationAt } from '../src/game/state';
+import type { Cargo, LocoId, SimState, Site, StationSize } from './types';
+import { idx, cx, cy, routeOptions, type RouteMode } from './grid';
+import { buildTrack, buildStation, buyTrain, autoCars, issueBond, stationBlock, money, covered } from './sim';
+import { STATIONS, LOCOS } from './content/economy';
+import { siteById, stationAt } from './state';
 
 export type Step =
   | { kind: 'link'; a: string; b: string; mode?: RouteMode; size?: StationSize; via?: [number, number][] }
