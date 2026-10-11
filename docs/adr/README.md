@@ -6,5 +6,6 @@
 | [0002](0002-three-js-map.md) | The map is three.js, the land is a height field, the camera tilts and zooms | Superseded by 0003 |
 | [0003](0003-top-down-canvas-2d-map.md) | The map is top-down Canvas 2D in Höyry's style, on a big tile map with terrace hills | Accepted |
 | [0004](0004-track-network.md) | Track is a network the player lays freely; a line is a list of stops routed over it | Shared track superseded by 0005 |
-| [0005](0005-lines-own-track.md) | Every line has its own double track; no train waits for a train of another line | Accepted |
-| [0006](0006-core-loop.md) | The core loop is growth per delivery, a pick every half minute, and a map that fits one screen | Accepted |
+| [0005](0005-lines-own-track.md) | Every line has its own double track; no train waits for a train of another line | Superseded by 0007 |
+| [0006](0006-core-loop.md) | The core loop is growth per delivery, a pick every half minute, and a map that fits one screen | Superseded by 0007 |
+| [0007](0007-mobile-rt2.md) | Raide is a mobile Railroad Tycoon 2; the loop is copied and only the controls change | Accepted |

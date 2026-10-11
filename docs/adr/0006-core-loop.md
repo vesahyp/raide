@@ -2,7 +2,7 @@
 adr: 6
 title: The core loop is growth per delivery, a pick every half minute, and a map that fits one screen
 date: 2026-10-10
-status: Accepted
+status: Superseded by 0007
 deciders: Vesa
 ---
 

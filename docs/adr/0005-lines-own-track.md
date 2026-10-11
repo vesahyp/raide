@@ -2,7 +2,7 @@
 adr: 5
 title: Every line has its own double track; no train waits for a train of another line
 date: 2026-10-10
-status: Accepted
+status: Superseded by 0007
 deciders: Vesa
 ---
 
