@@ -1,23 +1,23 @@
 /**
- * The grid the player never sees: cells, eight directions, and the route a
- * drag becomes. A route is a path over cells found two ways: the cheapest
- * (flat land costs TRACK a cell, a grade adds to it, a hill steeper than
- * the grade limit costs its cut and fill, water a bridge) and the shortest
- * (every cell the same, so it bridges and cuts where that saves cells).
- * When the two differ the player picks.
- * A site's yard is never passable, and its cell only as the route's end.
- * Every line owns its track (ADR 0005): a route never runs along laid
- * track. It crosses it straight over a straight piece (a level crossing),
- * and it shares only the straight approach into a station.
+ * The grid: tiles, eight directions, the track a drag becomes, and the way a
+ * train finds over laid track.
  *
- * The rail's height along a route is the land's, cut and filled so that no
- * step is steeper than GRADE_MAX: a hill is crossed in a cutting, a hollow
- * on an embankment, water on a bridge.
+ * Track is free (ADR 0007): any tile to any tile, joining or crossing laid
+ * track anywhere. A route never turns more than 45 degrees from one tile to
+ * the next, so every piece of track is one a train can run. Where a route
+ * starts or ends on laid track it must meet it at 45 degrees or less, so the
+ * junction is one a train can take.
+ *
+ * The rail along a new route is the land, clamped so no step is steeper than
+ * the route's grade limit: steeper land is cut or filled, and the earthworks
+ * are paid for. Two kinds of route are offered: the cheapest (grades up to
+ * GRADE_CHEAP), and the level one (GRADE_LEVEL, which detours round hills or
+ * cuts through them). Laid track keeps its rail height.
  */
 import type { SimState } from './types';
-import { CELL_M, GRADE_MAX } from './content/economy';
+import { BRIDGE_CLEAR, BRIDGE_COST, CELL_M, CLEAR_COST, EARTH_COST, GRADE_CHEAP, GRADE_LEVEL, TRACK_COST } from './content/economy';
 
-/** the eight directions as (dx, dy); bit i of a track mask means track leaves the cell in DIRS[i] */
+/** the eight directions as (dx, dy), clockwise from east; bit d of a track mask means track leaves the cell in DIRS[d] */
 export const DIRS: [number, number][] = [
   [1, 0],
   [1, 1],
@@ -29,28 +29,7 @@ export const DIRS: [number, number][] = [
   [1, -1],
 ];
 
-export const TRACK_COST = 1;
-export const BRIDGE_COST = 4;
-/** per percent of grade, on top of the track's price */
-export const GRADE_COST = 0.25;
-/** per metre of land cut away or filled in, per cell */
-export const EARTH_COST = 0.25;
-export const STATION_COST = 40;
-/**
- * Cells of straight track every line runs into and out of a station, along the station's row,
- * east or west of it. The platform tracks of a station lie parallel to this stretch (one per
- * train that stands there at once), so the last cells must be a straight, level row. A route
- * never enters a station cell from the yard side (north) and never on a diagonal.
- */
-export const APPROACH = 5;
-/** the cost of a join to a station's straight stretch at more than 45 degrees, in the cost of the route */
-const KINK_COST = 0.6;
-/** the search counts a too steep step this many times: the cut spreads along the ramp the rail needs */
-const RAMP = 6;
-/** the rail's height over the water on a bridge, metres */
-export const BRIDGE_CLEAR = 4;
-
-export const idx = (s: { w: number }, cx: number, cy: number): number => cy * s.w + cx;
+export const idx = (s: { w: number }, x: number, y: number): number => y * s.w + x;
 export const cx = (s: { w: number }, i: number): number => i % s.w;
 export const cy = (s: { w: number }, i: number): number => Math.floor(i / s.w);
 export const inside = (s: { w: number; h: number }, x: number, y: number): boolean => x >= 0 && y >= 0 && x < s.w && y < s.h;
@@ -58,364 +37,433 @@ export const inside = (s: { w: number; h: number }, x: number, y: number): boole
 export function dirIndex(dx: number, dy: number): number {
   return DIRS.findIndex(([x, y]) => x === dx && y === dy);
 }
-
-/** the length of a step in cells: 1 straight, root two diagonal */
-export function stepLen(dx: number, dy: number): number {
-  return dx !== 0 && dy !== 0 ? Math.SQRT2 : 1;
+/** the step from cell a to its neighbour b as a direction index, -1 when they are not neighbours */
+export function dirOf(s: { w: number }, a: number, b: number): number {
+  const dx = cx(s, b) - cx(s, a);
+  const dy = cy(s, b) - cy(s, a);
+  return Math.abs(dx) > 1 || Math.abs(dy) > 1 ? -1 : dirIndex(dx, dy);
 }
-
-export type RouteMode = 'cheap' | 'short';
-
-export interface Route {
-  mode: RouteMode;
-  /** cells from the start cell to the end cell, both included */
-  cells: number[];
-  /** the rail's height in metres per cell of the route */
-  rail: number[];
-  /** what it costs to build: new cells at their price, the earthworks, the station if the end has none */
-  cost: number;
-  /** cells over water that are not track yet */
-  bridge: number[];
-  /** new cells where the land is cut down to the rail by more than a metre */
-  cutting: number[];
-  /** new cells where the rail stands on a fill more than a metre high */
-  fill: number[];
-  /** cells that are new track */
-  added: number[];
-  /** whether the end gets a new station */
-  newStation: boolean;
-  /** length in cells, for the distance factor and the trip time */
-  length: number;
-  /** the steepest step, in percent */
-  worst: number;
-  /** metres climbed over the route, both ways added */
-  climb: number;
+/** how far apart two directions are, in steps of 45 degrees, 0 to 4 */
+export function turn(a: number, b: number): number {
+  const d = Math.abs(a - b) % 8;
+  return Math.min(d, 8 - d);
 }
-
-/** the grade of a step in percent, from a rise in metres over a step in cells */
+export function stepLen(d: number): number {
+  return d % 2 ? Math.SQRT2 : 1;
+}
 export function gradeOf(rise: number, len: number): number {
   return (rise / (len * CELL_M)) * 100;
 }
 
-/**
- * The rail along a list of cells: the land at each cell, then clamped so that no step is
- * steeper than GRADE_MAX, forward and back. The ends stay on the land (a station stands there).
- * Water cells lift the rail to the bridge's clearance. Cells that carry track already keep
- * the rail they have, so a route that joins old track meets it at its height.
- */
-export function profile(s: SimState, cells: number[]): number[] {
-  const n = cells.length;
-  const h = cells.map((i) => (s.water[i] ? BRIDGE_CLEAR : s.height[i]));
-  const fixed = cells.map((i, k) => k === 0 || k === n - 1 || !!s.track[i]);
-  for (let k = 0; k < n; k++) if (fixed[k]) h[k] = railAt(s, cells[k]) ?? h[k];
-  const rail = h.slice();
-  const limit = (k: number, from: number) => {
-    const len = stepLen(cx(s, cells[k]) - cx(s, cells[from]), cy(s, cells[k]) - cy(s, cells[from]));
-    const max = (GRADE_MAX / 100) * len * CELL_M;
-    rail[k] = Math.max(rail[from] - max, Math.min(rail[from] + max, rail[k]));
-  };
-  for (let pass = 0; pass < 3; pass++) {
-    for (let k = 1; k < n; k++) if (!fixed[k]) limit(k, k - 1);
-    for (let k = n - 2; k >= 0; k--) if (!fixed[k]) limit(k, k + 1);
+/** a binary heap on two number arrays, priority and key */
+export class Heap {
+  private p: number[] = [];
+  private k: number[] = [];
+  get size(): number {
+    return this.p.length;
   }
-  // a water cell never goes below its clearance: the clamp may have pulled it down on a bank
-  for (let k = 0; k < n; k++) if (s.water[cells[k]] && !fixed[k]) rail[k] = Math.max(rail[k], BRIDGE_CLEAR);
-  return rail;
-}
-
-/** the rail height a built cell has, from the first line that runs over it */
-export function railAt(s: SimState, cell: number): number | null {
-  for (const l of s.lines) {
-    const k = l.path.indexOf(cell);
-    if (k >= 0) return l.rail[k];
+  push(pri: number, key: number): void {
+    let i = this.p.length;
+    this.p.push(pri);
+    this.k.push(key);
+    while (i > 0) {
+      const q = (i - 1) >> 1;
+      if (this.p[q] <= pri) break;
+      this.p[i] = this.p[q];
+      this.k[i] = this.k[q];
+      i = q;
+    }
+    this.p[i] = pri;
+    this.k[i] = key;
   }
-  return null;
-}
-
-/** whether a cell can carry track at all: a yard never, a site's cell only as the route's end */
-function passable(s: SimState, i: number, end: number): boolean {
-  if (i === end) return true;
-  return s.yardMask[i] === 0;
-}
-
-/** what a step from cell a to its neighbour b costs to build, an estimate for the search */
-function stepCost(s: SimState, a: number, b: number, len: number): number {
-  if (s.track[b]) return (TRACK_COST + 0.05) * len;
-  if (s.water[b]) return BRIDGE_COST * len;
-  const ha = s.water[a] ? BRIDGE_CLEAR : s.height[a];
-  const rise = Math.abs(s.height[b] - ha);
-  const g = gradeOf(rise, len);
-  const over = Math.max(0, rise - (GRADE_MAX / 100) * len * CELL_M);
-  // a step that is too steep is not the whole cut: the rail climbs on, and the cut grows along the ramp
-  return (TRACK_COST * (1 + GRADE_COST * Math.min(g, GRADE_MAX)) + EARTH_COST * RAMP * over + 0.05) * len;
-}
-
-/** one way into a station: the straight cells from the station cell outward, and what they cost */
-interface Approach {
-  /** the station cell first, the outer cell of the straight stretch last */
-  cells: number[];
-  cost: number;
-  /** which way the stretch runs from the station: -1 west, 1 east; 0 for a bare cell */
-  dir: number;
-}
-
-/** the straight stretches a route may use at a station cell: west and east along its row, where free */
-function approaches(s: SimState, station: number, mode: RouteMode, only?: number): Approach[] {
-  const out: Approach[] = [];
-  const x = cx(s, station);
-  const y = cy(s, station);
-  for (const dir of [-1, 1]) {
-    if (only !== undefined && dir !== only) continue;
-    const cells = [station];
-    let cost = 0;
-    let ok = true;
-    for (let j = 1; j <= APPROACH; j++) {
-      if (!inside(s, x + dir * j, y)) {
-        ok = false;
-        break;
-      }
-      const i = idx(s, x + dir * j, y);
-      if (s.yardMask[i] !== 0) {
-        ok = false;
-        break;
-      }
-      cost += mode === 'cheap' ? stepCost(s, cells[cells.length - 1], i, 1) : 1;
-      cells.push(i);
-    }
-    if (ok) out.push({ cells, cost, dir });
+  peek(): number {
+    return this.p[0];
   }
-  return out;
-}
-
-/**
- * A* from a cell to a cell. In cheap mode the step cost is what the step would cost to build
- * plus a small constant so the search prefers the short way between equal prices; in short
- * mode every cell costs the same. Returns null when there is no path. A route that starts at a
- * station, or ends at a site, runs the last APPROACH cells straight along the station's row
- * (west or east, whichever the search finds cheaper). Elsewhere it is free. `startSide` fixes the
- * side the route leaves its first station on (-1 west, 1 east): a line that is lengthened leaves the
- * station it ran into on the other side, so a train runs straight through.
- */
-export function route(s: SimState, from: number, to: number, mode: RouteMode = 'cheap', startSide?: number): Route | null {
-  if (from === to) return null;
-  const n = s.w * s.h;
-  const g = new Float64Array(n).fill(Infinity);
-  const prev = new Int32Array(n).fill(-1);
-  const closed = new Uint8Array(n);
-  const isSite = s.sites.some((o) => idx(s, o.cx, o.cy) === to);
-  // a site's own cell is reached only along its straight stretch, never through the search
-  const free = isSite ? -1 : to;
-  const starts = approaches(s, from, mode, startSide);
-  const ends: Approach[] = isSite ? approaches(s, to, mode) : [{ cells: [to], cost: 0, dir: 0 }];
-  if (!starts.length || !ends.length) return null;
-  const goals = ends.map((e) => ({ cell: e.cells[e.cells.length - 1], ...e }));
-  const h = (i: number) => {
-    let best = Infinity;
-    for (const o of goals) {
-      const dx = Math.abs(cx(s, i) - cx(s, o.cell));
-      const dy = Math.abs(cy(s, i) - cy(s, o.cell));
-      best = Math.min(best, (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * 0.05);
-    }
-    return best;
-  };
-  // a binary heap on two number arrays, priority and cell: 12000 cells search in a few milliseconds
-  const hp: number[] = [];
-  const hc: number[] = [];
-  const push = (pri: number, cell: number) => {
-    let k = hp.length;
-    hp.push(pri);
-    hc.push(cell);
-    while (k > 0) {
-      const p = (k - 1) >> 1;
-      if (hp[p] <= pri) break;
-      hp[k] = hp[p];
-      hc[k] = hc[p];
-      k = p;
-    }
-    hp[k] = pri;
-    hc[k] = cell;
-  };
-  const pop = (): number => {
-    const top = hc[0];
-    const lp = hp.pop()!;
-    const lc = hc.pop()!;
-    const n = hp.length;
+  pop(): number {
+    const top = this.k[0];
+    const lp = this.p.pop()!;
+    const lk = this.k.pop()!;
+    const n = this.p.length;
     if (n) {
-      let k = 0;
+      let i = 0;
       for (;;) {
-        let c = 2 * k + 1;
+        let c = 2 * i + 1;
         if (c >= n) break;
-        if (c + 1 < n && hp[c + 1] < hp[c]) c++;
-        if (hp[c] >= lp) break;
-        hp[k] = hp[c];
-        hc[k] = hc[c];
-        k = c;
+        if (c + 1 < n && this.p[c + 1] < this.p[c]) c++;
+        if (this.p[c] >= lp) break;
+        this.p[i] = this.p[c];
+        this.k[i] = this.k[c];
+        i = c;
       }
-      hp[k] = lp;
-      hc[k] = lc;
+      this.p[i] = lp;
+      this.k[i] = lk;
     }
     return top;
-  };
-  // the stretches themselves are not searched: the path starts or ends at their outer cell, never along them
-  for (const a of [...starts, ...ends]) for (const c of a.cells.slice(0, -1)) closed[c] = 1;
-  for (const a of starts) {
-    const o = a.cells[a.cells.length - 1];
-    g[o] = a.cost;
-    push(a.cost + h(o), o);
   }
-  // the path meets a straight stretch at no more than a 45 degree turn when it can: an engine cuts a sharper corner off the rails
-  const startDir = new Map(starts.map((a) => [a.cells[a.cells.length - 1], a.dir]));
-  const goalDir = new Map(ends.map((a) => [a.cells[a.cells.length - 1], a.dir]));
-  let best = Infinity;
-  let bestGoal: (typeof goals)[number] | null = null;
-  while (hp.length) {
-    if (hp[0] >= best) break;
-    const cur = pop();
-    if (closed[cur]) continue;
-    closed[cur] = 1;
-    const goal = goals.find((o) => o.cell === cur);
-    if (goal) {
-      if (g[cur] + goal.cost < best) {
-        best = g[cur] + goal.cost;
-        bestGoal = goal;
+}
+
+export type RouteMode = 'cheap' | 'level';
+
+export interface Route {
+  mode: RouteMode;
+  /** cells from the start to the end, both included */
+  cells: number[];
+  /** the rail's height in metres per cell */
+  rail: number[];
+  cost: number;
+  /** new cells over water */
+  bridge: number[];
+  /** new cells cut down more than a metre, and filled up more than a metre */
+  cutting: number[];
+  fill: number[];
+  /** links the route adds, as cell pairs; a step along laid track adds none */
+  links: [number, number][];
+  /** cells with no track before */
+  added: number[];
+  /** length in tiles */
+  length: number;
+  /** the steepest step in percent */
+  worst: number;
+}
+
+/** whether a cell may carry track: on the map, and no building or house on it */
+function open(s: SimState, i: number): boolean {
+  return !s.blocked[i];
+}
+
+/** the directions trains can leave a laid cell in when they arrive moving in direction `d`: within 45 degrees of it */
+function canLeave(s: SimState, cell: number, arriving: number): boolean {
+  const m = s.track[cell];
+  for (let l = 0; l < 8; l++) if (m & (1 << l) && turn(arriving, l) <= 1) return true;
+  return false;
+}
+
+/** whether a new route may leave a laid cell in direction `d`: a train coming along some link of it can go on that way */
+function canJoinFrom(s: SimState, cell: number, d: number): boolean {
+  const m = s.track[cell];
+  if (!m) return true;
+  for (let l = 0; l < 8; l++) if (m & (1 << l) && turn((l + 4) % 8, d) <= 1) return true;
+  return false;
+}
+
+/** the land's height as the search reads it: water at the bridge's clearance */
+function landAt(s: SimState, i: number): number {
+  if (s.track[i]) return s.rail[i];
+  return s.water[i] ? BRIDGE_CLEAR : s.height[i];
+}
+
+/** what a step costs the search: the build price of the new piece, and a grade penalty in level mode */
+function stepCost(s: SimState, a: number, b: number, d: number, mode: RouteMode): number {
+  const len = stepLen(d);
+  // along laid track: almost free, so a route reuses it where it runs the same way
+  if (s.track[a] & (1 << d)) return 0.05 * len;
+  if (s.water[b] && !s.track[b]) return BRIDGE_COST * len + 0.05;
+  const rise = Math.abs(landAt(s, b) - landAt(s, a));
+  const limit = mode === 'level' ? GRADE_LEVEL : GRADE_CHEAP;
+  const over = Math.max(0, rise - (limit / 100) * len * CELL_M);
+  // a too steep step is not the whole cut: the rail climbs on, and the cut spreads along the ramp
+  const earth = EARTH_COST * over * 3;
+  const clear = s.cover[b] === 1 ? CLEAR_COST : 0;
+  const base = s.track[b] ? TRACK_COST * 0.6 : TRACK_COST + clear;
+  // level mode prices height as if every metre climbed were dug
+  const climb = mode === 'level' ? rise * EARTH_COST * 0.6 : rise * 0.02;
+  return (base + earth + climb) * len + 0.05;
+}
+
+const STATES = 8;
+
+/**
+ * The cheapest route from one cell to another through the given waypoints, each leg an A* over
+ * (cell, heading) so no step turns more than 45 degrees, including through a waypoint. Null when
+ * there is none.
+ */
+export function route(s: SimState, from: number, to: number, via: number[] = [], mode: RouteMode = 'cheap'): Route | null {
+  const pts = [from, ...via, to];
+  const cells: number[] = [from];
+  let heading = -1;
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const leg = searchLeg(s, pts[k], pts[k + 1], heading, mode, k + 2 === pts.length);
+    if (!leg) return null;
+    cells.push(...leg.slice(1));
+    heading = dirOf(s, cells[cells.length - 2], cells[cells.length - 1]);
+  }
+  if (cells.length < 2) return null;
+  return describe(s, cells, mode);
+}
+
+function searchLeg(s: SimState, from: number, to: number, heading: number, mode: RouteMode, last: boolean): number[] | null {
+  if (from === to) return null;
+  if (!open(s, to) || !open(s, from)) return null;
+  const n = s.w * s.h * STATES;
+  const g = new Float32Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const closed = new Uint8Array(n);
+  const tx = cx(s, to);
+  const ty = cy(s, to);
+  const h = (i: number) => {
+    const dx = Math.abs(cx(s, i) - tx);
+    const dy = Math.abs(cy(s, i) - ty);
+    return (Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy)) * TRACK_COST;
+  };
+  const heap = new Heap();
+  const fx = cx(s, from);
+  const fy = cy(s, from);
+  for (let d = 0; d < 8; d++) {
+    if (heading >= 0 && turn(heading, d) > 1) continue;
+    if (heading < 0 && !canJoinFrom(s, from, d)) continue;
+    const nx = fx + DIRS[d][0];
+    const ny = fy + DIRS[d][1];
+    if (!inside(s, nx, ny)) continue;
+    const ni = idx(s, nx, ny);
+    if (!open(s, ni) || cornerWater(s, from, d)) continue;
+    const key = ni * STATES + d;
+    const c = stepCost(s, from, ni, d, mode);
+    if (c < g[key]) {
+      g[key] = c;
+      prev[key] = -2 - from;
+      heap.push(c + h(ni), key);
+    }
+  }
+  let found = -1;
+  while (heap.size) {
+    const key = heap.pop();
+    if (closed[key]) continue;
+    closed[key] = 1;
+    const cur = (key / STATES) | 0;
+    const d0 = key % STATES;
+    if (cur === to) {
+      // the end on laid track: a train arriving along the route can run on along some link of it
+      if (!last || !s.track[cur] || canLeave(s, cur, d0) || canLeaveBack(s, cur, d0)) {
+        found = key;
+        break;
       }
       continue;
     }
     const x = cx(s, cur);
     const y = cy(s, cur);
-    for (const [dx, dy] of DIRS) {
-      const nx = x + dx;
-      const ny = y + dy;
+    for (const d of [d0, (d0 + 1) % 8, (d0 + 7) % 8]) {
+      const nx = x + DIRS[d][0];
+      const ny = y + DIRS[d][1];
       if (!inside(s, nx, ny)) continue;
       const ni = idx(s, nx, ny);
-      if (closed[ni] || !passable(s, ni, free)) continue;
-      // a join to a straight stretch at more than 45 degrees costs a few tiles of track, so it is the last resort
-      const leave = startDir.get(cur);
-      const enter = goalDir.get(ni);
-      const kink = (leave && dx * leave <= 0) || (enter && dx * -enter <= 0) ? KINK_COST : 0;
-      // a diagonal step between two water cells would run over the water's corner on no bridge
-      if (dx !== 0 && dy !== 0 && s.water[idx(s, x + dx, y)] && s.water[idx(s, x, y + dy)] && !s.water[ni] && !s.water[cur]) continue;
-      // laid track is another line's: the route crosses it straight over a straight piece, and keeps straight on through the crossing
-      if (s.track[ni] && !crossing(s, ni, dx, dy)) continue;
-      if (s.track[cur] && !startDir.has(cur) && prev[cur] >= 0 && (x - cx(s, prev[cur]) !== dx || y - cy(s, prev[cur]) !== dy)) continue;
-      const len = stepLen(dx, dy);
-      const c = g[cur] + (mode === 'cheap' ? stepCost(s, cur, ni, len) : len) + kink;
-      if (c < g[ni]) {
-        g[ni] = c;
-        prev[ni] = cur;
-        push(c + h(ni), ni);
+      const nk = ni * STATES + d;
+      if (closed[nk] || !open(s, ni) || cornerWater(s, cur, d)) continue;
+      const c = g[key] + stepCost(s, cur, ni, d, mode);
+      if (c < g[nk]) {
+        g[nk] = c;
+        prev[nk] = key;
+        heap.push(c + h(ni), nk);
       }
     }
   }
-  if (!bestGoal) return null;
-  // the search's own cells run from a start's outer cell to a goal's outer cell
-  const mid: number[] = [];
-  for (let i = bestGoal.cell; i !== -1; i = prev[i]) mid.push(i);
-  mid.reverse();
-  const head = starts.find((a) => a.cells[a.cells.length - 1] === mid[0]);
-  if (!head) return null;
-  const cells = [...head.cells.slice(0, -1), ...mid, ...bestGoal.cells.slice(0, -1).reverse()];
-  if (new Set(cells).size !== cells.length) return null;
-  return describe(s, cells, mode);
+  if (found < 0) return null;
+  const out: number[] = [];
+  let k = found;
+  for (;;) {
+    out.push((k / STATES) | 0);
+    const p = prev[k];
+    if (p <= -2) {
+      out.push(-2 - p);
+      break;
+    }
+    k = p;
+  }
+  out.reverse();
+  if (new Set(out).size !== out.length) return null;
+  return out;
 }
 
-/** the route's rail, its earthworks and its price */
+/** a laid end cell can also be the end of a spur that meets it head on: a train reverses there */
+function canLeaveBack(s: SimState, cell: number, arriving: number): boolean {
+  const m = s.track[cell];
+  // a cell with one link that points back at the route: the two tracks meet end to end
+  let n = 0;
+  let only = -1;
+  for (let l = 0; l < 8; l++) if (m & (1 << l)) (n++, (only = l));
+  return n === 1 && turn(arriving, only) <= 1;
+}
+
+/** a diagonal step between two water cells would cross the water's corner on no bridge */
+function cornerWater(s: SimState, cur: number, d: number): boolean {
+  const [dx, dy] = DIRS[d];
+  if (!dx || !dy) return false;
+  const x = cx(s, cur);
+  const y = cy(s, cur);
+  return !!(s.water[idx(s, x + dx, y)] && s.water[idx(s, x, y + dy)] && !s.water[cur] && !s.water[idx(s, x + dx, y + dy)]);
+}
+
+/**
+ * The rail along a list of cells: the land, clamped so no step is steeper than the limit, forward
+ * and back. Laid cells keep their rail. Water lifts the rail to the bridge's clearance.
+ */
+export function profile(s: SimState, cells: number[], limit: number): number[] {
+  const n = cells.length;
+  const fixed = cells.map((i) => !!s.track[i]);
+  const rail = cells.map((i) => landAt(s, i));
+  const clamp = (k: number, from: number) => {
+    const len = stepLen(dirOf(s, cells[from], cells[k]));
+    const max = (limit / 100) * len * CELL_M;
+    rail[k] = Math.max(rail[from] - max, Math.min(rail[from] + max, rail[k]));
+  };
+  for (let pass = 0; pass < 3; pass++) {
+    for (let k = 1; k < n; k++) if (!fixed[k]) clamp(k, k - 1);
+    for (let k = n - 2; k >= 0; k--) if (!fixed[k]) clamp(k, k + 1);
+  }
+  for (let k = 0; k < n; k++) if (s.water[cells[k]] && !fixed[k]) rail[k] = Math.max(rail[k], BRIDGE_CLEAR);
+  return rail;
+}
+
+/** a route's rail, its earthworks, its new links and its price */
 export function describe(s: SimState, cells: number[], mode: RouteMode): Route {
-  const to = cells[cells.length - 1];
-  const rail = profile(s, cells);
+  const limit = mode === 'level' ? GRADE_LEVEL : GRADE_CHEAP;
+  const rail = profile(s, cells, limit);
   const added: number[] = [];
   const bridge: number[] = [];
   const cutting: number[] = [];
   const fill: number[] = [];
-  const newStation = !s.stations.some((st) => st.cell === to);
-  let cost = newStation ? STATION_COST : 0;
+  const links: [number, number][] = [];
+  let cost = 0;
   let length = 0;
   let worst = 0;
-  let climb = 0;
-  for (let k = 0; k < cells.length; k++) {
-    const i = cells[k];
-    const len = k > 0 ? stepLen(cx(s, i) - cx(s, cells[k - 1]), cy(s, i) - cy(s, cells[k - 1])) : 1;
-    if (k > 0) {
-      length += len;
-      const g = Math.abs(gradeOf(rail[k] - rail[k - 1], len));
-      worst = Math.max(worst, g);
-      climb += Math.abs(rail[k] - rail[k - 1]);
+  for (let k = 1; k < cells.length; k++) {
+    const a = cells[k - 1];
+    const b = cells[k];
+    const d = dirOf(s, a, b);
+    const len = stepLen(d);
+    length += len;
+    worst = Math.max(worst, Math.abs(gradeOf(rail[k] - rail[k - 1], len)));
+    if (s.track[a] & (1 << d)) continue;
+    links.push([a, b]);
+    if (s.track[b] || added.includes(b)) {
+      cost += TRACK_COST * 0.6 * len;
+      continue;
     }
-    if (s.track[i] || k === 0) continue;
-    added.push(i);
-    if (s.water[i]) {
-      bridge.push(i);
+    added.push(b);
+    if (s.water[b]) {
+      bridge.push(b);
       cost += BRIDGE_COST * len;
       continue;
     }
-    const earth = rail[k] - s.height[i];
-    if (earth < -1) cutting.push(i);
-    if (earth > 1) fill.push(i);
-    const g = k > 0 ? Math.abs(gradeOf(rail[k] - rail[k - 1], len)) : 0;
-    cost += (TRACK_COST * (1 + GRADE_COST * g) + EARTH_COST * Math.abs(earth)) * len;
+    const earth = rail[k] - s.height[b];
+    if (earth < -1) cutting.push(b);
+    if (earth > 1) fill.push(b);
+    cost += (TRACK_COST + (s.cover[b] === 1 ? CLEAR_COST : 0) + EARTH_COST * Math.abs(earth)) * len;
   }
-  return { mode, cells, rail, cost: Math.round(cost), bridge, cutting, fill, added, newStation, length, worst, climb };
-}
-
-/**
- * Whether a step in (dx, dy) may enter a cell of laid track as a level crossing: the cell carries one
- * straight piece of another line, no station, no water, and the step runs across it at an angle.
- */
-function crossing(s: SimState, i: number, dx: number, dy: number): boolean {
-  // not on a station's approach, where the platform tracks fan out
-  if (s.water[i] || s.yardMask[i] || s.stations.some((st) => cy(s, st.cell) === cy(s, i) && Math.abs(cx(s, st.cell) - cx(s, i)) <= APPROACH + 1)) return false;
-  const m = s.track[i];
-  const d = dirIndex(dx, dy);
-  for (let k = 0; k < 4; k++) if (m === ((1 << k) | (1 << (k + 4)))) return k !== d % 4;
-  return false;
-}
-
-/**
- * Whether a route doubles back: over any three cells it heads one way, and over the next three it
- * heads more than 90 degrees away from that. A hairpin is never a sensible way to a site.
- */
-export function turnsBack(s: { w: number }, cells: number[], span = 3): boolean {
-  for (let k = span; k + span < cells.length; k++) {
-    const ax = cx(s, cells[k]) - cx(s, cells[k - span]);
-    const ay = cy(s, cells[k]) - cy(s, cells[k - span]);
-    const bx = cx(s, cells[k + span]) - cx(s, cells[k]);
-    const by = cy(s, cells[k + span]) - cy(s, cells[k]);
-    if (ax * bx + ay * by < 0) return true;
+  // the first cell is new track too when nothing was laid there
+  if (!s.track[cells[0]] && !added.includes(cells[0])) {
+    added.unshift(cells[0]);
+    cost += TRACK_COST * 0.5;
   }
-  return false;
+  return { mode, cells, rail, cost: Math.round(cost * 10) / 10, bridge, cutting, fill, links, added, length, worst: Math.round(worst * 10) / 10 };
 }
 
-/** the routes a drag offers: the cheapest, and the shortest when it is a different path */
-export function routeOptions(s: SimState, from: number, to: number, startSide?: number): Route[] {
-  const cheap = route(s, from, to, 'cheap', startSide);
-  const short = route(s, from, to, 'short', startSide);
-  // the search keeps one way into each cell, so through a level crossing one of the two can miss a way the other finds
-  if (!cheap) return short ? [short] : [];
-  if (!short || short.length >= cheap.length - 0.5 || short.cells.join() === cheap.cells.join()) return [cheap];
-  return [cheap, short];
+/** the routes a drag offers: the cheapest, and the level one when it differs */
+export function routeOptions(s: SimState, from: number, to: number, via: number[] = []): Route[] {
+  const cheap = route(s, from, to, via, 'cheap');
+  const level = route(s, from, to, via, 'level');
+  if (!cheap) return level ? [level] : [];
+  if (!level || level.cells.join() === cheap.cells.join() || level.worst >= cheap.worst - 0.3) return [cheap];
+  return [cheap, level];
 }
 
-/** link two neighbouring cells with track, both ways */
 export function link(s: SimState, a: number, b: number): void {
-  const dx = cx(s, b) - cx(s, a);
-  const dy = cy(s, b) - cy(s, a);
-  const d = dirIndex(dx, dy);
+  const d = dirOf(s, a, b);
   if (d < 0) throw new Error(`cells ${a} and ${b} are not neighbours`);
   s.track[a] |= 1 << d;
   s.track[b] |= 1 << ((d + 4) % 8);
 }
 
 export function unlink(s: SimState, a: number, b: number): void {
-  const d = dirIndex(cx(s, b) - cx(s, a), cy(s, b) - cy(s, a));
+  const d = dirOf(s, a, b);
   if (d < 0) return;
   s.track[a] &= ~(1 << d);
   s.track[b] &= ~(1 << ((d + 4) % 8));
 }
 
-/** the track neighbours of a cell */
-export function linked(s: SimState, i: number): number[] {
+export function linksOf(s: SimState, i: number): number[] {
   const out: number[] = [];
-  const m = s.track[i];
-  for (let d = 0; d < 8; d++) if (m & (1 << d)) out.push(idx(s, cx(s, i) + DIRS[d][0], cy(s, i) + DIRS[d][1]));
+  for (let d = 0; d < 8; d++) if (s.track[i] & (1 << d)) out.push(d);
   return out;
+}
+
+/**
+ * The way a train runs from one cell to another over laid track: A* over (cell, heading), no turn
+ * sharper than 45 degrees. The train may leave its start either way (it reverses at a station).
+ * Null when the track does not join them.
+ */
+export function trackPath(s: SimState, from: number, to: number): number[] | null {
+  if (from === to || !s.track[from] || !s.track[to]) return null;
+  const n = s.w * s.h * STATES;
+  const g = new Float32Array(n).fill(Infinity);
+  const prev = new Int32Array(n).fill(-1);
+  const closed = new Uint8Array(n);
+  const tx = cx(s, to);
+  const ty = cy(s, to);
+  const h = (i: number) => {
+    const dx = Math.abs(cx(s, i) - tx);
+    const dy = Math.abs(cy(s, i) - ty);
+    return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+  };
+  const heap = new Heap();
+  const fx = cx(s, from);
+  const fy = cy(s, from);
+  for (const d of linksOf(s, from)) {
+    const ni = idx(s, fx + DIRS[d][0], fy + DIRS[d][1]);
+    const key = ni * STATES + d;
+    g[key] = stepLen(d);
+    prev[key] = -2 - from;
+    heap.push(g[key] + h(ni), key);
+  }
+  let found = -1;
+  while (heap.size) {
+    const key = heap.pop();
+    if (closed[key]) continue;
+    closed[key] = 1;
+    const cur = (key / STATES) | 0;
+    const d0 = key % STATES;
+    if (cur === to) {
+      found = key;
+      break;
+    }
+    const x = cx(s, cur);
+    const y = cy(s, cur);
+    const m = s.track[cur];
+    for (const d of [d0, (d0 + 1) % 8, (d0 + 7) % 8]) {
+      if (!(m & (1 << d))) continue;
+      const ni = idx(s, x + DIRS[d][0], y + DIRS[d][1]);
+      const nk = ni * STATES + d;
+      if (closed[nk]) continue;
+      const c = g[key] + stepLen(d);
+      if (c < g[nk]) {
+        g[nk] = c;
+        prev[nk] = key;
+        heap.push(c + h(ni), nk);
+      }
+    }
+  }
+  if (found < 0) return null;
+  const out: number[] = [];
+  let k = found;
+  for (;;) {
+    out.push((k / STATES) | 0);
+    const p = prev[k];
+    if (p <= -2) {
+      out.push(-2 - p);
+      break;
+    }
+    k = p;
+  }
+  return out.reverse();
+}
+
+/** cumulative length along a list of cells */
+export function distances(s: SimState, cells: number[]): number[] {
+  const out = [0];
+  for (let k = 1; k < cells.length; k++) out.push(out[k - 1] + stepLen(dirOf(s, cells[k - 1], cells[k])));
+  return out;
+}
+
+/** straight distance between two cells in tiles: what pay is reckoned on, as in RT2 */
+export function crow(s: SimState, a: number, b: number): number {
+  return Math.hypot(cx(s, a) - cx(s, b), cy(s, a) - cy(s, b));
 }

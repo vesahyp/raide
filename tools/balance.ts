@@ -1,45 +1,28 @@
 /**
- * npm run balance: the bot plays a scenario (SCENARIO=harju, sawmill by default) and prints its
- * moves, then the towns and the money year by year. Read it after touching content/economy.ts.
+ * npm run balance: the bot plays a scenario (SCENARIO=harju, PLAN=careful or careless) and prints
+ * its moves, each train's money, and the company year by year.
  */
 import { createState } from '../src/game/state';
 import { SCENARIO_BY_ID } from '../src/game/content/scenarios';
-import { step, DT, netWorth, growFrac } from '../src/game/sim';
-import { Bot } from './bot';
+import { step, worth, money, debt, ageOf } from '../src/game/sim';
+import { Bot, PLANS } from './bot';
 import { YEAR_SECONDS } from '../src/game/content/economy';
-import { CARGOS } from '../src/game/types';
 
 declare const process: { env: Record<string, string | undefined> };
-const sc = SCENARIO_BY_ID[process.env.SCENARIO ?? 'sawmill'];
+const sc = SCENARIO_BY_ID[process.env.SCENARIO ?? 'harju'];
+const which = (process.env.PLAN ?? 'careful') as 'careful' | 'careless';
 const s = createState(sc);
-const bot = Bot.for(s);
-const limit = (sc.goal.beforeYear - sc.startYear) * YEAR_SECONDS + 10;
-const towns = s.sites.filter((x) => x.kind === 'town');
-const grew: string[] = [];
-const sizes = new Map(towns.map((t) => [t.id, t.size]));
-let lastLog = 0;
-for (let t = 0; t < limit * 1.2 && !s.result; t += DT) {
+const bot = new Bot(PLANS[sc.id][which]);
+const limit = (sc.goal.byYear - sc.startYear + 1.1) * YEAR_SECONDS;
+while (s.time < limit && !s.result) {
   bot.act(s);
   step(s);
-  for (const x of towns) if (x.size !== sizes.get(x.id)) {
-    grew.push(`${s.time.toFixed(0)} s ${x.id} to ${x.size}`);
-    sizes.set(x.id, x.size);
-  }
-  if (process.env.TRACE === '1' && s.time - lastLog >= 30) {
-    lastLog = s.time;
-    console.log(`${s.time.toFixed(0)} s cash ${Math.round(s.cash)} ${towns.map((x) => `${x.id} ${x.size}+${growFrac(x).toFixed(2)}`).join(' ')} trains ${s.trains.length}`);
-  }
 }
-if (process.env.QUIET !== '1') for (const l of bot.log) console.log(l);
-console.log(`first pay ${s.firstPayAt?.toFixed(0)} s; result ${s.result ? `${s.result.won ? 'won' : 'lost'} ${s.result.year} (${s.result.reason}) at ${s.result.time.toFixed(0)} s, cash ${s.result.cash} worth ${s.result.worth} stars ${s.result.stars}` : 'none'}`);
-console.log(`grew: ${grew.join('; ') || 'none'}`);
-console.log(`towns: ${towns.map((x) => `${x.id} size ${x.size} +${growFrac(x).toFixed(2)} got ${x.delivered}`).join('; ')}`);
-console.log(`trains: ${s.trains.map((t) => `${t.lineId}:${t.trips} trips`).join(', ')}; picks ${s.picks}`);
-const pad = (x: number | string, n = 8) => String(x).padStart(n);
-console.log(['year', 'gross', 'running', 'engine', 'track', 'profit', 'cash', 'worth'].map((h) => pad(h)).join(''));
-for (const y of s.history) {
-  const h = s.history.indexOf(y);
-  void h;
-  console.log([y.year, '', '', '', '', y.profit, y.cash, y.worth].map((x) => pad(x)).join(''));
-}
-console.log(`end: cash ${Math.round(s.cash)} worth ${Math.round(netWorth(s))} income so far ${CARGOS.map((g) => `${g} ${Math.round(s.income[g])}`).join(' ')}`);
+for (const l of bot.log) console.log(l);
+const pad = (x: number | string, n = 9) => String(typeof x === 'number' ? Math.round(x) : x).padStart(n);
+console.log(['year', 'revenue', 'fuel', 'upkeep', 'repairs', 'interest', 'profit', 'build', 'cash', 'debt', 'worth'].map((h) => pad(h)).join(''));
+for (const y of s.history) console.log([y.year, y.revenue, y.fuel, y.upkeep, y.repairs, y.interest, y.profit, y.build, y.cash, y.debt, y.worth].map((x) => pad(x)).join(''));
+for (const t of s.trains) console.log(`train ${t.name} ${t.loco} age ${ageOf(s, t).toFixed(1)} last year +${money(t.earnedLast)} -${money(t.costLast)} all ${money(t.profitAll)} breakdowns ${t.breakdowns} ${t.state}`);
+for (const site of s.sites) if (site.kind === 'town') console.log(`${site.id} houses ${site.homes.length} delivered ${site.delivered}`);
+console.log(`hauled ${JSON.stringify(s.hauled)}`);
+console.log(`result ${s.result ? `${s.result.won ? 'WON' : 'LOST'} tier ${s.result.tier} ${s.result.reason} ${s.result.year} worth ${money(s.result.worth)}` : 'none'}; cash ${money(s.cash)} debt ${money(debt(s))} worth ${money(worth(s))}`);

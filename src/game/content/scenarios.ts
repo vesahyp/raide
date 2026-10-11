@@ -1,25 +1,19 @@
 /**
- * The hand-made maps. A scenario is data: a size in tiles (a tile is 100 m), the land as a
- * height function in metres, what covers it, the sites, the start and the goal.
+ * The hand-made maps (ADR 0007): southern Finland from 1862, larger than the
+ * screen so that a route has real choices round lakes and over ridges. A tile
+ * is 1 km for pay, 100 m for grades. The land is a height function in metres,
+ * cut by the sim into terraces of 10 m; below zero is water.
  *
- * The land is drawn as a valley: a river, a lake, a ridge, hills and a little value noise. The
- * sim cuts the heights into whole terraces of 10 m, so a hill is a stack of one-tile steps and
- * the grade comes from the cut and the fill. Below zero is water: a bridge to cross. Each site is
- * one tile with a yard of tiles to the north, and the land is flat around both.
+ * Sawmill: the tutorial. One forest, one sawmill across a river, one town
+ * behind a hill. Haul lumber to the town before the end of 1865.
  *
- * Both maps fit one portrait phone screen (ADR 0006): 30 to 34 tiles across.
- *
- * Sawmill: a forest, a sawmill and a town across a river, one chain, deliver 15 boards before
- * 1865. The tutorial.
- *
- * Harju: a forest and a sawmill west of a river, a farm and a mill east of it, a lake in the
- * middle, a ridge in the south east, three towns. Grow all three towns to size 3 before 1872:
- * it takes both chains to every town, so a network that keeps growing to the end.
+ * Harju: Tampere to Helsinki. Three forests, three farms, a sawmill, a paper
+ * mill, a mill and five towns; Vanajavesi and Vesijärvi in the north, the
+ * Salpausselkä ridge across the middle with one low pass, the sea in the
+ * south. Make the company worth the goal before the end of 1869.
  */
-import type { ScenarioDef } from '../types';
-
-import { TERRACE_M, TERRACE_MAX, yard } from './economy';
-import type { Cover, SiteDef } from '../types';
+import type { Cover, ScenarioDef, SiteDef } from '../types';
+import { TERRACE_M } from './economy';
 
 // ---------- helpers ----------
 
@@ -29,7 +23,7 @@ function hash(x: number, y: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 const smooth = (t: number): number => t * t * (3 - 2 * t);
-/** value noise, 0 to 1, smooth between whole numbers */
+/** value noise, 0 to 1 */
 function vnoise(x: number, y: number): number {
   const xi = Math.floor(x);
   const yi = Math.floor(y);
@@ -41,152 +35,128 @@ function vnoise(x: number, y: number): number {
   const d = hash(xi + 1, yi + 1);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
-/** distance from a point to a line segment */
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
   return Math.hypot(px - ax - t * dx, py - ay - t * dy);
 }
-/** distance from a point to a polyline */
 function polyDist(px: number, py: number, pts: number[][]): number {
   let m = 1e9;
   for (let i = 0; i < pts.length - 1; i++) m = Math.min(m, segDist(px, py, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]));
   return m;
 }
-/** a hill: a round bump of this many levels (terraces) at the top */
 const bump = (x: number, y: number, hx: number, hy: number, level: number, spread: number): number => level * Math.exp(-((x - hx) ** 2 + (y - hy) ** 2) / spread);
-
-/** whether a point is on the flat ground of a site: near its cell, or inside its yard with a margin */
-function onSite(sites: SiteDef[], x: number, y: number): boolean {
-  for (const d of sites) {
-    if (Math.abs(y - d.cy - 0.5) < 1.6 && Math.abs(x - d.cx - 0.5) < 6.5) return true;
-    const r = yard(d.kind);
-    if (x >= d.cx + r.dx0 - 1 && x <= d.cx + r.dx1 + 2 && y >= d.cy + r.dy0 - 1 && y <= d.cy + 1) return true;
-  }
-  return false;
-}
+const ellipse = (x: number, y: number, ex: number, ey: number, rx: number, ry: number): number => ((x - ex) / rx) ** 2 + ((y - ey) / ry) ** 2;
 const near = (sites: SiteDef[], x: number, y: number, r: number): boolean => sites.some((d) => Math.hypot(x - d.cx - 0.5, y - d.cy - 0.5) < r);
 
-/** a land function in metres from a water test and a height in levels; sites are flat, water is below zero */
+/** the land in metres from a water test and a height in terraces; a site's ground is flat */
 function landOf(sites: SiteDef[], isWater: (x: number, y: number) => boolean, level: (x: number, y: number) => number) {
   return (x: number, y: number): number => {
+    for (const d of sites) if (Math.abs(x - d.cx - 0.5) < (d.kind === 'town' ? 3 : 2.6) && Math.abs(y - d.cy - 0.5) < (d.kind === 'town' ? 3 : 2.6)) return 0;
     if (isWater(x, y)) return -4;
-    if (onSite(sites, x, y)) return 0;
     return Math.max(0, level(x, y)) * TERRACE_M;
   };
 }
-/** the terrace a point stands on, for the cover rules */
-const terraceOf = (land: (x: number, y: number) => number, x: number, y: number): number => Math.min(TERRACE_MAX, Math.floor(land(x, y) / TERRACE_M));
 
-// ---------- Sawmill: 30 by 36 tiles ----------
-
-const SAW_W = 30;
-const SAW_H = 36;
-const SAW_SITES: SiteDef[] = [
-  { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 6, cy: 9, rawRate: 1.0, rawCap: 6 },
-  { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 22, cy: 11 },
-  { id: 'town', kind: 'town', name: { fi: 'H\u00e4meenlinna', en: 'H\u00e4meenlinna' }, cx: 14, cy: 31, size: 1 },
-];
-const SAW_RIVER = [[-2, 19], [8, 17.5], [16, 19.5], [24, 17.5], [32, 19]];
-const sawWater = (x: number, y: number): boolean => polyDist(x, y, SAW_RIVER) < 1.1 + vnoise(x * 0.3, y * 0.3) * 0.7;
-// a low rise under the forest, a hill east of the town, noise on top
-const sawLevel = (x: number, y: number): number => Math.max(bump(x, y, 3, 2, 1.8, 20), bump(x, y, 27, 28, 1.6, 18)) + (vnoise(x * 0.12, y * 0.12) - 0.5) * 0.9;
-const sawLand = landOf(SAW_SITES, sawWater, sawLevel);
-
-function sawCover(x: number, y: number): Cover {
-  const L = terraceOf(sawLand, x, y);
-  const d = SAW_SITES[2];
-  if (Math.abs(y - (d.cy - 5.5)) < 0.6 && x > d.cx - 5 && x < d.cx + 6) return 'street';
-  if (Math.abs(x - (d.cx + 0.5)) < 0.6 && y > d.cy - 6 && y < d.cy - 0.5) return 'street';
-  if (Math.hypot((x - 25) / 1.3, y - 33) < 4 && L === 0) return 'field';
-  const f = vnoise(x * 0.15 + 40, y * 0.15) + (x < 12 && y < 20 ? 0.3 : 0) + (L >= 1 ? 0.1 : 0);
-  return f > 0.6 && !near(SAW_SITES, x, y, 4.5) ? 'forest' : 'none';
+function coverOf(sites: SiteDef[], land: (x: number, y: number) => number, forestBias: (x: number, y: number) => number) {
+  return (x: number, y: number): Cover => {
+    const lv = Math.floor(land(x, y) / TERRACE_M);
+    for (const d of sites) if (d.kind === 'farm' && ellipse(x, y, d.cx + 0.5, d.cy + 3.5, 4.2, 2.6) < 1 && lv <= 1) return 'field';
+    const f = vnoise(x * 0.13 + 40, y * 0.13) + forestBias(x, y) + (lv >= 2 ? 0.12 : 0);
+    if (near(sites, x, y, 4.5)) return 'none';
+    return f > 0.62 ? 'forest' : 'none';
+  };
 }
+
+// ---------- Sawmill: 44 by 56 ----------
+
+const SAW_SITES: SiteDef[] = [
+  { id: 'kuusikko', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 8, cy: 9, rate: 2.6 },
+  { id: 'saha', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 33, cy: 14 },
+  { id: 'hameenlinna', kind: 'town', name: { fi: 'Hämeenlinna', en: 'Hämeenlinna' }, cx: 22, cy: 45, houses: 12 },
+  { id: 'peltola', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 7, cy: 34, rate: 1.8 },
+];
+const SAW_RIVER = [[22, -2], [20, 10], [23, 20], [19, 30], [21, 40], [16, 58]];
+const sawWater = (x: number, y: number): boolean => polyDist(x, y, SAW_RIVER) < 1.0 + vnoise(x * 0.3, y * 0.3) * 0.8;
+const sawLevel = (x: number, y: number): number =>
+  Math.max(bump(x, y, 34, 30, 3.4, 40), bump(x, y, 9, 20, 2.2, 22), bump(x, y, 40, 48, 2, 30)) + (vnoise(x * 0.12, y * 0.12) - 0.5) * 0.9;
+const sawLand = landOf(SAW_SITES, sawWater, sawLevel);
 
 export const SAWMILL: ScenarioDef = {
   id: 'sawmill',
   name: { fi: 'Saha', en: 'Sawmill' },
-  blurb: { fi: '1862. 15 lautakuormaa ennen vuotta 1865', en: '1862. 15 loads of boards before 1865' },
-  w: SAW_W,
-  h: SAW_H,
+  blurb: { fi: '1862. Sahatavaraa Hämeenlinnaan ennen vuoden 1865 loppua', en: '1862. Lumber to Hämeenlinna before the end of 1865' },
+  w: 44,
+  h: 56,
   terrain: sawLand,
-  cover: sawCover,
+  cover: coverOf(SAW_SITES, sawLand, (x, y) => (x < 16 && y < 26 ? 0.25 : 0)),
   sites: SAW_SITES,
-  startStation: 'forest',
-  cash: 260,
+  cash: 160,
   startYear: 1862,
-  goal: { kind: 'deliver', good: 'boards', site: 'town', count: 15, beforeYear: 1865 },
-  stars: [1863, 1862],
-  engines: ['hilma'],
+  goal: { kind: 'haul', cargo: 'lumber', tiers: [40, 60, 80], byYear: 1865 },
+  view: [20, 14],
 };
 
-// ---------- Harju: 30 by 50 tiles ----------
+// ---------- Harju: 64 by 88 ----------
 
-const HARJU_W = 34;
-const HARJU_H = 42;
 const HARJU_SITES: SiteDef[] = [
-  { id: 'forest', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 5, cy: 5, rawRate: 1.7, rawCap: 10 },
-  { id: 'sawmill', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 7, cy: 16 },
-  { id: 'farm', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 28, cy: 5, rawRate: 1.7, rawCap: 10 },
-  { id: 'mill', kind: 'mill', name: { fi: 'Myllykyl\u00e4', en: 'Myllykyl\u00e4' }, cx: 27, cy: 16 },
-  { id: 'hameenlinna', kind: 'town', name: { fi: 'H\u00e4meenlinna', en: 'H\u00e4meenlinna' }, cx: 7, cy: 30, size: 1 },
-  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 26, cy: 31, size: 2 },
-  { id: 'tampere', kind: 'town', name: { fi: 'Tampere', en: 'Tampere' }, cx: 17, cy: 40, size: 1 },
+  { id: 'tampere', kind: 'town', name: { fi: 'Tampere', en: 'Tampere' }, cx: 10, cy: 9, houses: 16 },
+  { id: 'valkeakoski', kind: 'papermill', name: { fi: 'Valkeakoski', en: 'Valkeakoski' }, cx: 27, cy: 13 },
+  { id: 'korpi', kind: 'forest', name: { fi: 'Korpi', en: 'Korpi' }, cx: 50, cy: 7, rate: 2.4 },
+  { id: 'kuusikko', kind: 'forest', name: { fi: 'Kuusikko', en: 'Kuusikko' }, cx: 5, cy: 30, rate: 2.6 },
+  { id: 'koskensaha', kind: 'sawmill', name: { fi: 'Koskensaha', en: 'Koskensaha' }, cx: 27, cy: 33 },
+  { id: 'peltola', kind: 'farm', name: { fi: 'Peltola', en: 'Peltola' }, cx: 40, cy: 28, rate: 2.2 },
+  { id: 'hameenlinna', kind: 'town', name: { fi: 'Hämeenlinna', en: 'Hämeenlinna' }, cx: 13, cy: 45, houses: 10 },
+  { id: 'lahti', kind: 'town', name: { fi: 'Lahti', en: 'Lahti' }, cx: 52, cy: 44, houses: 11 },
+  { id: 'hollola', kind: 'farm', name: { fi: 'Hollola', en: 'Hollola' }, cx: 59, cy: 31, rate: 2 },
+  { id: 'myllykyla', kind: 'mill', name: { fi: 'Myllykylä', en: 'Myllykylä' }, cx: 40, cy: 63 },
+  { id: 'riihimaki', kind: 'town', name: { fi: 'Riihimäki', en: 'Riihimäki' }, cx: 24, cy: 66, houses: 6 },
+  { id: 'nurmi', kind: 'farm', name: { fi: 'Nurmijärvi', en: 'Nurmijärvi' }, cx: 10, cy: 70, rate: 2 },
+  { id: 'salo', kind: 'forest', name: { fi: 'Salo', en: 'Salo' }, cx: 57, cy: 66, rate: 2.2 },
+  { id: 'helsinki', kind: 'town', name: { fi: 'Helsinki', en: 'Helsinki' }, cx: 35, cy: 80, houses: 22 },
 ];
-const RIVER = [[17, -2], [16.5, 5], [17.5, 11], [17, 17]];
-const LAKE = { x: 17, y: 20.5, rx: 4.2, ry: 2.4 };
-const RIDGE = [[23, 23.5], [35, 24.5]];
+/** Vanajavesi: a long lake from Tampere's south down past Hämeenlinna, and the river that leaves it */
+const VANAJA = [[15, 16], [17, 24], [16, 33], [19, 40]];
+const VANAJA_RIVER = [[19, 40], [22, 48], [21, 56]];
+/** the ridge: east to west across the middle, with a low pass at x 30 */
+const RIDGE = [[-2, 55], [20, 53], [44, 52], [66, 54]];
+const PASS_X = 31;
 
-/** the land in levels (one level is a terrace): the ridge in the south east, the hills, the noise */
-function rawHeight(x: number, y: number): number {
-  let h = 0;
-  const dr = segDist(x, y, RIDGE[0][0], RIDGE[0][1], RIDGE[1][0], RIDGE[1][1]);
-  h = Math.max(h, 3.4 * Math.max(0, Math.min(1, (2.6 - dr) / 1.6)));
-  // the hill between the forest and the sawmill, the farm's rise
-  h = Math.max(h, 2.4 * Math.exp(-(((x - 2) ** 2 + (y - 10.5) ** 2) / 6)));
-  h = Math.max(h, 1.8 * Math.exp(-(((x - 32) ** 2 + (y - 10.5) ** 2) / 8)));
-  h += (vnoise(x * 0.14, y * 0.14) - 0.5) * 1.0;
+function harjuLevel(x: number, y: number): number {
+  const dr = polyDist(x, y, RIDGE);
+  let ridge = 3.4 * Math.max(0, Math.min(1, (3.2 - dr) / 2));
+  // the pass: the ridge falls to one terrace over a few tiles
+  ridge *= 0.3 + 0.7 * Math.min(1, Math.abs(x - PASS_X) / 4);
+  let h = ridge;
+  h = Math.max(h, bump(x, y, 36, 18, 2.6, 26), bump(x, y, 6, 20, 2, 18), bump(x, y, 46, 70, 2.2, 30), bump(x, y, 60, 18, 2.4, 20));
+  h += (vnoise(x * 0.11, y * 0.11) - 0.5) * 1.0;
   return h;
 }
-const harjuWater = (x: number, y: number): boolean =>
-  polyDist(x, y, RIVER) < 1.0 + vnoise(x * 0.3, y * 0.3) * 0.6 ||
-  ((x - LAKE.x) / LAKE.rx) ** 2 + ((y - LAKE.y) / LAKE.ry) ** 2 + (vnoise(x * 0.25, y * 0.25) - 0.5) * 0.4 < 1;
-const harjuLand = landOf(HARJU_SITES, harjuWater, rawHeight);
-
-function harjuCover(x: number, y: number): Cover {
-  const L = terraceOf(harjuLand, x, y);
-  // the streets of the towns, inside their yards: a main street across the top, a street down from
-  // it at the station, and a second one four tiles east that the town builds at size 3
-  for (const d of HARJU_SITES) {
-    if (d.kind !== 'town') continue;
-    const top = d.cy - 5.5;
-    const main = Math.abs(y - top) < 0.6 && x > d.cx - 5 && x < d.cx + 6;
-    const down = (Math.abs(x - (d.cx + 0.5)) < 0.6 || Math.abs(x - (d.cx + 4.5)) < 0.6) && y > d.cy - 6 && y < d.cy - 0.5;
-    if (main || down) return 'street';
-  }
-  // Peltola's fields round the farm
-  if (Math.hypot((x - 29) / 1.4, y - 9.5) < 2.6 && L <= 1) return 'field';
-  const f = vnoise(x * 0.15 + 40, y * 0.15) + (x < 13 && y < 24 ? 0.25 : 0) + (L >= 2 ? 0.1 : 0) - (x > 20 && y < 16 ? 0.2 : 0);
-  return f > 0.6 && !near(HARJU_SITES, x, y, 4.5) ? 'forest' : 'none';
+function harjuWater(x: number, y: number): boolean {
+  const wob = vnoise(x * 0.3, y * 0.3) * 0.8;
+  if (polyDist(x, y, VANAJA) < 2.4 + wob * 1.4) return true;
+  if (polyDist(x, y, VANAJA_RIVER) < 0.9 + wob) return true;
+  if (ellipse(x, y, 49, 25, 4.5, 3.2) + (vnoise(x * 0.25, y * 0.25) - 0.5) * 0.5 < 1) return true;
+  // the sea: the coast south of Helsinki, with a bay to its west
+  const coast = 85.5 + Math.sin(x * 0.35) * 0.8 + vnoise(x * 0.2, 5) * 1.5 - (x < 26 ? 2.4 * smooth(Math.min(1, (26 - x) / 8)) : 0);
+  return y > coast;
 }
+const harjuLand = landOf(HARJU_SITES, harjuWater, harjuLevel);
 
 export const HARJU: ScenarioDef = {
   id: 'harju',
   name: { fi: 'Harju', en: 'Harju' },
-  blurb: { fi: '1862. Kolme kaupunkia kokoon 3 ennen vuotta 1872', en: '1862. Three towns to size 3 before 1872' },
-  w: HARJU_W,
-  h: HARJU_H,
+  blurb: { fi: '1862. Tampereelta Helsinkiin: yhtiön arvo tavoitteeseen ennen vuoden 1869 loppua', en: '1862. Tampere to Helsinki: grow the company before the end of 1869' },
+  w: 64,
+  h: 88,
   terrain: harjuLand,
-  cover: harjuCover,
+  cover: coverOf(HARJU_SITES, harjuLand, (x, y) => (x < 14 && y < 40 ? 0.2 : 0) + (x > 44 && y < 16 ? 0.2 : 0) + (x > 48 && y > 58 ? 0.2 : 0)),
   sites: HARJU_SITES,
-  startStation: 'forest',
-  startStations: ['farm'],
-  cash: 420,
+  cash: 220,
   startYear: 1862,
-  goal: { kind: 'towns', size: 3, count: 3, beforeYear: 1872 },
-  stars: [1869, 1868],
-  engines: ['hilma', 'jyry'],
+  goal: { kind: 'worth', tiers: [700, 1200, 1900], byYear: 1869 },
+  view: [26, 30],
 };
 
 export const SCENARIOS: ScenarioDef[] = [SAWMILL, HARJU];

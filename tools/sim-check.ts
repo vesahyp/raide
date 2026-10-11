@@ -1,198 +1,127 @@
 /**
- * npm run sim-check: the rules asserted headless (ADR 0005, ADR 0006). The bot plays both scenarios
- * and must win them in the time the design asks; the first paid delivery lands inside 90 s; every
- * line owns its track; one more train adds loads until the pile is the limit; trains of a line keep
- * their gap and never stand on each other; growth never goes back; the pick holds the game; undo
- * and lifting give cash back.
+ * npm run sim-check: the rules of ADR 0007 asserted headless. Track, stations, catchment, trains,
+ * pay, conversion, money, and the two bot plans: the careful one wins, the careless one loses.
  */
 import { createState, siteById } from '../src/game/state';
-import { SAWMILL, HARJU } from '../src/game/content/scenarios';
-import { step, plan, build, undo, buyTrain, DT, drawnLength, lineYear, liftLine, takePick, lineGood, stopSite, growFrac, addWagon, expandSite } from '../src/game/sim';
-import { idx, APPROACH, cx, cy } from '../src/game/grid';
-import { Bot } from './bot';
-import { FOLLOW_GAP, PICK_SECONDS, YEAR_SECONDS } from '../src/game/content/economy';
+import { SCENARIO_BY_ID } from '../src/game/content/scenarios';
+import { idx, routeOptions, trackPath } from '../src/game/grid';
+import {
+  buildTrack, buildStation, buyTrain, step, stationBlock, removeTrack, pieceAt, issueBond, repayBond, canIssue, debt, accepts, acceptsAt,
+  suppliesAt, setRoute, sellTrain, worth, quote, pay,
+} from '../src/game/sim';
+import { Bot, PLANS } from './bot';
+import { YEAR_SECONDS } from '../src/game/content/economy';
 import type { SimState } from '../src/game/types';
 
-let failed = false;
-const check = (ok: boolean, what: string) => {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
-  if (!ok) failed = true;
+declare const process: { exit: (n: number) => void };
+let failed = 0;
+function ok(cond: unknown, what: string): void {
+  if (cond) console.log(`ok   ${what}`);
+  else {
+    failed++;
+    console.log(`FAIL ${what}`);
+  }
+}
+const run = (s: SimState, seconds: number) => {
+  for (let t = 0; t < seconds * 60 && !s.result; t++) step(s);
 };
-const cell = (s: SimState, id: string) => idx(s, siteById(s, id).cx, siteById(s, id).cy);
 
-// building and undo, on the sawmill map
+// ---- track
 {
-  const s = createState(SAWMILL);
-  const r1 = plan(s, cell(s, 'forest'), cell(s, 'sawmill'));
-  check(r1.length >= 1, `forest to sawmill can be built (${r1[0]?.cells.length} cells, cost ${r1[0]?.cost})`);
-  check(plan(s, cell(s, 'forest'), cell(s, 'town')).length === 0, 'a line between two sites that trade nothing is never offered');
-  const line = build(s, r1[0])!;
-  check(!!line && s.stations.length === 2 && s.lines.length === 1, 'the build places the station and the line');
-  check(plan(s, cell(s, 'forest'), cell(s, 'sawmill')).length === 0, 'a second line between the same stations is never offered');
-  const r2 = plan(s, cell(s, 'sawmill'), cell(s, 'town'));
-  check(r2.length >= 1 && r2[0].bridge.length >= 1, `sawmill to town crosses the river on a bridge (${r2[0]?.bridge.length} bridge cells, cost ${r2[0]?.cost})`);
+  const s = createState(SCENARIO_BY_ID.harju);
+  const a = idx(s, 5, 33);
+  const b = idx(s, 27, 36);
+  const t0 = performance.now();
+  const opts = routeOptions(s, a, b);
+  const ms = performance.now() - t0;
+  ok(opts.length >= 1, 'a drag across Vanajavesi finds a route');
+  ok(ms < 150, `the route search is quick (${ms.toFixed(0)} ms)`);
+  const r = opts[0];
+  ok(r.bridge.length > 0, 'the route bridges the lake');
   const cash = s.cash;
-  build(s, r2[0]);
-  check(Math.abs(s.cash - (cash - r2[0].cost)) < 1e-6, 'the build is paid');
-  check(undo(s), 'the build can be taken back inside its second');
-  check(Math.abs(s.cash - cash) < 1e-6 && s.lines.length === 1 && s.stations.length === 2, 'undo refunds the cash and removes the track, the station and the line');
-  check(s.track.reduce((a, m, i) => a + (m && !line.path.includes(i) ? 1 : 0), 0) === 0, 'undo leaves no track behind');
-  s.cash = 9999;
-  const t = buyTrain(s, line.id);
-  check(!!t && s.trains.length === 1 && t.wagons.every((w) => w === 'flat'), 'a train is bought with the wagons of what the line carries');
-  check(!liftLine(s, line.id), 'a line with a train cannot be lifted');
+  ok(buildTrack(s, r), 'the route is built');
+  ok(Math.abs(cash - s.cash - r.cost) < 1e-6, 'the build costs its price');
+  ok(!!trackPath(s, a, b), 'a train finds its way over the new track');
+  ok(stationBlock(s, a) === null && stationBlock(s, b) === null, 'a station fits at each end');
+  const A = buildStation(s, a, 0)!;
+  const B = buildStation(s, b, 0)!;
+  ok(!buildStation(s, idx(s, 6, 33), 0), 'no station right beside another');
+  ok(suppliesAt(s, A.cell, 0).logs! > 0, 'the forest station supplies logs');
+  ok(accepts(s, B, 'logs') && !accepts(s, A, 'logs'), 'the sawmill station takes logs and the forest does not');
+  ok(acceptsAt(s, idx(s, 13, 41), 1).includes('food'), 'a station by a town takes food');
+  // a junction off the middle of the line, at 45 degrees, reaches open ground
+  const mid = r.cells[Math.floor(r.cells.length / 2)];
+  const spur = routeOptions(s, mid, idx(s, 20, 47));
+  ok(spur.length >= 1, 'a spur leaves the middle of laid track');
+  // a train runs, delivers and is paid
+  const t = buyTrain(s, 'jyry', [{ station: A.id, cars: ['logs', 'logs', 'logs', 'logs'], waitFull: false }, { station: B.id, cars: [], waitFull: false }])!;
+  ok(!!t, 'a train is bought');
+  const before = s.book.revenue;
+  run(s, 60);
+  ok(s.book.revenue > before, `the train earns (${s.book.revenue.toFixed(0)}k in a minute)`);
+  const saw = siteById(s, 'koskensaha');
+  ok((saw.stock.lumber ?? 0) + (B.waiting.lumber ?? 0) + saw.madeMonth + saw.madeLast > 0, 'the sawmill turns delivered logs into lumber');
+  // a piece of track removed: the train is lost until the track is back
+  const piece = pieceAt(s, r.cells[5])!;
+  ok(piece.cells.length > 5, 'a tap on track names the piece between its ends');
+  removeTrack(s, r.cells[5]);
+  run(s, 30);
+  ok(t.state === 'lost' || t.state === 'stop', 'a train with no track waits');
+  ok(setRoute(s, t.id, t.route), 'the route can be set again');
+  ok(sellTrain(s, t.id) && s.trains.length === 0, 'a train is sold');
 }
 
-// every line owns its track: two lines share a cell only at a station's approach or in a level crossing
-function ownTrack(s: SimState): { ok: boolean; why: string } {
-  const approach = new Set<number>();
-  for (const st of s.stations) for (let d = -APPROACH; d <= APPROACH; d++) approach.add(st.cell + d);
-  for (const a of s.lines)
-    for (const b of s.lines) {
-      if (a.id >= b.id) continue;
-      const mine = new Set(a.path);
-      for (const c of b.path) {
-        if (!mine.has(c) || approach.has(c)) continue;
-        const k = a.path.indexOf(c);
-        const j = b.path.indexOf(c);
-        if (k <= 0 || j <= 0 || k >= a.path.length - 1 || j >= b.path.length - 1) return { ok: false, why: `lines ${a.id} and ${b.id} share an end cell ${c}` };
-        const dir = (p: number[], i: number) => [cx(s, p[i + 1]) - cx(s, p[i - 1]), cy(s, p[i + 1]) - cy(s, p[i - 1])];
-        const [ax, ay] = dir(a.path, k);
-        const [bx, by] = dir(b.path, j);
-        if (ax * by - ay * bx === 0) return { ok: false, why: `lines ${a.id} and ${b.id} run along each other at ${c}` };
-      }
-    }
-  return { ok: true, why: '' };
+// ---- pay
+{
+  ok(pay('logs', 2, 10, 1) === 0, 'a haul shorter than the minimum pays nothing');
+  ok(pay('pax', 30, 10, 1) > pay('pax', 30, 40, 1), 'a fast load pays more than a slow one');
+  ok(pay('logs', 30, 20, 0.5) < pay('logs', 30, 20, 1), 'a glutted station pays less');
+  const s = createState(SCENARIO_BY_ID.harju);
+  const a = idx(s, 5, 33), b = idx(s, 27, 36);
+  buildTrack(s, routeOptions(s, a, b)[0]);
+  const A = buildStation(s, a, 0)!, B = buildStation(s, b, 0)!;
+  ok(quote(s, 'logs', A, B) > 0, 'a quote is positive');
 }
 
-/** the bot plays a scenario to its end, with the invariants watched at every step */
-function play(sc: typeof HARJU) {
-  const s = createState(sc);
-  const bot = Bot.for(s);
-  const limit = (sc.goal.beforeYear - sc.startYear) * YEAR_SECONDS + 10;
-  let overlap = '';
-  let doubled = '';
-  let shrank = '';
-  let heldOk = true;
-  let firstPick = -1;
-  let firstTrain = -1;
-  const last = new Map(s.sites.map((x) => [x.id, x.size + growFrac(x)]));
-  for (let t = 0; t < limit && !s.result; t += DT) {
-    if (s.pick && firstPick < 0) firstPick = s.time;
-    if (s.pick) {
-      // the pick holds the game: a step does nothing until it is taken
-      const was = s.time;
+// ---- money
+{
+  const s = createState(SCENARIO_BY_ID.harju);
+  const c0 = s.cash;
+  ok(issueBond(s) && s.cash === c0 + 50, 'a bond adds its cash');
+  ok(s.bonds[0].rate < 0.07, 'the first bond is cheap');
+  issueBond(s);
+  ok(s.bonds[1].rate > s.bonds[0].rate, 'each bond costs more interest');
+  let n = 0;
+  while (canIssue(s) && n < 50) (issueBond(s), n++);
+  ok(!canIssue(s) && n < 50, 'the credit runs out');
+  ok(repayBond(s), 'a bond is repaid');
+  const d = debt(s);
+  ok(d < 50 * (n + 2), 'repaying lowers the debt');
+  ok(Math.abs(worth(s) - (s.cash - d)) < 1, 'with nothing built the worth is cash less debt');
+}
+
+// ---- the plans
+for (const id of ['sawmill', 'harju']) {
+  for (const which of ['careful', 'careless'] as const) {
+    const sc = SCENARIO_BY_ID[id];
+    const s = createState(sc);
+    const bot = new Bot(PLANS[id][which]);
+    const limit = (sc.goal.byYear - sc.startYear + 1.1) * YEAR_SECONDS;
+    const t0 = performance.now();
+    while (s.time < limit && !s.result) {
+      bot.act(s);
       step(s);
-      if (s.time !== was) heldOk = false;
     }
-    bot.act(s);
-    if (firstTrain < 0 && s.trains.length) firstTrain = s.time;
-    step(s);
-    for (const a of s.trains)
-      for (const b of s.trains) {
-        if (a.id >= b.id || a.lineId !== b.lineId) continue;
-        if (a.state === 'stop' && b.state === 'stop' && a.idx === b.idx && !doubled) doubled = `trains ${a.id} and ${b.id} stand at one platform at ${s.time.toFixed(1)} s`;
-        if (a.dir !== b.dir || a.state === 'stop' || b.state === 'stop') continue;
-        const room = Math.abs(a.s - b.s) - (drawnLength(a) + drawnLength(b)) / 2;
-        if (room < FOLLOW_GAP - 0.05 && !overlap) overlap = `trains ${a.id} and ${b.id} ${room.toFixed(2)} tiles apart at ${s.time.toFixed(1)} s`;
-      }
-    for (const x of s.sites) {
-      const v = x.size + growFrac(x);
-      if (v < last.get(x.id)! - 1e-9 && !shrank) shrank = `${x.id} went from ${last.get(x.id)!.toFixed(3)} to ${v.toFixed(3)}`;
-      last.set(x.id, v);
-    }
+    const r = s.result;
+    const wall = performance.now() - t0;
+    if (which === 'careful') ok(r && r.won && r.tier >= 1, `${id}: the careful plan wins (tier ${r?.tier}, ${r?.reason} ${r?.year}, ${(wall / 1000).toFixed(1)} s)`);
+    else ok(r && !r.won, `${id}: the careless plan loses (${r?.reason} ${r?.year}, worth ${r?.worth.toFixed(0)}k)`);
+    if (which === 'careful') ok(!r || r.tier < 3 || r.year >= sc.goal.byYear - 1, `${id}: gold is not easy for the bot`);
   }
-  return { s, bot, overlap, doubled, shrank, heldOk, firstPick, firstTrain };
-}
-
-for (const sc of [SAWMILL, HARJU]) {
-  const r = play(sc);
-  const { s } = r;
-  check(!!s.result?.won, `the bot wins ${sc.id} (${s.result ? `${s.result.won ? 'won' : 'lost'} ${s.result.year} at ${s.result.time.toFixed(0)} s` : 'no result'})`);
-  check(s.firstPayAt !== null && s.firstPayAt < 90, `${sc.id}: the first paid delivery lands inside 90 s (${s.firstPayAt?.toFixed(0)} s)`);
-  check(!r.overlap, `${sc.id}: running trains of a line in one direction keep their gap${r.overlap ? `: ${r.overlap}` : ''}`);
-  check(!r.doubled, `${sc.id}: no two trains of a line stand at one platform${r.doubled ? `: ${r.doubled}` : ''}`);
-  check(!r.shrank, `${sc.id}: no town loses growth${r.shrank ? `: ${r.shrank}` : ''}`);
-  check(r.heldOk, `${sc.id}: the pick holds the game until it is taken`);
-  check(r.firstPick >= 0 && Math.abs(r.firstPick - r.firstTrain - PICK_SECONDS) < 1, `${sc.id}: the first pick comes ${PICK_SECONDS} s after the first train (${(r.firstPick - r.firstTrain).toFixed(1)} s)`);
-  const own = ownTrack(s);
-  check(own.ok, `${sc.id}: every line owns its track, crossing others only at an angle${own.why ? `: ${own.why}` : ''}`);
-  check(s.trains.every((t) => t.trips > 0), `${sc.id}: every train has made a trip (${s.trains.map((t) => t.trips).join(', ')})`);
-  if (sc === HARJU) {
-    const t = s.result?.time ?? Infinity;
-    check(t >= 180 && t <= 840, `harju: the bot's win takes 3 to 14 minutes (the human-like run is the measure) (${(t / 60).toFixed(1)} min)`);
-  }
-}
-
-// one more train adds loads, until the pile is the limit
-{
-  const s = createState(HARJU);
-  s.cash = 1e5;
-  const line = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
-  buyTrain(s, line.id);
-  const one = lineYear(s, line).loads;
-  const two = lineYear(s, line, { engine: 'hilma', wagons: 2 }).loads;
-  check(two > one + 0.3, `a second train adds loads on a line (${one.toFixed(1)} to ${two.toFixed(1)} a minute)`);
-  for (let i = 0; i < 5; i++) buyTrain(s, line.id);
-  const many = lineYear(s, line);
-  check(many.limit === 'supply', `with six trains the forest is the limit, and the card can say so (${many.loads.toFixed(1)} a minute)`);
-  // six trains on one line run for two minutes, and they deliver
-  for (let t = 0; t < 120; t += DT) {
-    step(s);
-    if (s.pick) takePick(s, 0);
-  }
-  const g = lineGood(s, line)!;
-  check(stopSite(s, line, g.to).delivered > 0, `the trains deliver with six on the line (${stopSite(s, line, g.to).delivered} loads)`);
-  check(addWagon(s, s.trains[0].id) || s.trains[0].nWagons >= 3, 'a wagon can be added up to the limit');
-}
-
-// on Harju every link the goal needs can be built in any order: own track never walls a town off
-{
-  const all = ['sawmill-hameenlinna', 'sawmill-lahti', 'sawmill-tampere', 'mill-lahti', 'mill-hameenlinna', 'mill-tampere'];
-  let seed = 7;
-  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
-  let bad = '';
-  for (let k = 0; k < 120 && !bad; k++) {
-    const s = createState(HARJU);
-    s.cash = 1e6;
-    const mode = rnd() < 0.5 ? 'cheap' : 'short';
-    for (const p of ['forest-sawmill', 'farm-mill', ...all.slice().sort(() => rnd() - 0.5)]) {
-      const [a, b] = p.split('-');
-      const o = plan(s, cell(s, a), cell(s, b));
-      if (!o.length) {
-        bad = `${p} after ${s.lines.length} lines (${mode})`;
-        break;
-      }
-      build(s, o.find((x) => x.mode === mode) ?? o[0]);
-    }
-  }
-  check(!bad, `harju: the eight links the goal needs build in any of 120 orders${bad ? `: ${bad} is walled off` : ''}`);
-}
-
-// expanding a forest makes the line carry more when the forest is the limit
-{
-  const s = createState(HARJU);
-  s.cash = 1e5;
-  const line = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
-  for (let i = 0; i < 4; i++) buyTrain(s, line.id);
-  const before = lineYear(s, line);
-  check(expandSite(s, 'forest') && siteById(s, 'forest').level === 1, 'a forest can be expanded from its card');
-  const after = lineYear(s, line);
-  check(before.limit === 'supply' && after.loads > before.loads + 1, `the expansion lifts what four trains carry (${before.loads.toFixed(1)} to ${after.loads.toFixed(1)} a minute)`);
-  check(!expandSite(s, 'sawmill'), 'a sawmill is not expanded');
-}
-
-// lifting a line gives half its track back
-{
-  const s = createState(SAWMILL);
-  const line = build(s, plan(s, cell(s, 'forest'), cell(s, 'sawmill'))[0])!;
-  s.lastBuild = null;
-  const cash = s.cash;
-  check(liftLine(s, line.id) && s.cash > cash && s.lines.length === 0 && s.track.every((m) => m === 0), 'a line with no trains is lifted, its track goes and cash comes back');
 }
 
 if (failed) {
-  console.log('sim-check FAILED');
-  (globalThis as unknown as { process: { exit(n: number): void } }).process.exit(1);
+  console.log(`${failed} failed`);
+  process.exit(1);
 }
-console.log('sim-check passed');
+console.log('all ok');
