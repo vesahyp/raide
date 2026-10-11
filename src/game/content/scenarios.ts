@@ -130,6 +130,8 @@ function harjuLevel(x: number, y: number): number {
   ridge *= 0.3 + 0.7 * Math.min(1, Math.abs(x - PASS_X) / 4);
   let h = ridge;
   h = Math.max(h, bump(x, y, 36, 18, 2.6, 26), bump(x, y, 6, 20, 2, 18), bump(x, y, 46, 70, 2.2, 30), bump(x, y, 60, 18, 2.4, 20));
+  // the hills a line meets: between Valkeakoski and Tampere, Peltola and Lahti, the mill and Helsinki, Häme and Tampere
+  h = Math.max(h, bump(x, y, 19, 9, 2.8, 10), bump(x, y, 46, 37, 2.8, 12), bump(x, y, 37, 72, 2.6, 12), bump(x, y, 9, 28, 2.4, 10), bump(x, y, 30, 40, 2.4, 14));
   h += (vnoise(x * 0.11, y * 0.11) - 0.5) * 1.0;
   return h;
 }

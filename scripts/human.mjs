@@ -64,7 +64,7 @@ const PLAYS = {
       { do: 'station', at: 'helsinki', size: 1 },
       { do: 'train', stops: ['myllykyla', 'helsinki'], loco: 'jyry', cars: [['food', 'food', 'food', 'food'], []] },
       { do: 'train', stops: ['kuusikko', 'koskensaha'], loco: 'jyry' },
-      { do: 'link', a: 'hameenlinna', b: 'riihimaki', level: 'no' },
+      { do: 'link', a: 'hameenlinna', b: 'riihimaki', level: 'if-steep' },
       { do: 'station', at: 'riihimaki', size: 1 },
       { do: 'link', a: 'riihimaki', b: 'helsinki', level: 'no' },
       { do: 'train', stops: ['hameenlinna', 'riihimaki', 'helsinki'], loco: 'ukko' },
@@ -259,11 +259,34 @@ for (const who of ['careful', 'careless']) {
     const opts = await page.$$eval('[data-card="plan"] .seg button', (bs) => bs.map((b) => ({ act: b.dataset.act, text: b.textContent })));
     let pick = 'cheap';
     if (opts.length > 1) {
-      const cheap = opts.find((o) => o.act === 'option-cheap');
-      const grade = Number((cheap?.text.match(/([\d.]+) %/) || [])[1] || 0);
-      pick = step.level === 'yes' || (step.level === 'if-steep' && grade >= 3) ? 'level' : 'cheap';
-      await decide('tradeoff', `route ${step.a} to ${step.b}: ${opts.map((o) => o.text.replace(/\s+/g, ' ')).join(' or ')}; took ${pick}`, { options: opts.map((o) => o.text) });
-      if (pick === 'level') await tapSel('[data-act="option-level"]');
+      // read each option's price, length and grade off its button
+      const read = (o) => {
+        const m = o.text.match(/([\d.]+)\s*(k|M)\s*·\s*(\d+) km\s*·\s*([\d.]+) %/);
+        return m ? { act: o.act, cost: Number(m[1]) * (m[2] === 'M' ? 1000 : 1), km: Number(m[3]), grade: Number(m[4]) } : null;
+      };
+      const os = opts.map(read).filter(Boolean);
+      const cheap = os.find((o) => o.act === 'option-cheap');
+      let why = '';
+      if (step.level === 'yes') {
+        const alt = os.find((o) => o.act === 'option-level') ?? os.find((o) => o.act === 'option-direct');
+        pick = alt ? alt.act.slice(7) : 'cheap';
+        why = 'the careless player takes the dearest-looking way';
+      } else if (step.level === 'if-steep' && cheap) {
+        // a heavy freight line: a flatter way is worth it when it is not much longer nor dearer
+        const flat = os.filter((o) => o.grade < cheap.grade - 1).sort((a, b) => a.cost - b.cost)[0];
+        if (cheap.grade >= 3 && flat && flat.km <= cheap.km * 1.3 && flat.cost <= cheap.cost * 1.3) {
+          pick = flat.act.slice(7);
+          why = `${cheap.grade} % would slow loaded trains; ${pick} is only ${Math.round(((flat.cost - cheap.cost) / cheap.cost) * 100)} % dearer`;
+        } else {
+          const dir = os.find((o) => o.act === 'option-direct');
+          if (dir && dir.km < cheap.km * 0.75 && dir.cost <= cheap.cost * 1.25 && dir.grade < 3) {
+            pick = 'direct';
+            why = `direct saves ${cheap.km - dir.km} km for ${Math.round(dir.cost - cheap.cost)}k more`;
+          } else why = flat ? `the flatter way is ${Math.round((flat.km / cheap.km) * 100 - 100)} % longer: not worth it` : 'the cheapest is good enough';
+        }
+      } else why = 'a light passenger line: the cheapest way, grades do not matter much';
+      await decide('tradeoff', `route ${step.a} to ${step.b}: ${opts.map((o) => o.text.replace(/\s+/g, ' ')).join(' or ')}; took ${pick}: ${why}`);
+      if (pick !== 'cheap') await tapSel(`[data-act="option-${pick}"]`);
       await think(400);
     }
     if (await page.locator('[data-card="plan"] [data-act="build"]').isDisabled()) {

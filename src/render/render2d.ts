@@ -725,8 +725,10 @@ export class Renderer2D {
     c.s = Math.max(Math.min(this.wholeScale(), PLAY_S), Math.min(MAX_S, c.s));
     const hx = a.w / 2 / c.s;
     const hy = a.h / 2 / c.s;
+    // the map's last rows can be brought up above a card that covers the lower part of the screen
+    const below = this.backdrop ? 2 : 2 + 300 / c.s;
     c.x = s.w <= 2 * hx - 2 ? s.w / 2 : Math.max(hx - 2, Math.min(s.w - hx + 2, c.x));
-    c.y = s.h <= 2 * hy - 2 ? s.h / 2 : Math.max(hy - 3, Math.min(s.h - hy + 2, c.y));
+    c.y = s.h <= 2 * hy - 2 ? s.h / 2 : Math.max(hy - 3, Math.min(s.h - hy + below, c.y));
   }
 
   pan(dx: number, dy: number): void {

@@ -457,7 +457,7 @@ function CardHead({ title, sub, onClose }: { title: React.ReactNode; sub?: React
 function PlanCard({ s, card, onChoose, onBuild, onBond, onClose }: { s: SimState; card: { plan: Plan; chosen: number }; onChoose: (k: number) => void; onBuild: () => void; onBond: () => void; onClose: () => void }) {
   const r = card.plan.options[card.chosen];
   const short = r.cost > s.cash;
-  const name = (x: Route) => (x.mode === 'cheap' ? tr('Halvin', 'Cheapest') : tr('Loivin', 'Level'));
+  const name = (x: Route) => (x.mode === 'cheap' ? tr('Halvin', 'Cheapest') : x.mode === 'direct' ? tr('Suorin', 'Direct') : tr('Loivin', 'Level'));
   return (
     <>
       <CardHead title={tr('Uusi rata', 'New track')} sub={`${km(r.length)} · ${r.added.length} ${tr('uutta ruutua', 'new tiles')}`} onClose={onClose} />
@@ -467,7 +467,7 @@ function PlanCard({ s, card, onChoose, onBuild, onBond, onClose }: { s: SimState
             <button key={k} className={k === card.chosen ? 'on' : ''} data-act={`option-${x.mode}`} onClick={() => onChoose(k)}>
               <b>{name(x)}</b>
               <span>
-                {money(x.cost)} · {x.worst} %
+                {money(x.cost)} · {km(x.length)} · {x.worst} %
               </span>
             </button>
           ))}

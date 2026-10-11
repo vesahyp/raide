@@ -102,7 +102,8 @@ export class Heap {
   }
 }
 
-export type RouteMode = 'cheap' | 'level';
+/** cheap: the lowest build price; direct: the shortest way, over hills on grades and through cuttings; level: the gentlest grade */
+export type RouteMode = 'cheap' | 'direct' | 'level';
 
 export interface Route {
   mode: RouteMode;
@@ -160,6 +161,8 @@ function stepCost(s: SimState, a: number, b: number, d: number, mode: RouteMode)
   const len = stepLen(d);
   // along laid track: almost free, so a route reuses it where it runs the same way
   if (s.track[a] & (1 << d)) return 0.05 * len;
+  // the direct way: length first, the price only to break ties
+  if (mode === 'direct') return len * (1 + (s.water[b] && !s.track[b] ? 0.3 : 0)) + 0.01;
   if (s.water[b] && !s.track[b]) return BRIDGE_COST * len + 0.05;
   const rise = Math.abs(landAt(s, b) - landAt(s, a));
   const limit = mode === 'level' ? GRADE_LEVEL : GRADE_CHEAP;
@@ -309,8 +312,10 @@ export function profile(s: SimState, cells: number[], limit: number): number[] {
     const len = stepLen(dirOf(s, cells[from], cells[k]));
     const max = (limit / 100) * len * CELL_M;
     rail[k] = Math.max(rail[from] - max, Math.min(rail[from] + max, rail[k]));
+    // a bridge keeps its clearance; the land beside it ramps up on a fill
+    if (s.water[cells[k]]) rail[k] = Math.max(rail[k], BRIDGE_CLEAR);
   };
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < 6; pass++) {
     for (let k = 1; k < n; k++) if (!fixed[k]) clamp(k, k - 1);
     for (let k = n - 2; k >= 0; k--) if (!fixed[k]) clamp(k, k + 1);
   }
@@ -362,13 +367,22 @@ export function describe(s: SimState, cells: number[], mode: RouteMode): Route {
   return { mode, cells, rail, cost: Math.round(cost * 10) / 10, bridge, cutting, fill, links, added, length, worst: Math.round(worst * 10) / 10 };
 }
 
-/** the routes a drag offers: the cheapest, and the level one when it differs */
+/**
+ * The routes a drag offers, each the best of the three searches by one measure: the cheapest to
+ * build, the shortest, and the flattest. A route that is best by two measures is offered once,
+ * under the first of them. The cheapest comes first.
+ */
 export function routeOptions(s: SimState, from: number, to: number, via: number[] = []): Route[] {
-  const cheap = route(s, from, to, via, 'cheap');
-  const level = route(s, from, to, via, 'level');
-  if (!cheap) return level ? [level] : [];
-  if (!level || level.cells.join() === cheap.cells.join() || level.worst >= cheap.worst - 0.3) return [cheap];
-  return [cheap, level];
+  const all = (['cheap', 'direct', 'level'] as RouteMode[]).map((m) => route(s, from, to, via, m)).filter((r): r is Route => !!r);
+  if (!all.length) return [];
+  const best = (key: (r: Route) => number) => all.reduce((a, b) => (key(b) < key(a) - 1e-6 ? b : a));
+  const cheap = best((r) => r.cost);
+  const direct = best((r) => r.length * 1000 + r.cost);
+  const level = best((r) => r.worst * 1000 + r.cost);
+  const out: Route[] = [{ ...cheap, mode: 'cheap' }];
+  if (direct.length < cheap.length - 1.5) out.push({ ...direct, mode: 'direct' });
+  if (level.worst < Math.min(...out.map((o) => o.worst)) - 0.3) out.push({ ...level, mode: 'level' });
+  return out;
 }
 
 export function link(s: SimState, a: number, b: number): void {
