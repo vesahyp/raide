@@ -155,10 +155,12 @@ for (const who of ['careful', 'careless']) {
   /** one finger pans the map by a screen delta, in strokes a thumb can make (browse mode) */
   const pan = async (dx, dy) => {
     let left = { x: dx, y: dy };
-    for (let i = 0; i < 8 && Math.hypot(left.x, left.y) > 4; i++) {
-      const k = Math.min(1, 220 / Math.hypot(left.x, left.y));
+    // every stroke stays inside the free part of the glass, above any card and below the HUD
+    const midY = (100 + (H - 330)) / 2;
+    for (let i = 0; i < 12 && Math.hypot(left.x, left.y) > 4; i++) {
+      const k = Math.min(1, 150 / Math.hypot(left.x, left.y));
       const sx = W / 2 - (left.x * k) / 2;
-      const sy = H / 2 - (left.y * k) / 2;
+      const sy = midY - (left.y * k) / 2;
       await drag([{ x: sx, y: sy }, { x: sx + left.x * k, y: sy + left.y * k }]);
       left = { x: left.x * (1 - k), y: left.y * (1 - k) };
     }
@@ -355,7 +357,12 @@ for (const who of ['careful', 'careless']) {
     await tapSel('[data-tool="route"]');
     await think();
     for (const c of cells) {
-      const p = await toScreen(c.x, c.y);
+      // a stop off the screen or under the card is panned into the free area first, as a thumb would
+      let p = await toScreen(c.x, c.y);
+      if (p.x < 30 || p.x > W - 30 || p.y < 90 || p.y > H - 320) {
+        await pan(W / 2 - p.x, (H - 320) / 2 + 40 - p.y);
+        p = await toScreen(c.x, c.y);
+      }
       await tap(p.x, p.y);
       await think(300);
     }
@@ -381,6 +388,11 @@ for (const who of ['careful', 'careless']) {
     await think(500);
     const est = await page.$$eval('[data-card="route"] .facts > div b', (bs) => bs.map((b) => b.textContent));
     const consist = await page.$$eval('[data-card="route"] .stop', (rows) => rows.map((r) => `${r.querySelector('.nm').textContent} ${r.querySelectorAll('.car:not(.add)').length}`).join(', '));
+    if (est[2] && /^0k$|^−/.test(est[2].trim())) {
+      await decide('tradeoff', `train ${step.stops.join(' > ')}: a full round pays ${est[2]}, so no train`);
+      await toolOff();
+      return;
+    }
     if (await page.locator('[data-card="route"] [data-act="buy"]').isDisabled()) {
       if (!waitedOn.has(step)) await decide('wait', `train ${step.stops.join(' > ')} with ${step.loco}: not now (${est.join(', ') || 'stops missing'})`);
       waitedOn.add(step);
