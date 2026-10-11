@@ -115,8 +115,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         setCard((c) => {
           if (c?.kind !== 'route' || c.stops.length >= 4) return c;
           if (c.stops.length && c.stops[c.stops.length - 1].station === st.id) return c;
-          const stops = [...c.stops, { station: st.id, cars: [], waitFull: false }];
-          return { ...c, stops: withAutoCars(s, stops) };
+          return { ...c, stops: [...c.stops, { station: st.id, cars: [], waitFull: false }], step: 'stops' };
         }),
       onAny: () => unlock(),
     });
@@ -228,7 +227,15 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         ? tr('Vedä neliö radan päälle: se näyttää mitä asema kerää.', 'Drag the square onto the track: it shows what the station gathers.')
         : tool === 'route' && card?.kind === 'route' && card.step === 'stops'
           ? tr('Napauta asemat järjestyksessä (2 tai enemmän).', 'Tap the stations in order (2 or more).')
-          : null;
+          : !card && !s.result
+            ? !s.stations.length && !s.netVersion
+              ? tr('Aloita: paina Rata ja vedä metsän vierestä sahan viereen.', 'Start: press Track and drag from beside a forest to beside a mill.')
+              : s.stations.length < 2
+                ? tr('Paina Asema ja vedä neliö radan päälle, niin että se peittää tehtaan.', 'Press Station and drag the square onto the track so it covers the buildings.')
+                : !s.trains.length
+                  ? tr('Paina Juna ja napauta asemat.', 'Press Train and tap the stations.')
+                  : null
+            : null;
 
   return (
     <div className={`game tool-${tool}`}>
@@ -307,7 +314,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
         </button>
       </nav>
       {card && !result && (
-        <div className="card sheet" data-card={card.kind} key={card.kind}>
+        <div className={`card sheet${card.kind === 'route' && card.step === 'stops' ? ' compact' : ''}`} data-card={card.kind} key={card.kind}>
           {card.kind === 'plan' && (
             <PlanCard
               s={s}
@@ -373,7 +380,7 @@ export function Game({ scenario, onQuit, onAgain }: { scenario: ScenarioDef; onQ
               t={s.trains.find((o) => o.id === card.id)!}
               onEdit={(t) => {
                 setTool('route');
-                setCard({ kind: 'route', trainId: t.id, stops: t.route.map((p) => ({ ...p, cars: [...p.cars] })), loco: t.loco, step: 'stops' });
+                setCard({ kind: 'route', trainId: t.id, stops: t.route.map((p) => ({ ...p, cars: [...p.cars] })), loco: t.loco, step: 'loco' });
               }}
               onClose={close}
             />
@@ -868,6 +875,42 @@ function RouteCard({ s, card, onChange, onDone, onClose }: { s: SimState; card: 
   const editing = card.trainId !== null ? s.trains.find((t) => t.id === card.trainId) : null;
   const L = LOCOS[card.loco];
   const perYear = est.round ? YEAR_SECONDS / est.round : 0;
+  if (card.step === 'stops') {
+    // picking the stops: a short bar, so the map above it stays free for the taps
+    return (
+      <>
+        <div className="card-head">
+          <div>
+            <h2>{editing ? `${tr('Juna', 'Train')} ${editing.name}` : tr('Uusi juna', 'New train')}</h2>
+            <div className="sub">{tr('Napauta asemat kartalla järjestyksessä', 'Tap the stations on the map in order')}</div>
+          </div>
+          <button className="round close" aria-label={tr('Sulje', 'Close')} data-act="close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="chips-row">
+          {stops.map((p, k) => (
+            <span key={k} className="stop-chip">
+              <em>{k + 1}</em>
+              {stationById(s, p.station)?.name ?? '?'}
+              <button aria-label={tr('Poista', 'Remove')} data-act={`drop-stop-${k}`} onClick={() => set(stops.filter((_, i) => i !== k))}>
+                ×
+              </button>
+            </span>
+          ))}
+          {!stops.length && <span className="none">{tr('ei pysäkkejä vielä', 'no stops yet')}</span>}
+        </div>
+        <div className="row">
+          <button className="btn" onClick={onClose}>
+            {tr('Peru', 'Cancel')}
+          </button>
+          <button className="btn primary" data-act="next" disabled={stops.length < 2} onClick={() => onChange({ ...card, stops: withAutoCars(s, stops), step: 'loco' })}>
+            {tr('Seuraava', 'Next')} ›
+          </button>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <CardHead title={editing ? `${tr('Juna', 'Train')} ${editing.name}: ${tr('reitti', 'route')}` : tr('Uusi juna', 'New train')} sub={stops.length < 2 ? tr('Napauta asemia kartalla', 'Tap stations on the map') : undefined} onClose={onClose} />
@@ -896,6 +939,9 @@ function RouteCard({ s, card, onChange, onDone, onClose }: { s: SimState; card: 
             </button>
           </div>
         ))}
+        <button className="btn add-stop" data-act="more-stops" onClick={() => onChange({ ...card, step: 'stops' })} disabled={stops.length >= 4}>
+          + {tr('pysäkki', 'stop')}
+        </button>
         {adding !== null && stops[adding] && (
           <div className="picker">
             {CARGOS.map((c) => (

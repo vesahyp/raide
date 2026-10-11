@@ -173,6 +173,10 @@ phone screen as it is, needs a change, or has to go.
 
 ## Part 2: the design
 
+> **2026-10-11:** this part is history. Raide is now a mobile Railroad
+> Tycoon 2 (ADR 0007): the loop is RT2's, and the plan is
+> `docs/rt2-plan.md`. Part 1's research still holds.
+>
 > **2026-10-10:** an independent review found the core loop unfun, and
 > Vesa decided to rebuild it (ADR 0005, ADR 0006). Where this part
 > describes shared blocks, passing sidings, platforms, crews, cranes,

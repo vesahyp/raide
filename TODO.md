@@ -1,41 +1,31 @@
 # TODO
 
 Forward-looking only. Shipped items are deleted; git history is the record.
-The design is in `docs/design.md`; the core loop is ADR 0005 and ADR 0006.
+The plan is `docs/rt2-plan.md`; the decision is ADR 0007.
 
-## Now: Vesa plays the core rebuild
+## Now: Vesa plays the RT2 rebuild
 
-The core loop was rebuilt on 2026-10-10 from the independent review: every
-line has its own double track, every load grows its town, a pick of two
-upgrades every half minute, Harju on one portrait screen. `make human`
-is the measure. Vesa plays it on the phone before the next step starts.
+Raide was rebuilt on 2026-10-11 as a mobile Railroad Tycoon 2. `make human`
+is the measure: a careful player wins and a careless one loses. Vesa plays
+it on the phone before the next step starts.
 
-Still weak, in the order a player meets it:
+Known weak, in the order a player meets it:
 
-- From about minute 7 of Harju the decisions are mostly the pick and two
-  or three expansions: every link is built and more trains add little.
-  A second forest and farm, or a fourth town, would give the late game
-  more to build.
-- The route card is rare: on this map the short way is seldom dearer and
-  faster at once, so the two-way choice almost never shows.
+- No tutorial: the Sawmill map opens with nothing built and no hint. RT2's
+  first scenario also says little, but a phone player needs the first drag
+  shown once.
+- A station's name tag and its site's tag stand close together and crowd
+  the map at play zoom.
+- Landscape has not been played by the human-like script.
+- Trains pass through each other and through a reversal they fold for a
+  moment on the screen.
 
-- The site labels and the NEEDS chips crowd a 30-tile map; at 12 px a
-  tile they cover yards and track.
-- Landscape shows the map as wide as the screen and pans up and down; it
-  has not been played by the human-like script.
-- The pick's options are drawn at random from two groups; whether every
-  pair is a real choice needs a player's eye.
+## Later (RT2 systems cut from the first version)
 
-## Later
-
-- Free track shapes (a drag to open ground, junctions), on the branch
-  `custom-track-wip`, if Vesa wants custom layouts back on top of lines
-  that own their track.
-- Tunnels as a third route choice on a ridge.
-- Scenario 4, Harbour: the export sink, an industry that closes, the coal
-  era unlock.
+- Station buildings: maintenance shop (fewer breakdowns), water tower,
+  hotel and restaurant.
+- More cargo and industries: coal, iron and steel, milk and cheese, goods.
+- The stock market and rival companies.
+- Buying industries.
+- Double track and signals, if trains ever stop passing through each other.
 - Autosave at every build; resume from the title.
-- Scenario stars in DynamoDB behind one Lambda, once there is a records
-  screen to show them on.
-- The tracking rollup and the stats board, copied from sora once it has one.
-- The name: Raide, Veturi or Ratapiha.
