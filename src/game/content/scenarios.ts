@@ -157,7 +157,7 @@ export const HARJU: ScenarioDef = {
   sites: HARJU_SITES,
   cash: 220,
   startYear: 1862,
-  goal: { kind: 'worth', tiers: [700, 1200, 1900], byYear: 1869 },
+  goal: { kind: 'worth', tiers: [700, 1200, 2200], byYear: 1869 },
   view: [26, 30],
 };
 

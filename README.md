@@ -67,4 +67,4 @@ aika. Rakentaa voi myös tauolla.
 - **Harju:** Tampereelta Helsinkiin. Kolme metsää, kolme maatilaa, saha,
   paperitehdas, mylly ja viisi kaupunkia, Vanajavesi ja Vesijärvi pohjoisessa
   ja Salpausselkä halki kartan yhdellä matalalla kohdalla. Tavoite: yhtiön
-  arvo 700k, 1,2 M tai 1,9 M vuoden 1869 loppuun mennessä.
+  arvo 700k, 1,2 M tai 2,2 M vuoden 1869 loppuun mennessä.
