@@ -181,6 +181,7 @@ export class Renderer2D {
     this.resize();
     this.cam.x = s.scenario.view[0] + 0.5;
     this.cam.y = s.scenario.view[1] + 0.5;
+    this.cam.s = s.scenario.view[2];
     this.clampCam();
   }
 

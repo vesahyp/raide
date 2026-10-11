@@ -59,8 +59,8 @@ export interface ScenarioDef {
   cash: number;
   startYear: number;
   goal: Goal;
-  /** the tile the camera opens on */
-  view: [number, number];
+  /** the tile the camera opens on, and px a tile */
+  view: [number, number, number];
 }
 
 export interface Site extends SiteDef {

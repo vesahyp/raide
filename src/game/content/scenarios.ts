@@ -95,7 +95,7 @@ export const SAWMILL: ScenarioDef = {
   cash: 160,
   startYear: 1862,
   goal: { kind: 'haul', cargo: 'lumber', tiers: [40, 60, 80], byYear: 1865 },
-  view: [20, 14],
+  view: [20, 14, 15],
 };
 
 // ---------- Harju: 64 by 88 ----------
@@ -158,7 +158,7 @@ export const HARJU: ScenarioDef = {
   cash: 220,
   startYear: 1862,
   goal: { kind: 'worth', tiers: [700, 1200, 2200], byYear: 1869 },
-  view: [26, 30],
+  view: [16, 33, 15],
 };
 
 export const SCENARIOS: ScenarioDef[] = [SAWMILL, HARJU];
